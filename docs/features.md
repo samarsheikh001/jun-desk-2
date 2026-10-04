@@ -195,6 +195,7 @@ Applies to the paid hosted cloud (D-04). B-03 also applies to self-hosters' own 
 | T-10 | LLM provider choice: Claude (BYO key) recommended, Workers AI zero-key fallback | v1 | proposed | D-10 | 04 |
 | T-11 | First-run setup wizard: create admin, connect LLM, crawl site, copy widget snippet | v1 | proposed | One-click deploy should end in a working bot in minutes | 04 |
 | T-13 | Slack app manifest + guided setup: self-hoster creates their own Slack app in a few clicks from a bundled manifest | v1 | proposed | Each self-hosted install needs its own Slack app; this keeps one-click feel. D-13 | 04 |
+| T-15 | Sign in with ChatGPT as a **dev-only** LLM provider + `jun` CLI (`login`, `ask`, `chat`, `models`); release builds use an API key | v1 | agreed | D-10. Built 2026-10-04 in `packages/llm`, `packages/cli`. Must never ship enabled for visitor traffic | 06 |
 | T-12 | Upgrade path: update from upstream + automatic D1 migrations | v1 | proposed | Self-hosters must be able to stay current safely | 04 |
 | T-14 | Hosted cloud: multi-tenant Jun Desk run by us, signup, billing, one D1 per workspace | v2 | agreed | D-04, D-16 | 04 |
 | T-08 | SOC 2 | later | proposed | Needed for mid-market sales | |

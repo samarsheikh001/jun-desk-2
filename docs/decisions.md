@@ -15,6 +15,7 @@ Open questions block parts of the backlog (`Dep: D-xx` in `docs/features.md`). W
 - Workers AI works with zero keys (best one-click experience) but answer quality is lower.
 - Claude via BYO Anthropic key gives the best quality; prompted as a secret at deploy.
 - **Leaning:** support both; setup wizard recommends Claude Sonnet 5.5, falls back to Workers AI if no key. *(proposal)*
+- **2026-10-04 — user wants ChatGPT/OpenAI.** "Login with ChatGPT" isn't viable for the live agent (see `research/06-chatgpt-login.md`). Proposal: OpenAI via API key as a provider, routed through Cloudflare AI Gateway. Open: is OpenAI the default, or one option among Claude / OpenAI / Workers AI? Also: use "Sign in with ChatGPT" for the local eval CLI (`jun eval`)?
 
 ### D-11 — Data layer details
 - D1 for durable records, Durable Object SQLite for hot per-conversation state, Vectorize for KB, R2 for files (see `research/04-cloudflare-self-host.md`).
@@ -43,3 +44,4 @@ Open questions block parts of the backlog (`Dep: D-xx` in `docs/features.md`). W
 - **2026-10-03 — D-15 — Split license:** server and dashboard AGPL-3.0; widget, SDKs and the agent-config format MIT, so embedding Jun Desk on customer sites doesn't trigger legal review.
 - **2026-10-03 — D-16 — OSS first (v1), hosted cloud in v2.** Multi-workspace data model from day one so the cloud isn't a rewrite.
 - **2026-10-04 — D-13 — Slack is secondary; Slack Connect moves to v1.1.** Core is widget, AI agent, debug context and inbox. v1 keeps only team replies from Slack (C-09). Slack Connect channels (C-03) and AI drafts in them (C-12) move to v1.1, alongside "Add to Slack" (C-10).
+- **2026-10-04 — D-10 — Sign in with ChatGPT for development only.** We build and test the AI against the developer's own ChatGPT plan via OpenAI's official open-source flow (loopback sign-in, `packages/llm` + `jun` CLI). Before release we switch to an API key (`OpenAIProvider`, already implemented, AI Gateway-compatible). Release default provider still open.

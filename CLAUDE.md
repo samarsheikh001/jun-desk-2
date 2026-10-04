@@ -2,21 +2,39 @@
 
 An open-source, AI-first customer support desk for B2B SaaS, deployable to your own Cloudflare account in one click: an embeddable website widget, live visitor tracking, an AI agent that answers and takes actions, and a real-time inbox for human agents. Think Intercom/Fin, Chatbase, Crisp — rebuilt for 2026.
 
-## Current phase: research & planning
+## Current phase: planning, with an early LLM spike
 
-There is **no application code yet**. We are researching the market and finalising features per version before choosing a stack and scaffolding. Don't scaffold code, install dependencies, or pick frameworks unless asked — propose changes to the docs instead.
+Planning is mostly done (see docs below); M0 in `docs/build-plan.md` hasn't started. The only code so far is the LLM provider layer and a dev CLI. Don't scaffold the Worker/dashboard or pick frameworks unless asked.
+
+## Code
+
+npm workspaces, TypeScript run directly by Node ≥22.18 (type stripping, **no build step**):
+- Only erasable TS syntax (no enums, namespaces or constructor parameter properties); relative imports use `.ts` extensions.
+- `packages/llm` uses web-standard APIs only (fetch, crypto.subtle, web streams) so it runs on Node and Cloudflare Workers. Node-only code goes in `packages/cli`.
+- Zero runtime dependencies so far; keep it that way unless there's a clear reason.
+
+| Package | What |
+|---|---|
+| `packages/llm` | Provider interface; `ChatGPTProvider` (Sign in with ChatGPT, **dev only**); `OpenAIProvider` (API key; for release). Responses API streaming, error mapping. |
+| `packages/cli` | `jun` CLI: `login chatgpt`, `logout`, `whoami`, `models`, `ask`, `chat`. Credentials in `~/.jun/chatgpt.json` (`$JUN_HOME` overrides). |
+
+Commands: `npm test` · `npm run typecheck` · `npm run jun -- <command>`
+
+**Sign in with ChatGPT is development-only (D-10).** OpenAI allows plan usage for open-source, locally run apps spending the signed-in user's own plan. Released/deployed builds must use `OpenAIProvider` with an API key (or another API-key provider). Never wire `ChatGPTProvider` into anything that serves website visitors in a release. Use only OpenAI's documented flow, never the Codex `backend-api` workaround.
 
 ## Docs map
 
 | File | Purpose |
 |---|---|
 | `docs/features.md` | **Source of truth** for the feature backlog: every feature with an ID, proposed version, status, and rationale. Includes the "Not building" list. |
+| `docs/build-plan.md` | v1 milestones (M0–M8) in build order, launch-critical 🚀 markers, decisions needed before each milestone. |
 | `docs/decisions.md` | Open questions that block planning, plus a dated log of decisions made. |
 | `docs/research/01-market-landscape.md` | Competitors (Fin/Intercom, Chatbase, Decagon, Sierra, Plain, Pylon, Crisp, Chatwoot, Zendesk), table stakes, differentiators, complaints, pricing trends. |
 | `docs/research/02-visitor-experience.md` | Visitor tracking, identity, proactive engagement, struggle detection, co-browse, widget tech & privacy. |
 | `docs/research/03-architecture.md` | Realtime transport, AI agent layer, data model, OSS references, candidate stacks, Claude model options. |
 | `docs/research/04-cloudflare-self-host.md` | Deploy-to-Cloudflare button capabilities and limits, D1 limits, implications for the open-source build. |
 | `docs/research/05-differentiation.md` | Which differentiators are already claimed (Gleap, Sierra, Cloudflare-native OSS), OSS competitors, **positioning thesis and three pillars**. |
+| `docs/research/06-chatgpt-login.md` | Whether "Sign in with ChatGPT" can power the AI (no for the live agent; maybe for the local eval CLI), OpenAI API-key route via AI Gateway. |
 
 ## How we work on the docs
 
@@ -41,4 +59,4 @@ There is **no application code yet**. We are researching the market and finalisi
 
 ## Still open
 
-Slack rate limits for C-10 (D-13), default LLM provider (D-10, leaning Claude BYO key with Workers AI fallback), data layer details (D-11), tickets model (D-05).
+Slack rate limits for C-10 (D-13), default release LLM provider (D-10: OpenAI API key vs Claude vs Workers AI), data layer details (D-11), tickets model (D-05).
