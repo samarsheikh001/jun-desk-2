@@ -103,11 +103,13 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
                 >
                   <span className="row">
                     <strong>{contactLabel(c.contact)}</strong>
+                    {c.handling === "ai" && <em className="tag ai-tag" title="The AI assistant is answering">AI</em>}
                     <span className="spacer" />
                     <span className="muted small">{formatTime(c.lastMessageAt)}</span>
                   </span>
                   <span className="preview small">
                     {c.lastMessageAuthor === "agent" && <span className="muted">You: </span>}
+                    {c.lastMessageAuthor === "ai" && <span className="muted">AI: </span>}
                     {c.lastMessagePreview}
                   </span>
                 </a>
@@ -158,7 +160,7 @@ function Thread({ conversationId, workspaceId, me, members }: { conversationId: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latest, thread.state]);
 
-  const update = async (patch: { status?: ConversationStatus; assigneeId?: string | null }) => {
+  const update = async (patch: { status?: ConversationStatus; assigneeId?: string | null; handling?: "ai" | "human" }) => {
     try {
       setConversation((await api<{ conversation: ConversationSummary }>(`/conversations/${conversationId}`, { method: "PATCH", body: patch })).conversation);
     } catch (e) {
@@ -194,13 +196,32 @@ function Thread({ conversationId, workspaceId, me, members }: { conversationId: 
         </select>
         {conversation.status !== "resolved" && <button className="small" onClick={() => void update({ status: "resolved" })}>Resolve</button>}
       </header>
+      {conversation.handling === "ai" ? (
+        <div className="ai-banner small">
+          <span>🤖 The AI assistant is answering this conversation. Replying yourself takes it over.</span>
+          <span className="spacer" />
+          <button className="ghost small" onClick={() => void update({ handling: "human" })}>Take over</button>
+        </div>
+      ) : (
+        thread.messages.some((m) => m.authorType === "ai") && (
+          <div className="ai-banner small muted">
+            <span>A teammate is handling this conversation.</span>
+            <span className="spacer" />
+            <button className="ghost small" onClick={() => void update({ handling: "ai" })}>Hand back to AI</button>
+          </div>
+        )
+      )}
       <MessageList
         messages={thread.messages}
         pending={thread.pending}
         mine={(m) => m.authorType !== "visitor"}
-        authorLabel={(m) => (m.authorType === "visitor" ? contactLabel(conversation.contact) : m.authorId === me.id ? "You" : m.authorName ?? memberName(m.authorId))}
+        authorLabel={(m) =>
+          m.authorType === "visitor" ? contactLabel(conversation.contact) : m.authorType === "ai" ? "AI assistant" : m.authorId === me.id ? "You" : m.authorName ?? memberName(m.authorId)
+        }
         otherReadSeq={Math.max(thread.otherReadSeq, conversation.visitorReadSeq)}
         typing={thread.typing}
+        aiStream={thread.aiStream}
+        aiThinking={thread.aiThinking}
         onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
         onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
       />

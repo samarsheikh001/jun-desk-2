@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { handleCrawlBatch, resyncAll, type CrawlJob } from "./ai/knowledge.ts";
+import { ai, handleChatGPTCallback } from "./routes/ai.ts";
 import { auth } from "./routes/auth.ts";
 import { conversations } from "./routes/conversations.ts";
 import { files } from "./routes/files.ts";
@@ -8,6 +10,7 @@ import { HttpError, type AppEnv } from "./types.ts";
 
 export { Conversation } from "./conversation.ts";
 export { WorkspaceHub } from "./hub.ts";
+export { KnowledgeIndex } from "./ai/knowledge-index.ts";
 
 const app = new Hono<AppEnv>().basePath("/api");
 
@@ -34,6 +37,7 @@ app.route("/", workspaces);
 app.route("/", conversations);
 app.route("/", widget);
 app.route("/", files);
+app.route("/", ai);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "No such API route." } }, 404));
 
@@ -45,4 +49,18 @@ app.onError((error, c) => {
   return c.json({ error: { code: "internal", message: "Something went wrong." } }, 500);
 });
 
-export default app;
+export default {
+  fetch(request, env, ctx) {
+    // Dev-only ChatGPT sign-in returns to a 127.0.0.1 loopback path outside /api.
+    if (new URL(request.url).pathname === "/auth/callback") return handleChatGPTCallback(request, env);
+    return app.fetch(request, env, ctx);
+  },
+  // Website crawling (K-01).
+  async queue(batch, env) {
+    await handleCrawlBatch(batch as MessageBatch<CrawlJob>, env);
+  },
+  // Daily knowledge re-sync.
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(resyncAll(env));
+  },
+} satisfies ExportedHandler<Env>;

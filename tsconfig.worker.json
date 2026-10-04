@@ -13,5 +13,6 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
   },
-  "include": ["worker/**/*.ts", "shared/**/*.ts", "worker-configuration.d.ts"]
+  "include": ["worker/**/*.ts", "shared/**/*.ts", "worker-configuration.d.ts"],
+  "exclude": ["worker/**/*.test.ts"]
 }

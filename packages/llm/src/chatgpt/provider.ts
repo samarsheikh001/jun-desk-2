@@ -1,6 +1,9 @@
 import { buildResponsesBody, OPENAI_API_BASE, streamResponses } from "../responses.ts";
 import { LlmError, type GenerateRequest, type LlmProvider, type StreamEvent } from "../types.ts";
-import type { ChatGPTAuth } from "./auth.ts";
+/** Anything that hands out access tokens: ChatGPTAuth, or a proxy to wherever refresh happens. */
+export interface ChatGPTTokenSource {
+  getAccessToken(options?: { forceRefresh?: boolean }): Promise<string>;
+}
 
 export const DEFAULT_CHATGPT_MODEL = "gpt-6.1-sol";
 
@@ -14,11 +17,11 @@ export const DEFAULT_CHATGPT_MODEL = "gpt-6.1-sol";
  */
 export class ChatGPTProvider implements LlmProvider {
   readonly id = "chatgpt";
-  readonly #auth: ChatGPTAuth;
+  readonly #auth: ChatGPTTokenSource;
   readonly #model: string;
   readonly #fetch: typeof fetch | undefined;
 
-  constructor(auth: ChatGPTAuth, options: { model?: string; fetch?: typeof fetch } = {}) {
+  constructor(auth: ChatGPTTokenSource, options: { model?: string; fetch?: typeof fetch } = {}) {
     this.#auth = auth;
     this.#model = options.model ?? DEFAULT_CHATGPT_MODEL;
     this.#fetch = options.fetch;

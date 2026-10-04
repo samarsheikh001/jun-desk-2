@@ -2,7 +2,7 @@
 
 An open-source, AI-first customer support desk for B2B SaaS, deployable to your own Cloudflare account in one click: an embeddable website widget, live visitor tracking, an AI agent that answers and takes actions, and a real-time inbox for human agents. Think Intercom/Fin, Chatbase, Crisp — rebuilt for 2026.
 
-## Current phase: building v1 (M0 deployed, M1 built, M2 next)
+## Current phase: building v1 (M0 deployed; M1 + M2 built locally; M3 next)
 
 Plan: `docs/build-plan.md`. Build milestone by milestone; keep the Deploy button working at every step.
 
@@ -16,12 +16,13 @@ npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stri
 | Path | What |
 |---|---|
 | `worker/` | Hono API under `/api`. Durable Objects: `Conversation` (one per conversation: sockets, seq, write-through to D1) and `WorkspaceHub` (one per workspace: inbox events, presence). Routes: `auth`, `workspaces`, `conversations` (agents), `widget` (public, visitor token), `files` (R2). |
+| `worker/ai/` | M2 AI: `knowledge.ts` (sources, Queue crawl jobs, indexing), `extract.ts` (HTMLRewriter), `chunk.ts`, `embeddings.ts` (bge-m3), `knowledge-index.ts` (KnowledgeIndex DO: int8 vectors, in-memory search), `search.ts` (hybrid + rerank), `providers.ts` (Workers AI / OpenAI / dev ChatGPT), `agent.ts` (prompt, citations, handoff rules). AI turns run from the Conversation DO's alarm |
 | `shared/protocol.ts` | Types and constants shared by Worker, dashboard and widget (socket events, message/conversation shapes) |
 | `web/widget/`, `widget.html` | The chat UI inside the widget iframe (served at `/widget?key=`) |
 | `public/widget.js` | Embeddable loader (MIT, plain JS, keep under 5 KB); `public/demo.html?key=` is a test page |
 | `web/` | React dashboard (Vite), served as the Worker's static assets |
 | `migrations/` | D1 migrations (`NNNN_name.sql`); applied by `npm run dev` (local) and `npm run deploy` (remote) |
-| `scripts/e2e-*.ts` | E2E against `npm run dev` on a fresh local DB: `e2e-auth` (passkeys, roles), `e2e-chat` (widget ↔ inbox over WebSockets). Helpers in `e2e-lib.ts` |
+| `scripts/e2e-*.ts` | E2E on a separate dev server + DB (`JUN_STATE_DIR=.wrangler/e2e-state`, port 5174, see README) so your own local desk isn't wiped: `e2e-auth`, `e2e-chat`, `e2e-ai` (real Workers AI). Helpers in `e2e-lib.ts` |
 
 | Package | What |
 |---|---|
@@ -29,6 +30,8 @@ npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stri
 | `packages/cli` | `jun` CLI: `login chatgpt`, `logout`, `whoami`, `models`, `ask`, `chat`. Credentials in `~/.jun/chatgpt.json` (`$JUN_HOME` overrides). |
 
 Commands: `npm run dev` · `npm test` · `npm run test:e2e` · `npm run typecheck` · `npm run build` · `npm run cf-typegen` (after changing `wrangler.jsonc`) · `npm run jun -- <command>`
+
+AI conventions: the AI only answers when `conversations.handling = 'ai'`; any agent reply, the visitor's "Talk to a person", a HANDOFF line from the model, the turn limit, the monthly cap or an AI error flips it to `human` with a public notice + internal brief. AI replies are idempotent per visitor message (`clientMsgId = ai:<seq>`). Internal messages (`internal = 1`) must never reach visitors (socket broadcast uses the `agent` tag; widget queries exclude them). Local dev: Workers AI always calls Cloudflare (needs `CLOUDFLARE_ACCOUNT_ID` in a gitignored `.env` when the login has several accounts); the dev server binds 127.0.0.1 for the ChatGPT loopback callback; workerd can't fetch its own dev server, so crawl tests use a public URL.
 
 Realtime conventions: the Worker authenticates every socket upgrade (agent cookie, or visitor token as the 2nd WebSocket subprotocol) and forwards to the DO with `x-jun-*` headers; DOs trust those headers. Messages get `seq` from the Conversation DO and are idempotent per `clientMsgId`. D1 stays the source of truth.
 

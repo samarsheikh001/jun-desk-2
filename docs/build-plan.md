@@ -53,6 +53,8 @@
 
 ## M2 — AI agent answers
 
+> **Status 2026-10-04: built and tested locally.** e2e-ai (10 steps, real Workers AI models) and a headless-Chrome run pass: grounded answer with citation, streaming, handoff on "talk to a person" / staff-only asks / cap, takeover, permissions. Vector search runs in a per-workspace `KnowledgeIndex` DO instead of Vectorize (D-18). Not deployed yet (adds a Queue and a DO class).
+
 *Demo: crawl a docs site, ask a question in the widget, and get a streamed answer with citations.*
 
 | ID | Feature | Size | |

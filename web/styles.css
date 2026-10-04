@@ -214,3 +214,30 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .inbox { grid-template-columns: 1fr; }
   .conv-list { display: none; }
 }
+
+/* ---------- AI ---------- */
+.ai-tag { margin-left: 6px; }
+.msg.ai .bubble { background: var(--tag); color: var(--text); border-color: transparent; }
+.msg.ai.streaming .bubble { opacity: 0.9; }
+.cite { font-size: 0.7em; vertical-align: super; margin: 0 1px; padding: 0 4px; border-radius: 6px; background: var(--surface); text-decoration: none; }
+.sources { margin: 4px 4px 0; padding-left: 18px; color: var(--muted); }
+.sources a { color: var(--muted); }
+.system-msg { align-self: center; max-width: 85%; text-align: center; font-size: 0.85rem; color: var(--muted); padding: 6px 10px; display: grid; gap: 4px; justify-items: center; }
+.system-msg.internal { text-align: left; justify-items: start; background: #fff8e1; color: #5c4a00; border: 1px solid #f3e2a9; border-radius: 10px; white-space: pre-wrap; }
+@media (prefers-color-scheme: dark) { .system-msg.internal { background: #2b2510; color: #e9d89a; border-color: #4a3f17; } }
+.ai-banner { display: flex; align-items: center; gap: 10px; padding: 8px 16px; background: var(--tag); border-bottom: 1px solid var(--border); }
+.ai-form { display: grid; gap: 12px; margin-top: 12px; }
+.ai-form textarea, .kb-forms textarea { width: 100%; min-height: 7lh; }
+.check { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+.chatgpt-box { display: grid; gap: 6px; padding: 10px 12px; background: var(--bg); border-radius: 8px; }
+
+/* ---------- knowledge ---------- */
+.kb-forms { display: grid; gap: 10px; margin: 12px 0; }
+.kb-forms form { display: grid; gap: 8px; }
+.kb-forms form.row { display: flex; }
+.kb-forms input, .panel form.row input { flex: 1; }
+.kb-forms details { padding: 4px 0; }
+.kb-forms summary { cursor: pointer; color: var(--accent); }
+.hits { padding-left: 18px; display: grid; gap: 10px; margin-top: 12px; }
+.hits p { margin: 4px 0 0; }
+.w-human { padding: 6px 12px; text-align: center; background: var(--surface); border-top: 1px solid var(--border); }

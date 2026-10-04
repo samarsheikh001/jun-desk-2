@@ -16,5 +16,5 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
   },
-  "include": ["packages/*/src/**/*.ts", "scripts/**/*.ts"]
+  "include": ["packages/*/src/**/*.ts", "scripts/**/*.ts", "worker/**/*.test.ts"]
 }

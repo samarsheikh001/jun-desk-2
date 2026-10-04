@@ -4,9 +4,6 @@
 //
 // Web-standard APIs only (fetch, crypto.subtle) so this runs on Node and Workers.
 
-// Type-only import (erased at runtime): the JWK type isn't in the ES lib without DOM types.
-import type { webcrypto } from "node:crypto";
-
 export const AUTH_ISSUER = "https://auth.openai.com";
 export const AUTHORIZE_URL = `${AUTH_ISSUER}/api/accounts/authorize`;
 export const TOKEN_URL = `${AUTH_ISSUER}/api/accounts/oauth/token`;
@@ -229,13 +226,16 @@ export async function verifyIdToken(idToken: string, options: VerifyIdTokenOptio
   const jwk = jwks.keys.find((k) => k.kid === header.kid) ?? (jwks.keys.length === 1 ? jwks.keys[0] : undefined);
   if (!jwk) throw new Error(`No JWKS key matches ID token kid ${header.kid}`);
 
-  const key = await crypto.subtle.importKey(
-    "jwk",
-    { kty: jwk.kty, n: jwk.n, e: jwk.e } as webcrypto.JsonWebKey,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["verify"],
-  );
+  // importKey's JWK overload isn't typed without DOM types, and this file must compile
+  // for both Node and Workers, so call it through a narrow signature.
+  const importJwk = crypto.subtle.importKey.bind(crypto.subtle) as unknown as (
+    format: "jwk",
+    key: { kty?: string; n?: string; e?: string },
+    algorithm: { name: string; hash: string },
+    extractable: boolean,
+    usages: string[],
+  ) => Promise<Parameters<typeof crypto.subtle.verify>[1]>;
+  const key = await importJwk("jwk", { kty: jwk.kty, n: jwk.n, e: jwk.e }, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
   const valid = await crypto.subtle.verify(
     "RSASSA-PKCS1-v1_5",
     key,

@@ -84,7 +84,7 @@ conversations.post("/workspaces/:id/files", async (c) => {
 
 conversations.get("/conversations/:cid", async (c) => {
   const ref = await requireConversation(c, c.req.param("cid"));
-  const [conversation, messages] = await Promise.all([loadSummary(c.env.DB, ref.conversationId), loadMessages(c.env.DB, ref.conversationId)]);
+  const [conversation, messages] = await Promise.all([loadSummary(c.env.DB, ref.conversationId), loadMessages(c.env.DB, ref.conversationId, { includeInternal: true })]);
   return c.json({ conversation, messages });
 });
 
@@ -106,6 +106,12 @@ conversations.patch("/conversations/:cid", async (c) => {
     }
     sets.push("assignee_id = ?");
     params.push(body.assigneeId);
+  }
+  if (body.handling !== undefined) {
+    // "Hand back to AI" (or take over without replying).
+    if (body.handling !== "ai" && body.handling !== "human") throw new HttpError(400, "invalid_field", "handling must be ai or human.");
+    sets.push("handling = ?");
+    params.push(body.handling);
   }
   if (sets.length === 0) throw new HttpError(400, "invalid_body", "Nothing to change.");
 

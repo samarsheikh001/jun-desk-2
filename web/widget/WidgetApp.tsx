@@ -148,6 +148,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           key={view.id ?? "new"}
           api={api}
           conversationId={view.id}
+          handling={conversations.find((c) => c.id === view.id)?.handling ?? null}
           open={open}
           onStarted={(c) => {
             upsert(c);
@@ -163,12 +164,14 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
 function WidgetThread({
   api,
   conversationId,
+  handling,
   open,
   onStarted,
   onConversation,
 }: {
   api: WidgetApi;
   conversationId: string | null;
+  handling: "ai" | "human" | null;
   open: boolean;
   onStarted: (c: ConversationSummary) => void;
   onConversation: (c: ConversationSummary) => void;
@@ -233,14 +236,22 @@ function WidgetThread({
           messages={thread.messages}
           pending={thread.pending}
           mine={(m) => m.authorType === "visitor"}
-          authorLabel={(m) => (m.authorType === "visitor" ? "You" : m.authorName ?? "Support")}
+          authorLabel={(m) => (m.authorType === "visitor" ? "You" : m.authorType === "ai" ? "AI assistant" : m.authorName ?? "Support")}
           otherReadSeq={thread.otherReadSeq}
           typing={thread.typing}
+          aiStream={thread.aiStream}
+          aiThinking={thread.aiThinking}
           onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
           onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
         />
         {error && <p className="error small pad">{error}</p>}
       </div>
+      {/* W-07: a person is always one click away while the AI is answering. */}
+      {conversationId && handling === "ai" && (
+        <div className="w-human">
+          <button className="link small" onClick={() => thread.requestHuman()}>Talk to a person</button>
+        </div>
+      )}
       <Composer placeholder="Write a message…" upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} />
     </>
   );

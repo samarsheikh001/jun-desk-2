@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { HubEvent, PresenceEntry } from "../shared/protocol.ts";
 import { api, type Me } from "./api.ts";
 import { InboxPage } from "./inbox/InboxPage.tsx";
+import { KnowledgePage } from "./knowledge/KnowledgePage.tsx";
 import { LiveSocket } from "./lib/socket.ts";
 import { navigate, usePath } from "./lib/router.ts";
 import { SettingsPage } from "./SettingsPage.tsx";
@@ -44,7 +45,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   );
 
   if (!workspace || !me.user) return <div className="center muted">You're not a member of any workspace.</div>;
-  const section = path.startsWith("/settings") ? "settings" : "inbox";
+  const section = path.startsWith("/settings") ? "settings" : path.startsWith("/knowledge") ? "knowledge" : "inbox";
+  const canEdit = workspace.role !== "agent";
   const conversationId = path.match(/^\/inbox\/([\w-]+)/)?.[1] ?? null;
 
   return (
@@ -53,6 +55,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <div className="brand">Jun Desk</div>
         <nav>
           <a href="/inbox" className={section === "inbox" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/inbox"); }}>Inbox</a>
+          <a href="/knowledge" className={section === "knowledge" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/knowledge"); }}>Knowledge</a>
           <a href="/settings" className={section === "settings" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/settings"); }}>Settings</a>
         </nav>
         <span className="spacer" />
@@ -66,6 +69,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       </header>
       {section === "inbox" ? (
         <InboxPage workspaceId={workspace.workspaceId} me={me.user} hub={hub} conversationId={conversationId} />
+      ) : section === "knowledge" ? (
+        <KnowledgePage workspaceId={workspace.workspaceId} canEdit={canEdit} />
       ) : (
         <SettingsPage me={me} />
       )}

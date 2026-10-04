@@ -6,6 +6,7 @@ import { newId, randomToken, sha256 } from "../lib/crypto.ts";
 import { connectConversation, offeredProtocols, sendMessage } from "../lib/realtime.ts";
 import { readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
+import { loadAiSettings } from "../ai/providers.ts";
 import { storeUpload } from "./files.ts";
 
 // Public API used by the widget frame. Visitors are anonymous contacts identified by a
@@ -92,11 +93,13 @@ widget.post("/widget/:key/conversations", async (c) => {
 
   const now = Date.now();
   const ref: ConversationRef = { conversationId: newId("cv"), workspaceId: inbox.workspaceId };
+  // The AI answers first when it's enabled; otherwise the team does.
+  const handling = (await loadAiSettings(c.env, inbox.workspaceId)).enabled ? "ai" : "human";
   await c.env.DB.prepare(
-    `INSERT INTO conversations (id, workspace_id, inbox_id, contact_id, last_message_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO conversations (id, workspace_id, inbox_id, contact_id, handling, last_message_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(ref.conversationId, inbox.workspaceId, inbox.inboxId, contactId, now, now, now)
+    .bind(ref.conversationId, inbox.workspaceId, inbox.inboxId, contactId, handling, now, now, now)
     .run();
   const participant: Participant = { role: "visitor", contactId };
   let message;
@@ -114,7 +117,7 @@ widget.get("/widget/:key/conversations/:cid", async (c) => {
   const inbox = await widgetInbox(c);
   const { contactId } = await visitor(c, inbox);
   const ref = await visitorConversation(c, inbox, contactId);
-  const [conversation, messages] = await Promise.all([loadSummary(c.env.DB, ref.conversationId), loadMessages(c.env.DB, ref.conversationId)]);
+  const [conversation, messages] = await Promise.all([loadSummary(c.env.DB, ref.conversationId), loadMessages(c.env.DB, ref.conversationId, { includeInternal: false })]);
   return c.json({ conversation, messages });
 });
 

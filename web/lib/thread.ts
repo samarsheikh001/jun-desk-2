@@ -27,6 +27,9 @@ export function useThread(options: {
   const [typing, setTyping] = useState<{ name: string | null } | null>(null);
   const [otherReadSeq, setOtherReadSeq] = useState(0);
   const [state, setState] = useState<SocketState>("connecting");
+  /** The AI's reply as it streams in, and whether it's working on one. */
+  const [aiStream, setAiStream] = useState<{ streamId: string; text: string } | null>(null);
+  const [aiThinking, setAiThinking] = useState(false);
   const socket = useRef<LiveSocket<ConversationEvent> | null>(null);
   const lastSeq = useRef(0);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -63,6 +66,16 @@ export function useThread(options: {
         else if (event.type === "message") {
           merge([event.message]);
           if (event.message.authorType === options.other) setTyping(null);
+          if (event.message.authorType === "ai") setAiStream(null);
+        } else if (event.type === "ai_status") {
+          setAiThinking(event.state === "thinking");
+          if (event.state === "idle") setAiStream(null);
+        } else if (event.type === "ai_delta") {
+          setAiStream((current) =>
+            current?.streamId === event.streamId && !event.replace
+              ? { streamId: event.streamId, text: current.text + event.text }
+              : { streamId: event.streamId, text: event.text },
+          );
         } else if (event.type === "typing" && event.authorType === options.other) {
           clearTimeout(typingTimer.current);
           setTyping(event.typing ? { name: event.name } : null);
@@ -107,6 +120,10 @@ export function useThread(options: {
     typing,
     otherReadSeq,
     state,
+    aiStream,
+    aiThinking,
+    /** Visitor asks for a person (W-07). */
+    requestHuman: () => sendEvent({ type: "handoff" }),
     merge,
     send,
     setTyping: (isTyping: boolean) => sendEvent({ type: "typing", typing: isTyping }),

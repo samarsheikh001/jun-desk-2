@@ -7,9 +7,10 @@
 
   // The dashboard and widget frame (React, built by Vite) are static assets.
   // API routes go to the Worker first; everything else falls back to the SPA.
+  // /auth/callback is the dev-only "Sign in with ChatGPT" loopback return.
   "assets": {
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/auth/callback"]
   },
 
   // Resource IDs are omitted on purpose: the Deploy to Cloudflare button and
@@ -25,17 +26,32 @@
   // Attachments (W-06).
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "jun-desk-files" }],
 
-  // Conversation: one per conversation, live state + write-through to D1 (D-11).
-  // WorkspaceHub: one per workspace, fans inbox events and agent presence out to agents.
+  // Workers AI: embeddings, reranking, and the zero-key default chat model.
+  "ai": { "binding": "AI" },
+
+  // Website crawling (K-01): one message per page.
+  "queues": {
+    "producers": [{ "binding": "CRAWL_QUEUE", "queue": "jun-desk-crawl" }],
+    "consumers": [{ "queue": "jun-desk-crawl", "max_batch_size": 4, "max_batch_timeout": 2 }]
+  },
+
+  // Daily knowledge re-sync.
+  "triggers": { "crons": ["17 3 * * *"] },
+
+  // Conversation: one per conversation, live state + AI turns, write-through to D1 (D-11).
+  // WorkspaceHub: one per workspace, inbox fan-out, presence, dev ChatGPT token refresh.
+  // KnowledgeIndex: one per workspace, vector search over knowledge chunks.
   "durable_objects": {
     "bindings": [
       { "name": "CONVERSATION", "class_name": "Conversation" },
-      { "name": "WORKSPACE_HUB", "class_name": "WorkspaceHub" }
+      { "name": "WORKSPACE_HUB", "class_name": "WorkspaceHub" },
+      { "name": "KNOWLEDGE_INDEX", "class_name": "KnowledgeIndex" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Conversation"] },
-    { "tag": "v2", "new_sqlite_classes": ["WorkspaceHub"] }
+    { "tag": "v2", "new_sqlite_classes": ["WorkspaceHub"] },
+    { "tag": "v3", "new_sqlite_classes": ["KnowledgeIndex"] }
   ],
 
   "observability": { "enabled": true }

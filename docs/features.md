@@ -24,11 +24,11 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 |---|---|---|---|---|---|
 | W-01 | Tiny loader (<5 KB) with stand-in bubble; full app loads on interaction | v1 | shipped | Shipped M1: `public/widget.js` is 3.8 KB unminified; chat iframe loads on first open | 02 |
 | W-02 | Full widget isolated in iframe or shadow DOM | v1 | shipped | Shipped M1: launcher in shadow DOM, chat in an iframe from the desk origin | 02 |
-| W-03 | Streaming AI responses with resumable streams | v1 | agreed | Reconnect mustn't lose half an answer | 03 |
+| W-03 | Streaming AI responses with resumable streams | v1 | shipped | Shipped M2: AI replies stream token-by-token; late joiners get the partial text | 03 |
 | W-04 | Branding: colours, logo, position, greeting, launcher text | v1 | agreed | Table stakes | 01 |
 | W-05 | Conversation history for returning visitors | v1 | shipped | Shipped M1: returning visitors see past conversations; reopens the active one | |
 | W-06 | File and image attachments | v1 | shipped | Shipped M1: R2; images inline, other types forced to download (nosniff + CSP sandbox) | |
-| W-07 | "Talk to a human" always visible | v1 | agreed | #1 AI-support complaint is not reaching a human | 01 |
+| W-07 | "Talk to a human" always visible | v1 | shipped | Shipped M2: "Talk to a person" while the AI is answering | 01 |
 | W-08 | Offline mode: collect email and promise a reply outside business hours | v1 | agreed | Depends on business hours (I-10) | |
 | W-09 | AI-rendered UI: allow-listed cards, forms, buttons, choice chips | v2 | proposed | Declarative (A2UI/ChatKit-style), not arbitrary HTML | 02 |
 | W-10 | Help-centre search and articles inside the widget | v2 | proposed | Pairs with K-05 | |
@@ -71,14 +71,14 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
-| AI-01 | Answers grounded in the knowledge base, with citations | v1 | agreed | Table stakes; citations fight hallucinated URLs (Chatbase complaint) | 01, 03 |
-| AI-02 | "I don't know" + handoff when confidence is low (no guessing) | v1 | agreed | | 03 |
-| AI-03 | Escalation rules: asks for human, N turns unresolved, negative sentiment, deny-listed intents | v1 | agreed | | 03 |
-| AI-04 | Structured handoff brief: identity, intent, what was tried, suggested next step | v1 | agreed | Human doesn't re-read the transcript | 03 |
+| AI-01 | Answers grounded in the knowledge base, with citations | v1 | shipped | Shipped M2: hybrid search (vectors in KnowledgeIndex DO + D1 FTS5, RRF, bge-reranker), inline [n] citations with source links | 01, 03 |
+| AI-02 | "I don't know" + handoff when confidence is low (no guessing) | v1 | shipped | Shipped M2: prompt requires HANDOFF when sources lack the answer; verified it hands off rather than guessing | 03 |
+| AI-03 | Escalation rules: asks for human, N turns unresolved, negative sentiment, deny-listed intents | v1 | shipped | Shipped M2: asks for a person (regex + model), 8 AI turns, monthly cap, AI errors. Sentiment-based escalation not yet | 03 |
+| AI-04 | Structured handoff brief: identity, intent, what was tried, suggested next step | v1 | shipped | Shipped M2: internal note with reason + AI-written Issue/Tried/Next brief (facts from transcript only) | 03 |
 | AI-05 | Custom tools / actions via HTTP endpoints (lookups) | v1 | agreed | E.g. order status, account info | 01, 03 |
 | AI-06 | Approval gate for risky actions (refund, cancel): human or customer confirms | v2 | proposed | AI SDK `needsApproval` pattern | 03 |
-| AI-07 | Persona, tone and guidance instructions per workspace | v1 | agreed | | |
-| AI-08 | Prompt-injection and abuse guardrails | v1 | agreed | Escalate rather than comply | 03 |
+| AI-07 | Persona, tone and guidance instructions per workspace | v1 | shipped | Shipped M2: guidance text in Settings → AI assistant | |
+| AI-08 | Prompt-injection and abuse guardrails | v1 | shipped | Shipped M2 (prompt-level): ignores instructions in sources/messages; no dedicated classifier yet | 03 |
 | AI-09 | Procedures: plain-language multi-step workflows with per-step policy | v2 | proposed | Decagon AOPs / Fin Procedures | 01 |
 | AI-10 | Simulation and regression testing: replay past conversations before publishing changes | v2 | proposed | Fin/Decagon have it; SMB tools don't | 01, 03 |
 | AI-11 | Action audit log (tool, args, approval, result) | v1 | agreed | Needed for trust, debugging and evals | 03 |
@@ -86,7 +86,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | AI-13 | Agent builder from SOPs and transcripts ("write my procedure") | later | proposed | Sierra Ghostwriter | 01 |
 | AI-14 | MCP client: connect customer's MCP servers as tools | v2 | proposed | | 03 |
 | AI-15 | Desk exposed as an MCP server (query conversations, KB) | v3 | proposed | | 03 |
-| AI-16 | Model routing: Haiku for triage, Sonnet for answers, Opus for hard cases and eval grading | v1 | agreed | Cost control | 03 |
+| AI-16 | Model routing: Haiku for triage, Sonnet for answers, Opus for hard cases and eval grading | v1 | agreed | One model per workspace in M2 (configurable). Routing (small model for triage) not yet | 03 |
 | AI-17 | Gateway for customers' own AI agents as a channel | later | proposed | Decagon launched this 2026-10-01; watch adoption | 01 |
 | AI-18 | Agent config as code: procedures, persona, tools and guardrails as files in a git repo; dashboard edits the same config | v1 | agreed | **P3**. Sierra has it (enterprise-only); no OSS desk does | 05 |
 | AI-19 | Eval runner: replay past conversations against a config change, show answer diffs; CLI first, then GitHub Action with PR comment | v1 | agreed | **P3**. Builds on AI-10. v1 = CLI only; GitHub Action in v2 (D-12) | 05 |
@@ -95,9 +95,9 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
-| K-01 | Website crawl with scheduled re-sync | v1 | agreed | Fastest time-to-bot (Chatbase strength) | 01, 03 |
+| K-01 | Website crawl with scheduled re-sync | v1 | shipped | Shipped M2: sitemap first, else link-following (depth 3, page cap), robots.txt, Queue jobs, content-hash skip, daily cron re-sync, removed pages pruned | 01, 03 |
 | K-02 | File upload (PDF, DOCX, MD, TXT) | v1 | agreed | | 01 |
-| K-03 | Manual Q&A / snippets | v1 | agreed | Quick fixes for wrong answers | |
+| K-03 | Manual Q&A / snippets | v1 | shipped | Shipped M2: snippets (markdown headings become sections) | |
 | K-04 | Source management: see chunks, exclude pages, re-index | v1 | agreed | | |
 | K-05 | Hosted help centre (public articles, SEO) | v2 | proposed | Also the KB source | |
 | K-06 | Integrations: Notion, Google Drive, Confluence, Zendesk/Intercom article import | v2 | proposed | Import also helps migration | |
@@ -110,7 +110,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | I-01 | Real-time shared inbox: AI, pending, open, snoozed, resolved views | v1 | shipped | Shipped M1: Open/Pending/Resolved/All + mine/unassigned filters, live via WorkspaceHub DO | 03 |
 | I-02 | Assignment: manual, round-robin, capacity-based | v1 | agreed | Manual assignment shipped in M1; round-robin and capacity-based in v1.1 (D-12) | 03 |
 | I-03 | Typing indicators, read receipts, agent presence | v1 | shipped | Shipped M1: typing both ways, read receipts ("Seen"), agent presence avatars | 03 |
-| I-04 | Agent takeover / barge-in on an AI conversation | v1 | agreed | | 03 |
+| I-04 | Agent takeover / barge-in on an AI conversation | v1 | shipped | Shipped M2: agent reply takes over (internal note); "Take over" / "Hand back to AI" buttons | 03 |
 | I-05 | Internal notes and @mentions | v1 | agreed | | |
 | I-06 | Saved replies / macros | v1 | agreed | | |
 | I-07 | Tags and conversation attributes | v1 | agreed | | |
@@ -177,7 +177,7 @@ Applies to the paid hosted cloud (D-04). B-03 also applies to self-hosters' own 
 |---|---|---|---|---|---|
 | B-01 | Pricing model for the hosted cloud | v2 | proposed | Cloud in v2 (D-16) | 01 |
 | B-02 | Charge only verified resolutions (customer-confirmed or eval-verified), never "silence = resolved" | v2 | proposed | Direct answer to Fin billing complaints. Ships with the cloud in v2 (D-16) | 01 |
-| B-03 | LLM spend caps and usage alerts; AI degrades to "leave a message", never goes silent | v1 | agreed | Protects self-hosters' API bills; Chatbase goes silent when credits run out | 01 |
+| B-03 | LLM spend caps and usage alerts; AI degrades to "leave a message", never goes silent | v1 | shipped | Shipped M2: monthly reply cap; at the cap chats go to the team with a notice, never silence | 01 |
 | B-04 | Usage page: AI conversations, tokens and cost per conversation | v2 | proposed | | 01 |
 
 ## T — Platform, admin and security
@@ -192,7 +192,7 @@ Applies to the paid hosted cloud (D-04). B-03 also applies to self-hosters' own 
 | T-06 | Integrations: HubSpot/Salesforce CRM, Stripe (subscription lookups) | v3 | proposed | Refocused for B2B (D-01); Shopify dropped | |
 | T-07 | Open-source, self-hostable on the user's own Cloudflare account. Server/dashboard AGPL-3.0; widget, SDKs, config format MIT; CLA for contributors | v1 | building | AGPL LICENSE + CONTRIBUTING added (M0). CLA bot and text not set up yet (D-14) | 04 |
 | T-09 | "Deploy to Cloudflare" button: provisions D1, DOs, Vectorize, R2, Workers AI; prompts for secrets | v1 | building | Config + button in README (M0). Deployed via `npm run deploy` to jun-desk.samarsheikh001.workers.dev on 2026-10-04 (auto-provisioned D1). The button itself is untested: the repo is private | 04 |
-| T-10 | LLM provider choice: Claude (BYO key) recommended, Workers AI zero-key fallback | v1 | agreed | D-10 | 04 |
+| T-10 | LLM provider choice: Claude (BYO key) recommended, Workers AI zero-key fallback | v1 | shipped | Shipped M2: Workers AI (zero-key default), OpenAI API key (OPENAI_API_KEY secret, AI Gateway via OPENAI_BASE_URL), ChatGPT sign-in dev-only | 04 |
 | T-11 | First-run setup wizard: create admin, connect LLM, crawl site, copy widget snippet | v1 | agreed | One-click deploy should end in a working bot in minutes | 04 |
 | T-13 | Slack app manifest + guided setup: self-hoster creates their own Slack app in a few clicks from a bundled manifest | v1 | agreed | Each self-hosted install needs its own Slack app; this keeps one-click feel. D-13 | 04 |
 | T-15 | Sign in with ChatGPT as a **dev-only** LLM provider + `jun` CLI (`login`, `ask`, `chat`, `models`); release builds use an API key | v1 | agreed | D-10. Built 2026-10-04 in `packages/llm`, `packages/cli`. Must never ship enabled for visitor traffic | 06 |

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, registerPasskey, type Me } from "./api.ts";
+import { AiPanel } from "./AiPanel.tsx";
 import { useAction } from "./useAction.ts";
 
 interface Passkey { id: string; name: string | null; backedUp: number; createdAt: number; lastUsedAt: number | null }
@@ -25,6 +26,7 @@ export function SettingsPage({ me }: { me: Me }) {
   return (
     <main className="content">
       {workspace && <InstallPanel workspaceId={workspace.workspaceId} />}
+      {workspace && <AiPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
 
       {error && <p className="error">{error}</p>}
 
