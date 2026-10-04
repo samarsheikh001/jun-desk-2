@@ -246,6 +246,52 @@ await step("owner invites an agent; the agent joins with a passkey; the link is 
   assert.equal((await agentBrowser.call(`/workspaces/${workspaceId}/invites`, { body: { role: "agent" } })).status, 403);
 });
 
+await step("team roles: admins manage agents only; nobody manages the owner; removal signs out", async () => {
+  const workspaceId = (await browser.call("/me")).json.memberships[0].workspaceId as string;
+  const base = `/workspaces/${workspaceId}`;
+  const join = async (role: "admin" | "agent", name: string, inviter = browser) => {
+    const invite = await inviter.call(`${base}/invites`, { body: { role } });
+    assert.equal(invite.status, 200, JSON.stringify(invite.json));
+    const token = new URL(invite.json.url).pathname.split("/").pop()!;
+    const client = new Client();
+    const res = await client.register(`/invites/${token}`, new SoftAuthenticator(), { name, email: `${name.toLowerCase()}@acme.test` });
+    assert.equal(res.status, 200, JSON.stringify(res.json));
+    return { client, id: (await client.call("/me")).json.user.id as string };
+  };
+
+  const admin = await join("admin", "Linus");
+  const ownerId = (await browser.call("/me")).json.user.id as string;
+
+  // Admins can invite agents, not admins.
+  assert.equal((await admin.client.call(`${base}/invites`, { body: { role: "admin" } })).status, 403);
+  const agent = await join("agent", "Ken", admin.client);
+
+  // Admins can't touch the owner or other admins; they can manage agents.
+  assert.equal((await admin.client.call(`${base}/members/${ownerId}`, { method: "DELETE" })).status, 403);
+  assert.equal((await admin.client.call(`${base}/members/${ownerId}`, { method: "PATCH", body: { role: "agent" } })).status, 403);
+  assert.equal((await admin.client.call(`${base}/members/${agent.id}`, { method: "PATCH", body: { role: "admin" } })).status, 403);
+  // Agents can't manage anyone or see invites.
+  assert.equal((await agent.client.call(`${base}/members/${admin.id}`, { method: "DELETE" })).status, 403);
+  assert.equal((await agent.client.call(`${base}/invites`)).status, 403);
+
+  // Owner promotes and demotes.
+  assert.equal((await browser.call(`${base}/members/${agent.id}`, { method: "PATCH", body: { role: "admin" } })).status, 200);
+  assert.equal((await browser.call(`${base}/members/${agent.id}`, { method: "PATCH", body: { role: "agent" } })).status, 200);
+
+  // Pending invites can be listed and revoked.
+  const pending = await browser.call(`${base}/invites`, { body: { role: "agent" } });
+  const token = new URL(pending.json.url).pathname.split("/").pop()!;
+  const list = (await browser.call(`${base}/invites`)).json.invites as { id: string }[];
+  assert.equal(list.length, 1);
+  assert.equal((await browser.call(`${base}/invites/${encodeURIComponent(list[0]!.id)}`, { method: "DELETE" })).status, 200);
+  assert.equal((await new Client().call(`/invites/${token}`)).status, 410);
+
+  // Admin removes the agent: the agent is signed out and their account is gone.
+  assert.equal((await admin.client.call(`${base}/members/${agent.id}`, { method: "DELETE" })).status, 200);
+  assert.equal((await agent.client.call("/passkeys")).status, 401);
+  assert.equal((await agent.client.call("/me")).json.user, null);
+});
+
 await step("recovery with the setup token adds a new owner passkey", async () => {
   const lostDevice = new SoftAuthenticator();
   const fresh = new Client();

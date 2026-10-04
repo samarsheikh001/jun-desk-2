@@ -17,6 +17,27 @@ async function requireRole(c: AppContext, workspaceId: string, allowed: Role[]):
   return row.role;
 }
 
+const RANK: Record<Role, number> = { owner: 3, admin: 2, agent: 1 };
+
+/** You can only invite or manage people ranked below you; nobody manages an owner. */
+function canManage(actor: Role, target: Role): boolean {
+  return RANK[actor] > RANK[target];
+}
+
+function parseRole(body: Record<string, unknown>): "admin" | "agent" {
+  const role = text(body, "role", { max: 10 });
+  if (role !== "admin" && role !== "agent") throw new HttpError(400, "invalid_field", "Role must be admin or agent.");
+  return role;
+}
+
+async function findMember(c: AppContext, workspaceId: string, userId: string): Promise<Role> {
+  const row = await c.env.DB.prepare("SELECT role FROM members WHERE workspace_id = ? AND user_id = ?")
+    .bind(workspaceId, userId)
+    .first<{ role: Role }>();
+  if (!row) throw new HttpError(404, "not_found", "That person isn't a member of this workspace.");
+  return row.role;
+}
+
 async function findInvite(c: AppContext, token: string) {
   const invite = await c.env.DB.prepare(
     `SELECT i.token_hash AS tokenHash, i.workspace_id AS workspaceId, i.role, w.name AS workspaceName
@@ -43,12 +64,63 @@ workspaces.get("/workspaces/:id/members", requireUser, async (c) => {
   return c.json({ members: rows.results });
 });
 
-workspaces.post("/workspaces/:id/invites", requireUser, async (c) => {
+workspaces.patch("/workspaces/:id/members/:userId", requireUser, async (c) => {
+  const workspaceId = c.req.param("id");
+  const actor = await requireRole(c, workspaceId, ["owner", "admin"]);
+  const role = parseRole(await readJson(c.req));
+  const current = await findMember(c, workspaceId, c.req.param("userId"));
+  if (!canManage(actor, current) || !canManage(actor, role)) {
+    throw new HttpError(403, "forbidden", "You can only manage people with a lower role than yours.");
+  }
+  await c.env.DB.prepare("UPDATE members SET role = ? WHERE workspace_id = ? AND user_id = ?")
+    .bind(role, workspaceId, c.req.param("userId"))
+    .run();
+  return c.json({ ok: true });
+});
+
+workspaces.delete("/workspaces/:id/members/:userId", requireUser, async (c) => {
+  const workspaceId = c.req.param("id");
+  const userId = c.req.param("userId");
+  const actor = await requireRole(c, workspaceId, ["owner", "admin"]);
+  if (!canManage(actor, await findMember(c, workspaceId, userId))) {
+    throw new HttpError(403, "forbidden", "You can only remove people with a lower role than yours.");
+  }
+  // Remove the membership; if that was their last workspace, delete the account too
+  // (cascades to passkeys and sessions, so they're signed out everywhere).
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, userId),
+    c.env.DB.prepare("DELETE FROM users WHERE id = ? AND NOT EXISTS (SELECT 1 FROM members WHERE user_id = ?)").bind(userId, userId),
+  ]);
+  return c.json({ ok: true });
+});
+
+workspaces.get("/workspaces/:id/invites", requireUser, async (c) => {
   const workspaceId = c.req.param("id");
   await requireRole(c, workspaceId, ["owner", "admin"]);
-  const body = await readJson(c.req);
-  const role = text(body, "role", { max: 10 });
-  if (role !== "admin" && role !== "agent") throw new HttpError(400, "invalid_field", "Role must be admin or agent.");
+  const rows = await c.env.DB.prepare(
+    `SELECT i.token_hash AS id, i.role, i.created_at AS createdAt, i.expires_at AS expiresAt, u.name AS createdBy
+     FROM invites i JOIN users u ON u.id = i.created_by
+     WHERE i.workspace_id = ? AND i.used_at IS NULL AND i.expires_at > ? ORDER BY i.created_at DESC`,
+  )
+    .bind(workspaceId, Date.now())
+    .all();
+  return c.json({ invites: rows.results });
+});
+
+workspaces.delete("/workspaces/:id/invites/:inviteId", requireUser, async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireRole(c, workspaceId, ["owner", "admin"]);
+  await c.env.DB.prepare("DELETE FROM invites WHERE token_hash = ? AND workspace_id = ? AND used_at IS NULL")
+    .bind(c.req.param("inviteId"), workspaceId)
+    .run();
+  return c.json({ ok: true });
+});
+
+workspaces.post("/workspaces/:id/invites", requireUser, async (c) => {
+  const workspaceId = c.req.param("id");
+  const actor = await requireRole(c, workspaceId, ["owner", "admin"]);
+  const role = parseRole(await readJson(c.req));
+  if (!canManage(actor, role)) throw new HttpError(403, "forbidden", "Admins can only invite agents.");
 
   const token = randomToken();
   const now = Date.now();

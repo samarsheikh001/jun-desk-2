@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
 import { api, describeError, registerPasskey, signInWithPasskey, type Me } from "./api.ts";
+import { HomePage } from "./HomePage.tsx";
+import { useAction } from "./useAction.ts";
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -37,23 +39,6 @@ function Card({ title, subtitle, children }: { title: string; subtitle?: string;
       </div>
     </main>
   );
-}
-
-function useAction() {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const run = async (action: () => Promise<void>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-    } catch (e) {
-      setError(describeError(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { busy, error, run };
 }
 
 function Field({ label, hint, ...props }: { label: string; hint?: string } & InputHTMLAttributes<HTMLInputElement>) {
@@ -100,7 +85,8 @@ function LoginPage({ onDone }: { onDone: () => void }) {
       <button disabled={busy} onClick={() => run(async () => { await signInWithPasskey(); onDone(); })}>
         {busy ? "Waiting for passkey…" : "Sign in with passkey"}
       </button>
-      <p className="muted small">Lost access to your passkeys? <a href="/recover">Recover the owner account</a></p>
+      <p className="muted small">New here? Ask your workspace admin for an invite link. Each person creates their own passkey.</p>
+      <p className="muted small">Owner lost access to every passkey? <a href="/recover">Recover with the setup token</a></p>
     </Card>
   );
 }
@@ -154,91 +140,5 @@ function InvitePage({ token, onDone }: { token: string; onDone: () => void }) {
         <button disabled={busy}>{busy ? "Waiting for passkey…" : "Create passkey and join"}</button>
       </form>
     </Card>
-  );
-}
-
-interface Passkey { id: string; name: string | null; backedUp: number; createdAt: number; lastUsedAt: number | null }
-interface Member { id: string; name: string; email: string | null; role: string }
-
-function HomePage({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
-  const workspace = me.memberships?.[0];
-  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
-  const { busy, error, run } = useAction();
-
-  const load = useCallback(async () => {
-    setPasskeys((await api<{ passkeys: Passkey[] }>("/passkeys")).passkeys);
-    if (workspace) setMembers((await api<{ members: Member[] }>(`/workspaces/${workspace.workspaceId}/members`)).members);
-  }, [workspace]);
-  useEffect(() => {
-    load().catch(() => {});
-  }, [load]);
-
-  const canInvite = workspace?.role === "owner" || workspace?.role === "admin";
-  const date = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString() : "never");
-
-  return (
-    <div className="app">
-      <header>
-        <div className="brand">Jun Desk</div>
-        <span className="muted">{workspace?.workspaceName}</span>
-        <span className="spacer" />
-        <span>{me.user?.name}</span>
-        <button className="ghost" onClick={() => run(async () => { await api("/auth/logout", { body: {} }); onSignOut(); })}>Sign out</button>
-      </header>
-      <main className="content">
-        <section className="panel notice">
-          <h2>You're in 🎉</h2>
-          <p className="muted">The inbox, widget and AI agent arrive in the next milestones (M1–M2). For now you can manage passkeys and your team.</p>
-        </section>
-
-        {error && <p className="error">{error}</p>}
-
-        <section className="panel">
-          <div className="row">
-            <h2>Your passkeys</h2>
-            <span className="spacer" />
-            <button disabled={busy} onClick={() => run(async () => { await registerPasskey("/passkeys"); await load(); })}>Add passkey</button>
-          </div>
-          <p className="muted small">Add a passkey on a second device so you can't get locked out.</p>
-          <ul className="list">
-            {passkeys.map((p) => (
-              <li key={p.id}>
-                <span>{p.name ?? "Passkey"} {p.backedUp ? <em className="tag">synced</em> : null}</span>
-                <span className="muted small">added {date(p.createdAt)} · last used {date(p.lastUsedAt)}</span>
-                {passkeys.length > 1 && (
-                  <button className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`/passkeys/${encodeURIComponent(p.id)}`, { method: "DELETE" }); await load(); })}>Remove</button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="panel">
-          <div className="row">
-            <h2>Team</h2>
-            <span className="spacer" />
-            {canInvite && workspace && (
-              <button disabled={busy} onClick={() => run(async () => {
-                setInviteUrl((await api<{ url: string }>(`/workspaces/${workspace.workspaceId}/invites`, { body: { role: "agent" } })).url);
-              })}>Invite agent</button>
-            )}
-          </div>
-          {inviteUrl && (
-            <p className="invite">Send this link (valid 7 days, single use):<br /><code>{inviteUrl}</code></p>
-          )}
-          <ul className="list">
-            {members.map((m) => (
-              <li key={m.id}>
-                <span>{m.name}</span>
-                <span className="muted small">{m.email}</span>
-                <em className="tag">{m.role}</em>
-              </li>
-            ))}
-          </ul>
-        </section>
-      </main>
-    </div>
   );
 }

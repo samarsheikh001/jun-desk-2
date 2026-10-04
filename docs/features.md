@@ -184,7 +184,7 @@ Applies to the paid hosted cloud (D-04). B-03 also applies to self-hosters' own 
 
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
-| T-01 | Multi-tenant workspaces, members, roles (owner/admin/agent) | v1 | building | Schema and roles built in M0 (multi-workspace from day one); invite flow for agents | 03 |
+| T-01 | Multi-tenant workspaces, members, roles (owner/admin/agent) | v1 | shipped | Workspaces, roles owner > admin > agent (manage only lower roles), invite links with role, pending-invite list and revoke, role changes, member removal (signs them out). Shipped 2026-10-04 | 03 |
 | T-02 | Built-in auth with **passkeys** (WebAuthn): owner created on first visit with SETUP_TOKEN; invites; recovery via SETUP_TOKEN. Magic link / Google / SSO optional later | v1 | building | D-17. Built 2026-10-04 (M0); e2e-tested with a software authenticator and verified with a real device on the live deployment | 04 |
 | T-03 | Public REST API + webhooks | v2 | proposed | Webhooks for conversation events in v1 if cheap | |
 | T-04 | Audit log | v2 | proposed | | 03 |
