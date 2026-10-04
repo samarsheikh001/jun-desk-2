@@ -12,7 +12,7 @@
     "dev": "npm run db:migrate:local && vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "npm run db:migrate && wrangler deploy",
+    "deploy": "node scripts/deploy.ts",
     "db:migrate": "wrangler d1 migrations apply DB --remote",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "cf-typegen": "wrangler types worker-configuration.d.ts",

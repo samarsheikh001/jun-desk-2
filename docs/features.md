@@ -185,18 +185,18 @@ Applies to the paid hosted cloud (D-04). B-03 also applies to self-hosters' own 
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
 | T-01 | Multi-tenant workspaces, members, roles (owner/admin/agent) | v1 | building | Schema and roles built in M0 (multi-workspace from day one); invite flow for agents | 03 |
-| T-02 | Built-in auth with **passkeys** (WebAuthn): owner created on first visit with SETUP_TOKEN; invites; recovery via SETUP_TOKEN. Magic link / Google / SSO optional later | v1 | building | D-17. Built 2026-10-04 (M0); e2e-tested with a software authenticator, not yet with a real device | 04 |
+| T-02 | Built-in auth with **passkeys** (WebAuthn): owner created on first visit with SETUP_TOKEN; invites; recovery via SETUP_TOKEN. Magic link / Google / SSO optional later | v1 | building | D-17. Built 2026-10-04 (M0); e2e-tested with a software authenticator and verified with a real device on the live deployment | 04 |
 | T-03 | Public REST API + webhooks | v2 | proposed | Webhooks for conversation events in v1 if cheap | |
 | T-04 | Audit log | v2 | proposed | | 03 |
 | T-05 | GDPR: data export, deletion, retention settings, EU data residency | v2 | proposed | Export/delete basics in v1 | 02 |
 | T-06 | Integrations: HubSpot/Salesforce CRM, Stripe (subscription lookups) | v3 | proposed | Refocused for B2B (D-01); Shopify dropped | |
 | T-07 | Open-source, self-hostable on the user's own Cloudflare account. Server/dashboard AGPL-3.0; widget, SDKs, config format MIT; CLA for contributors | v1 | building | AGPL LICENSE + CONTRIBUTING added (M0). CLA bot and text not set up yet (D-14) | 04 |
-| T-09 | "Deploy to Cloudflare" button: provisions D1, DOs, Vectorize, R2, Workers AI; prompts for secrets | v1 | building | Config + button in README (M0). Not yet verified with a real deploy; repo must be public | 04 |
+| T-09 | "Deploy to Cloudflare" button: provisions D1, DOs, Vectorize, R2, Workers AI; prompts for secrets | v1 | building | Config + button in README (M0). Deployed via `npm run deploy` to jun-desk.samarsheikh001.workers.dev on 2026-10-04 (auto-provisioned D1). The button itself is untested: the repo is private | 04 |
 | T-10 | LLM provider choice: Claude (BYO key) recommended, Workers AI zero-key fallback | v1 | agreed | D-10 | 04 |
 | T-11 | First-run setup wizard: create admin, connect LLM, crawl site, copy widget snippet | v1 | agreed | One-click deploy should end in a working bot in minutes | 04 |
 | T-13 | Slack app manifest + guided setup: self-hoster creates their own Slack app in a few clicks from a bundled manifest | v1 | agreed | Each self-hosted install needs its own Slack app; this keeps one-click feel. D-13 | 04 |
 | T-15 | Sign in with ChatGPT as a **dev-only** LLM provider + `jun` CLI (`login`, `ask`, `chat`, `models`); release builds use an API key | v1 | agreed | D-10. Built 2026-10-04 in `packages/llm`, `packages/cli`. Must never ship enabled for visitor traffic | 06 |
-| T-12 | Upgrade path: update from upstream + automatic D1 migrations | v1 | building | `npm run deploy` applies D1 migrations by binding name before deploying (M0). Upgrade path untested | 04 |
+| T-12 | Upgrade path: update from upstream + automatic D1 migrations | v1 | building | `npm run deploy` (scripts/deploy.ts): migrate→deploy on upgrades, deploy→migrate on first install. Upgrade order verified live 2026-10-04; first-install order not yet | 04 |
 | T-14 | Hosted cloud: multi-tenant Jun Desk run by us, signup, billing, one D1 per workspace | v2 | agreed | D-04, D-16 | 04 |
 | T-08 | SOC 2 | later | proposed | Needed for mid-market sales | |
 

@@ -29,7 +29,7 @@ npm run dev                      # dashboard + Worker on http://localhost:5173
 | Command | What |
 |---|---|
 | `npm run dev` | Applies local D1 migrations, then runs Vite with the Worker in the Workers runtime |
-| `npm run build` / `npm run deploy` | Build; apply remote migrations and deploy |
+| `npm run build` then `npm run deploy` | Build; then deploy to your Cloudflare account with remote D1 migrations (handles first install and upgrades). Set the secret once with `npx wrangler secret put SETUP_TOKEN` |
 | `npm test` | Unit tests (`packages/`) |
 | `npm run test:e2e` | Passkey auth end to end against a running dev server (fresh local DB) |
 | `npm run typecheck` | Packages, Worker and dashboard |
