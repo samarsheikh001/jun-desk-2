@@ -1,0 +1,45 @@
+# Decisions
+
+Open questions block parts of the backlog (`Dep: D-xx` in `docs/features.md`). When one is decided, move it to the log with the date, then update the affected features.
+
+## Open questions
+
+### D-05 — Tickets: separate entity or conversation type?
+- LibreDesk converts conversations into tickets; Chatwoot keeps one conversation model. Affects the data model early.
+- **Leaning:** single `conversation` with a type flag. *(proposal)*
+
+### D-06 — Product name and positioning line
+- Working name "Jun Desk". Positioning draft: *"Open-source AI support desk for B2B SaaS. Deploy to your own Cloudflare account in one click."*
+
+### D-10 — Default LLM provider
+- Workers AI works with zero keys (best one-click experience) but answer quality is lower.
+- Claude via BYO Anthropic key gives the best quality; prompted as a secret at deploy.
+- **Leaning:** support both; setup wizard recommends Claude Sonnet 5.5, falls back to Workers AI if no key. *(proposal)*
+
+### D-11 — Data layer details
+- D1 for durable records, Durable Object SQLite for hot per-conversation state, Vectorize for KB, R2 for files (see `research/04-cloudflare-self-host.md`).
+- Open: one D1 for everything vs. D1 + per-conversation DO storage as the source of truth for messages? Optional Postgres/Hyperdrive "scale mode" later?
+
+### D-13 — Slack implementation details
+- Each self-hosted install needs its **own Slack app** (OAuth credentials can't be shared across installs). Plan: bundled app manifest + guided setup (T-13).
+- **Verified 2026-10-03:** Slack Connect requires a **paid Slack plan on both sides**: "each organisation must be using a paid Slack subscription" ([Slack help](https://slack.com/help/articles/115004151203-A-guide-to-Slack-Connect)). Free-plan orgs can only be invited to *try* Slack Connect temporarily. Fine for most B2B SaaS teams and customers, but customers who aren't on paid Slack need the widget/email instead.
+- To verify: Slack's 2025 rate limits on `conversations.history` for non-Marketplace *commercially distributed* apps. Internal/custom apps (which is what self-hosters create) are believed to be exempt *(unverified)*.
+- Decided connection modes: see log entry D-13 (2026-10-03).
+
+## Decision log
+
+- **2026-10-03 — D-01 — B2B SaaS.** Struggle detection, debug context and Slack Connect are strongest for product-led B2B; competitors are Plain and Pylon. Affected: S-08 → v2, C-03 confirmed v2, C-04 WhatsApp → later, T-06 refocused on CRM + issue trackers, new V-11 (companies/accounts).
+- **2026-10-03 — D-07 — Keep v1 scope as proposed** (no trim for now). Can revisit when sequencing the build.
+- **2026-10-03 — D-02 — Open source, one-click deploy to Cloudflare.** Self-hosting is the primary distribution model. Affected: T-07 → v1 and reworded; new T-09…T-12 (deploy button, LLM provider choice, setup wizard, upgrades). License and business model now open as D-08 and D-04.
+- **2026-10-03 — D-03 — Cloudflare stack.** Workers (dashboard + API + widget assets), Durable Objects (realtime, presence, per-conversation agent via Agents SDK), D1, Vectorize, R2, Workers AI. **No external Postgres** in the default install — it would break one-click deploy. Details in `research/04-cloudflare-self-host.md`; remaining questions in D-11.
+- **2026-10-03 — D-12 — Three pillars, P1 leads; v1 demos all three.** P1 support that sees the bug (lead), P2 your desk on your Cloudflare, P3 support agent as code. Pulled into v1 (agreed): S-01, S-03, S-05 (basic), S-07, AI-18, AI-19 (CLI only). Pushed to v1.1: round-robin/capacity assignment (I-02), command palette (I-13), push notifications (I-14). Revises D-07.
+- **2026-10-03 — D-13 — Slack in the MVP: both flows.** Team replies from Slack (C-09, new) and customer Slack Connect channels (C-03, moved v2 → v1), sharing one Slack app and thread-sync layer. Added T-13 (Slack app manifest + guided setup). Rough estimate 4–6 weeks for both (Claude's estimate, not validated).
+- **2026-10-03 — D-13 — Slack connection modes.** v1: Slack Connect (C-03) + team replies (C-09) on the deploying company's own Slack app, installed only in its own workspace (no public distribution, no customer app approval). v1.1: "Add to Slack" install for customers on free Slack (C-10). Later, on request: customer-built app (C-11). Reason: paid-Slack B2B customers cover most demand; ship one path well in v1, and C-10 reuses the same thread sync.
+- **2026-10-03 — D-13 — Slack AI behaviour.** Team replies (C-09): only handed-off chats appear in Slack, opened with the handoff brief + debug context; optional "post all new chats". Slack Connect (C-12, new): AI drafts for human approval by default; direct AI replies opt-in per channel.
+- **2026-10-03 — D-04 — Business model: open source + paid hosted cloud.** Self-hosting stays free and full-featured; revenue comes from a managed cloud. Billing features (B-*) now apply to the cloud. Cloud timing open as D-16.
+- **2026-10-03 — D-08 — License: AGPL-3.0** for the desk, so nobody can resell it as a hosted service without sharing changes. Widget/SDK license and contributor agreement open as D-15 and D-14.
+- **2026-10-03 — D-09 — Multi-workspace data model from day one** (follows from D-04: a hosted cloud is multi-tenant). Self-hosted v1 UI can show a single workspace. On Cloudflare, one D1 database per workspace is a natural fit for the cloud (50,000 DBs per account on Workers Paid, see `research/04`).
+- **2026-10-03 — D-14 — CLA** for contributions, set up via a bot before the first outside PR. Keeps the option of a commercial license for companies that can't accept AGPL.
+- **2026-10-03 — D-15 — Split license:** server and dashboard AGPL-3.0; widget, SDKs and the agent-config format MIT, so embedding Jun Desk on customer sites doesn't trigger legal review.
+- **2026-10-03 — D-16 — OSS first (v1), hosted cloud in v2.** Multi-workspace data model from day one so the cloud isn't a rewrite.
+- **2026-10-04 — D-13 — Slack is secondary; Slack Connect moves to v1.1.** Core is widget, AI agent, debug context and inbox. v1 keeps only team replies from Slack (C-09). Slack Connect channels (C-03) and AI drafts in them (C-12) move to v1.1, alongside "Add to Slack" (C-10).
