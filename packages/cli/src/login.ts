@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { createInterface } from "node:readline";
 import { chatgptOAuth as oauth, tokensFromResponse, type CredentialStore } from "@jun/llm";
 
 /** Port used in OpenAI's examples; any free port works, only the port may vary. */
 const PREFERRED_PORT = 1455;
-const LOGIN_TIMEOUT_MS = 5 * 60_000;
+const LOGIN_TIMEOUT_MS = 10 * 60_000;
 
 function listen(server: Server, port: number): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -53,18 +54,37 @@ export async function loginWithChatGPT(
   const log = options.log ?? ((line: string) => console.log(line));
   const existing = await store.load();
   // The host id must be stable for this machine and saved before the first sign-in.
-  const hostId = existing?.hostId ?? crypto.randomUUID();
-  if (!existing) await store.save({ hostId });
+  const hostId = existing ? oauth.normalizeHostId(existing.hostId) : oauth.newHostId();
+  if (!existing || hostId !== existing.hostId) await store.save({ ...existing, hostId });
 
   const state = oauth.randomToken();
   const nonce = oauth.randomToken();
   const codeVerifier = oauth.randomToken(48);
   const codeChallenge = await oauth.pkceChallenge(codeVerifier);
 
-  let settle!: { resolve: (v: { code: string; clientId: string | undefined }) => void; reject: (e: Error) => void };
-  const callback = new Promise<{ code: string; clientId: string | undefined }>((resolve, reject) => {
+  type Callback = { code: string; clientId: string | undefined };
+  let settle!: { resolve: (v: Callback) => void; reject: (e: Error) => void };
+  const callback = new Promise<Callback>((resolve, reject) => {
     settle = { resolve, reject };
   });
+
+  // Shared by the loopback listener and the paste fallback. A request with the wrong state
+  // (stale tab, stray request) is ignored rather than aborting the sign-in.
+  const handleCallback = (params: URLSearchParams): { ok: true } | { ok: false; message: string } => {
+    if (params.get("state") !== state) {
+      return { ok: false, message: "This callback is from a different sign-in attempt (state mismatch). Use the link printed most recently." };
+    }
+    const error = params.get("error");
+    if (error) {
+      const message = `${error}${params.get("error_description") ? `: ${params.get("error_description")}` : ""}`;
+      settle.reject(new Error(message));
+      return { ok: false, message };
+    }
+    const code = params.get("code");
+    if (!code) return { ok: false, message: "No authorization code in the callback." };
+    settle.resolve({ code, clientId: params.get("client_id") ?? undefined });
+    return { ok: true };
+  };
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -72,21 +92,28 @@ export async function loginWithChatGPT(
       res.writeHead(404).end();
       return;
     }
-    const params = url.searchParams;
-    const fail = (message: string) => {
-      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" }).end(page("Sign-in failed", escapeHtml(message)));
-      settle.reject(new Error(message));
-    };
-    if (params.get("state") !== state) return fail("State mismatch. Start the sign-in again from the terminal.");
-    const error = params.get("error");
-    if (error) return fail(`${error}${params.get("error_description") ? `: ${params.get("error_description")}` : ""}`);
-    const code = params.get("code");
-    if (!code) return fail("No authorization code in the callback.");
+    const result = handleCallback(url.searchParams);
+    const html = result.ok
+      ? page("Signed in to Jun Desk", "You can close this tab and go back to the terminal.")
+      : page("Sign-in failed", escapeHtml(result.message));
+    res.writeHead(result.ok ? 200 : 400, { "Content-Type": "text/html; charset=utf-8" }).end(html);
+  });
 
-    res
-      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-      .end(page("Signed in to Jun Desk", "You can close this tab and go back to the terminal."));
-    settle.resolve({ code, clientId: params.get("client_id") ?? undefined });
+  // Fallback when the browser can't reach the loopback listener (e.g. "127.0.0.1 refused to
+  // connect"): the user pastes the URL from the address bar into the terminal.
+  const prompt = process.stdin.isTTY ? createInterface({ input: process.stdin, output: process.stdout }) : undefined;
+  prompt?.on("line", (line) => {
+    const text = line.trim();
+    if (!text) return;
+    let params: URLSearchParams;
+    try {
+      params = new URL(text).searchParams;
+    } catch {
+      log("That doesn't look like a URL. Paste the full address from the browser's address bar.");
+      return;
+    }
+    const result = handleCallback(params);
+    if (!result.ok) log(result.message);
   });
 
   // Start the listener before building the URL, as the docs require.
@@ -110,9 +137,13 @@ export async function loginWithChatGPT(
 
   log("Opening your browser to sign in with ChatGPT. If it doesn't open, visit:");
   log(authorizeUrl);
+  if (prompt) {
+    log("");
+    log("If the browser ends on \"127.0.0.1 refused to connect\", copy the URL from its address bar and paste it here.");
+  }
   if (options.openBrowser !== false) openBrowser(authorizeUrl);
 
-  const timeout = setTimeout(() => settle.reject(new Error("Timed out waiting for sign-in (5 minutes).")), LOGIN_TIMEOUT_MS);
+  const timeout = setTimeout(() => settle.reject(new Error("Timed out waiting for sign-in (10 minutes).")), LOGIN_TIMEOUT_MS);
   try {
     const { code, clientId: issuedClientId } = await callback;
     // First registration returns the issued client id in the callback; save that, not dynamic_agent_client.
@@ -120,6 +151,8 @@ export async function loginWithChatGPT(
     if (!clientId || clientId === oauth.REGISTRATION_CLIENT_ID) {
       throw new Error("The callback didn't include an issued client_id.");
     }
+    // Save the issued client id right away so a failed exchange doesn't lose the registration.
+    if (clientId !== existing?.clientId) await store.save({ ...(await store.load()), hostId, clientId });
 
     const response = await oauth.exchangeCode({ clientId, code, codeVerifier, redirectUri });
     if (!response.id_token) throw new Error("Token response has no id_token.");
@@ -130,6 +163,7 @@ export async function loginWithChatGPT(
     return { email: tokens.email, registered: !existing?.clientId };
   } finally {
     clearTimeout(timeout);
+    prompt?.close();
     server.close();
   }
 }

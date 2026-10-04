@@ -5,6 +5,8 @@ import {
   base64UrlEncode,
   buildAuthorizeUrl,
   exchangeCode,
+  newHostId,
+  normalizeHostId,
   OAuthError,
   pkceChallenge,
   refreshTokens,
@@ -17,6 +19,15 @@ test("PKCE S256 matches the RFC 7636 test vector", async () => {
     await pkceChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
     "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
   );
+});
+
+test("host ids use the urn:uuid form; bare UUIDs are upgraded", () => {
+  assert.match(newHostId(), /^urn:uuid:[0-9a-f-]{36}$/);
+  assert.equal(
+    normalizeHostId("3f1c2b7e-9a4d-4c1e-8f2a-1b2c3d4e5f60"),
+    "urn:uuid:3f1c2b7e-9a4d-4c1e-8f2a-1b2c3d4e5f60",
+  );
+  assert.equal(normalizeHostId("urn:uuid:abc"), "urn:uuid:abc");
 });
 
 const base = {

@@ -35,6 +35,18 @@ export function base64UrlDecode(value: string): Uint8Array {
   return bytes;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A new host id in the `urn:uuid:` form shown in OpenAI's docs (a bare UUID is rejected). */
+export function newHostId(): string {
+  return `urn:uuid:${crypto.randomUUID()}`;
+}
+
+/** Upgrades a bare UUID host id (saved by earlier versions, never accepted) to `urn:uuid:` form. */
+export function normalizeHostId(hostId: string): string {
+  return UUID_PATTERN.test(hostId) ? `urn:uuid:${hostId}` : hostId;
+}
+
 export function randomToken(byteLength = 32): string {
   return base64UrlEncode(crypto.getRandomValues(new Uint8Array(byteLength)));
 }

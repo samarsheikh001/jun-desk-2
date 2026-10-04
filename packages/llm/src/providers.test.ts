@@ -109,3 +109,17 @@ test("OpenAI API-key provider uses the same request shape with the key and optio
   assert.equal(requests[0]?.url, "https://gateway.example/openai/responses");
   assert.equal((requests[0]?.init?.headers as Record<string, string>).Authorization, "Bearer sk-test");
 });
+
+test("listModels reads the plan-usage `models` shape and hides non-list models", async () => {
+  const { fetch } = mockFetch([
+    () =>
+      json({
+        models: [
+          { slug: "gpt-a", display_name: "GPT-A", visibility: "list" },
+          { slug: "internal", display_name: "Internal", visibility: "hide" },
+        ],
+      }),
+  ]);
+  const provider = new ChatGPTProvider(new ChatGPTAuth(store(), { now: () => NOW }), { fetch });
+  assert.deepEqual(await provider.listModels(), [{ slug: "gpt-a", displayName: "GPT-A" }]);
+});

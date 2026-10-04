@@ -59,8 +59,10 @@ export class ChatGPTProvider implements LlmProvider {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) throw new LlmError(`Listing models failed: HTTP ${response.status}`, { code: "bad_request", status: response.status });
-    const json = (await response.json()) as { data?: { id?: string; slug?: string; display_name?: string; visibility?: string }[] };
-    return (json.data ?? [])
+    type ModelEntry = { id?: string; slug?: string; display_name?: string; visibility?: string };
+    // Plan-usage tokens get `{ models: [...] }`; the standard API shape is `{ data: [...] }`.
+    const json = (await response.json()) as { models?: ModelEntry[]; data?: ModelEntry[] };
+    return (json.models ?? json.data ?? [])
       .filter((m) => m.visibility === undefined || m.visibility === "list")
       .map((m) => {
         const slug = m.slug ?? m.id ?? "";
