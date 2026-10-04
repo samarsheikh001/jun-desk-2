@@ -5,7 +5,7 @@
   "compatibility_date": "2026-09-15",
   "compatibility_flags": ["nodejs_compat"],
 
-  // The dashboard (React, built by Vite) is served as static assets.
+  // The dashboard and widget frame (React, built by Vite) are static assets.
   // API routes go to the Worker first; everything else falls back to the SPA.
   "assets": {
     "not_found_handling": "single-page-application",
@@ -22,12 +22,21 @@
     }
   ],
 
-  // One Durable Object per conversation holds live state (D-11). Stubbed in M0
-  // so the deploy button provisions it; implemented in M1.
+  // Attachments (W-06).
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "jun-desk-files" }],
+
+  // Conversation: one per conversation, live state + write-through to D1 (D-11).
+  // WorkspaceHub: one per workspace, fans inbox events and agent presence out to agents.
   "durable_objects": {
-    "bindings": [{ "name": "CONVERSATION", "class_name": "Conversation" }]
+    "bindings": [
+      { "name": "CONVERSATION", "class_name": "Conversation" },
+      { "name": "WORKSPACE_HUB", "class_name": "WorkspaceHub" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Conversation"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Conversation"] },
+    { "tag": "v2", "new_sqlite_classes": ["WorkspaceHub"] }
+  ],
 
   "observability": { "enabled": true }
 }

@@ -1,0 +1,17 @@
+/* Widget frame: fills the iframe the loader creates. */
+html, body, #root { height: 100%; }
+body { background: var(--surface); }
+.w-shell { height: 100%; display: flex; flex-direction: column; }
+.w-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px; background: var(--accent); color: var(--accent-text); }
+.w-head button.ghost { color: var(--accent-text); border-color: transparent; }
+.w-sub { opacity: 0.85; }
+.w-home { flex: 1; overflow: auto; }
+.w-greeting { padding: 24px 20px; display: grid; gap: 14px; }
+.w-greeting h2 { font-size: 1.25rem; margin: 0; }
+.w-history { padding: 0 16px 16px; }
+.w-history .list li { padding: 0; }
+.w-conv { display: grid; gap: 2px; width: 100%; text-align: left; background: none; color: var(--text); padding: 10px 4px; font-weight: 400; }
+.w-conv:hover { background: var(--bg); }
+.w-body { flex: 1; overflow: auto; display: flex; flex-direction: column; background: var(--bg); }
+.w-body .messages { overflow: visible; }
+.w-body .msg { max-width: 85%; }

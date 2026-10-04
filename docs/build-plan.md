@@ -36,6 +36,8 @@
 
 ## M1 — Conversation loop (no AI yet)
 
+> **Status 2026-10-04: built and tested locally.** API e2e (14 steps) and a real-browser run (headless Chrome: passkey sign-in, widget on the demo page, live reply, typing, "Seen", resolve) pass. Two Durable Objects: `Conversation` (per conversation) and `WorkspaceHub` (per workspace, inbox fan-out + presence). Not yet deployed (adds an R2 bucket).
+
 *Demo: a visitor on a test site chats, and an agent replies from the inbox in real time.*
 
 | ID | Feature | Size | |

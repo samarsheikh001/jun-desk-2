@@ -2,7 +2,7 @@
 
 An open-source, AI-first customer support desk for B2B SaaS, deployable to your own Cloudflare account in one click: an embeddable website widget, live visitor tracking, an AI agent that answers and takes actions, and a real-time inbox for human agents. Think Intercom/Fin, Chatbase, Crisp — rebuilt for 2026.
 
-## Current phase: building v1 (M0 done locally, M1 next)
+## Current phase: building v1 (M0 deployed, M1 built, M2 next)
 
 Plan: `docs/build-plan.md`. Build milestone by milestone; keep the Deploy button working at every step.
 
@@ -15,10 +15,13 @@ npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stri
 
 | Path | What |
 |---|---|
-| `worker/` | Hono API under `/api`, Durable Objects (`Conversation`, stub until M1). Passkey auth in `worker/auth/`. |
+| `worker/` | Hono API under `/api`. Durable Objects: `Conversation` (one per conversation: sockets, seq, write-through to D1) and `WorkspaceHub` (one per workspace: inbox events, presence). Routes: `auth`, `workspaces`, `conversations` (agents), `widget` (public, visitor token), `files` (R2). |
+| `shared/protocol.ts` | Types and constants shared by Worker, dashboard and widget (socket events, message/conversation shapes) |
+| `web/widget/`, `widget.html` | The chat UI inside the widget iframe (served at `/widget?key=`) |
+| `public/widget.js` | Embeddable loader (MIT, plain JS, keep under 5 KB); `public/demo.html?key=` is a test page |
 | `web/` | React dashboard (Vite), served as the Worker's static assets |
 | `migrations/` | D1 migrations (`NNNN_name.sql`); applied by `npm run dev` (local) and `npm run deploy` (remote) |
-| `scripts/e2e-auth.ts` | Passkey e2e test with a software authenticator; run against `npm run dev` on a fresh local DB |
+| `scripts/e2e-*.ts` | E2E against `npm run dev` on a fresh local DB: `e2e-auth` (passkeys, roles), `e2e-chat` (widget ↔ inbox over WebSockets). Helpers in `e2e-lib.ts` |
 
 | Package | What |
 |---|---|
@@ -26,6 +29,8 @@ npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stri
 | `packages/cli` | `jun` CLI: `login chatgpt`, `logout`, `whoami`, `models`, `ask`, `chat`. Credentials in `~/.jun/chatgpt.json` (`$JUN_HOME` overrides). |
 
 Commands: `npm run dev` · `npm test` · `npm run test:e2e` · `npm run typecheck` · `npm run build` · `npm run cf-typegen` (after changing `wrangler.jsonc`) · `npm run jun -- <command>`
+
+Realtime conventions: the Worker authenticates every socket upgrade (agent cookie, or visitor token as the 2nd WebSocket subprotocol) and forwards to the DO with `x-jun-*` headers; DOs trust those headers. Messages get `seq` from the Conversation DO and are idempotent per `clientMsgId`. D1 stays the source of truth.
 
 Worker conventions: throw `HttpError` for expected failures (rendered as `{ error: { code, message } }`); non-GET API requests must be JSON (CSRF guard in `worker/index.ts`); IDs are prefixed random strings (`newId("usr")`), timestamps are epoch ms; secrets/tokens are stored only as SHA-256 hashes.
 

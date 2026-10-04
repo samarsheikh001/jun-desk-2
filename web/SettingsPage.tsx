@@ -10,7 +10,7 @@ interface Invite { id: string; role: Role; createdBy: string; createdAt: number;
 const RANK: Record<Role, number> = { owner: 3, admin: 2, agent: 1 };
 const date = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString() : "never");
 
-export function HomePage({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
+export function SettingsPage({ me }: { me: Me }) {
   const workspace = me.memberships?.[0];
   const [passkeys, setPasskeys] = useState<Passkey[]>([]);
   const { busy, error, run } = useAction();
@@ -23,45 +23,60 @@ export function HomePage({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   }, [loadPasskeys]);
 
   return (
-    <div className="app">
-      <header>
-        <div className="brand">Jun Desk</div>
-        <span className="muted">{workspace?.workspaceName}</span>
+    <main className="content">
+      {workspace && <InstallPanel workspaceId={workspace.workspaceId} />}
+
+      {error && <p className="error">{error}</p>}
+
+      <section className="panel">
+        <div className="row">
+          <h2>Your passkeys</h2>
+          <span className="spacer" />
+          <button disabled={busy} onClick={() => run(async () => { await registerPasskey("/passkeys"); await loadPasskeys(); })}>Add passkey</button>
+        </div>
+        <p className="muted small">Add a passkey on a second device so you can't get locked out.</p>
+        <ul className="list">
+          {passkeys.map((p) => (
+            <li key={p.id}>
+              <span>{p.name ?? "Passkey"} {p.backedUp ? <em className="tag">synced</em> : null}</span>
+              <span className="muted small">added {date(p.createdAt)} · last used {date(p.lastUsedAt)}</span>
+              {passkeys.length > 1 && (
+                <button className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`/passkeys/${encodeURIComponent(p.id)}`, { method: "DELETE" }); await loadPasskeys(); })}>Remove</button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {workspace && me.user && <TeamPanel workspaceId={workspace.workspaceId} myRole={workspace.role} myId={me.user.id} />}
+    </main>
+  );
+}
+
+function InstallPanel({ workspaceId }: { workspaceId: string }) {
+  const [widgetKey, setWidgetKey] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    api<{ inbox: { widgetKey: string } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => setWidgetKey(r.inbox?.widgetKey ?? null));
+  }, [workspaceId]);
+  if (!widgetKey) return null;
+
+  const snippet = `<script src="${window.location.origin}/widget.js" data-key="${widgetKey}" async></script>`;
+  return (
+    <section className="panel">
+      <div className="row">
+        <h2>Install the chat widget</h2>
         <span className="spacer" />
-        <span>{me.user?.name}</span>
-        <button className="ghost" onClick={() => run(async () => { await api("/auth/logout", { body: {} }); onSignOut(); })}>Sign out</button>
-      </header>
-      <main className="content">
-        <section className="panel notice">
-          <h2>You're in 🎉</h2>
-          <p className="muted">The inbox, widget and AI agent arrive in the next milestones (M1–M2). For now you can manage passkeys and your team.</p>
-        </section>
-
-        {error && <p className="error">{error}</p>}
-
-        <section className="panel">
-          <div className="row">
-            <h2>Your passkeys</h2>
-            <span className="spacer" />
-            <button disabled={busy} onClick={() => run(async () => { await registerPasskey("/passkeys"); await loadPasskeys(); })}>Add passkey</button>
-          </div>
-          <p className="muted small">Add a passkey on a second device so you can't get locked out.</p>
-          <ul className="list">
-            {passkeys.map((p) => (
-              <li key={p.id}>
-                <span>{p.name ?? "Passkey"} {p.backedUp ? <em className="tag">synced</em> : null}</span>
-                <span className="muted small">added {date(p.createdAt)} · last used {date(p.lastUsedAt)}</span>
-                {passkeys.length > 1 && (
-                  <button className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`/passkeys/${encodeURIComponent(p.id)}`, { method: "DELETE" }); await loadPasskeys(); })}>Remove</button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        {workspace && me.user && <TeamPanel workspaceId={workspace.workspaceId} myRole={workspace.role} myId={me.user.id} />}
-      </main>
-    </div>
+        <a className="button ghost small" href={`/demo.html?key=${widgetKey}`} target="_blank" rel="noreferrer">Open demo page</a>
+      </div>
+      <p className="muted small">Paste this before <code>&lt;/body&gt;</code> on your site. The loader is tiny; the chat itself loads only when a visitor opens it.</p>
+      <div className="invite">
+        <div className="row">
+          <code>{snippet}</code>
+          <button className="small" onClick={async () => { await navigator.clipboard.writeText(snippet); setCopied(true); }}>{copied ? "Copied ✓" : "Copy"}</button>
+        </div>
+      </div>
+    </section>
   );
 }
 

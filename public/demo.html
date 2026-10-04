@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Acme Analytics (Jun Desk demo)</title>
+    <style>
+      body { margin: 0; font: 16px/1.6 system-ui, sans-serif; color: #1c1c1a; background: #fafaf8; }
+      header { padding: 16px 24px; background: #fff; border-bottom: 1px solid #e4e4df; font-weight: 700; }
+      main { max-width: 720px; margin: 40px auto; padding: 0 16px; }
+      .card { background: #fff; border: 1px solid #e4e4df; border-radius: 12px; padding: 20px 24px; margin-bottom: 16px; }
+      .note { color: #6b6b66; font-size: 14px; }
+      code { background: #f0f0ec; padding: 1px 6px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <header>Acme Analytics</header>
+    <main>
+      <div class="card">
+        <h1>Demo customer site</h1>
+        <p>This page pretends to be one of your customer-facing pages. The chat button in the bottom-right corner is the Jun Desk widget.</p>
+        <p class="note">Open your desk's inbox in another window, then send a message from here to see it arrive live. Replies, typing indicators and read receipts flow both ways.</p>
+      </div>
+      <div class="card">
+        <h2>Billing</h2>
+        <p>Your plan: <strong>Team</strong> · next invoice on the 1st.</p>
+        <p class="note">(Later milestones capture errors on pages like this so the AI can see what broke.)</p>
+      </div>
+      <p class="note" id="missing" hidden>Add <code>?key=wk_…</code> to the URL. Settings → Install the chat widget has a link with your key.</p>
+    </main>
+    <script>
+      var key = new URLSearchParams(location.search).get("key");
+      if (key) {
+        var s = document.createElement("script");
+        s.src = "/widget.js";
+        s.async = true;
+        s.setAttribute("data-key", key);
+        document.body.appendChild(s);
+      } else {
+        document.getElementById("missing").hidden = false;
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,174 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Attachment, ClientEvent, ConversationEvent, ConversationSummary, Message } from "../../shared/protocol.ts";
+import { LiveSocket, type SocketState } from "./socket.ts";
+
+export interface PendingMessage {
+  clientMsgId: string;
+  body: string;
+  attachments: Attachment[];
+  failed?: string;
+}
+
+/**
+ * Live state of one conversation, shared by the dashboard and the widget: messages
+ * (merged by seq, deduped), optimistic sends, the other side's typing and read state.
+ */
+export function useThread(options: {
+  /** null while there's no conversation yet (widget before the first message). */
+  socketUrl: string | null;
+  protocols?: string[];
+  initialMessages: Message[];
+  /** Whose typing/read state to show: the dashboard watches the visitor, the widget watches agents. */
+  other: "visitor" | "agent";
+  onConversation?: (conversation: ConversationSummary) => void;
+}) {
+  const [messages, setMessages] = useState<Message[]>(options.initialMessages);
+  const [pending, setPending] = useState<PendingMessage[]>([]);
+  const [typing, setTyping] = useState<{ name: string | null } | null>(null);
+  const [otherReadSeq, setOtherReadSeq] = useState(0);
+  const [state, setState] = useState<SocketState>("connecting");
+  const socket = useRef<LiveSocket<ConversationEvent> | null>(null);
+  const lastSeq = useRef(0);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const onConversation = useRef(options.onConversation);
+  onConversation.current = options.onConversation;
+
+  const merge = useCallback((incoming: Message[]) => {
+    if (incoming.length === 0) return;
+    setMessages((current) => {
+      const bySeq = new Map(current.map((m) => [m.seq, m]));
+      for (const m of incoming) bySeq.set(m.seq, m);
+      const merged = [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+      lastSeq.current = merged.at(-1)?.seq ?? 0;
+      return merged;
+    });
+    const ids = new Set(incoming.map((m) => m.clientMsgId));
+    setPending((p) => p.filter((m) => !ids.has(m.clientMsgId)));
+  }, []);
+
+  useEffect(() => {
+    setMessages(options.initialMessages);
+    lastSeq.current = options.initialMessages.at(-1)?.seq ?? 0;
+  }, [options.initialMessages]);
+
+  useEffect(() => {
+    if (!options.socketUrl) return;
+    const base = options.socketUrl;
+    const live = new LiveSocket<ConversationEvent>({
+      url: () => `${base}${base.includes("?") ? "&" : "?"}since=${lastSeq.current}`,
+      ...(options.protocols ? { protocols: options.protocols } : {}),
+      onState: setState,
+      onEvent: (event) => {
+        if (event.type === "messages") merge(event.messages);
+        else if (event.type === "message") {
+          merge([event.message]);
+          if (event.message.authorType === options.other) setTyping(null);
+        } else if (event.type === "typing" && event.authorType === options.other) {
+          clearTimeout(typingTimer.current);
+          setTyping(event.typing ? { name: event.name } : null);
+          // Don't show "typing…" forever if the stop event gets lost.
+          if (event.typing) typingTimer.current = setTimeout(() => setTyping(null), 8_000);
+        } else if (event.type === "read" && event.by === options.other) {
+          setOtherReadSeq((s) => Math.max(s, event.seq));
+        } else if (event.type === "conversation") {
+          setOtherReadSeq((s) => Math.max(s, options.other === "visitor" ? event.conversation.visitorReadSeq : event.conversation.agentReadSeq));
+          onConversation.current?.(event.conversation);
+        } else if (event.type === "error" && event.clientMsgId) {
+          const { clientMsgId, message } = event;
+          setPending((p) => p.map((m) => (m.clientMsgId === clientMsgId ? { ...m, failed: message } : m)));
+        }
+      },
+    });
+    socket.current = live;
+    return () => {
+      live.close();
+      socket.current = null;
+      clearTimeout(typingTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options.socketUrl, merge]);
+
+  const sendEvent = useCallback((event: ClientEvent) => socket.current?.send(event) ?? false, []);
+
+  /** Optimistically shows the message and sends it over the socket. Returns false if offline. */
+  const send = useCallback(
+    (body: string, attachments: Attachment[] = [], clientMsgId: string = crypto.randomUUID()) => {
+      setPending((p) => [...p.filter((m) => m.clientMsgId !== clientMsgId), { clientMsgId, body, attachments }]);
+      const sent = sendEvent({ type: "send", clientMsgId, body, attachments });
+      if (!sent) setPending((p) => p.map((m) => (m.clientMsgId === clientMsgId ? { ...m, failed: "Not connected. Retry when back online." } : m)));
+      return sent;
+    },
+    [sendEvent],
+  );
+
+  return {
+    messages,
+    pending,
+    typing,
+    otherReadSeq,
+    state,
+    merge,
+    send,
+    setTyping: (isTyping: boolean) => sendEvent({ type: "typing", typing: isTyping }),
+    markRead: (seq: number) => seq > 0 && sendEvent({ type: "read", seq }),
+    dismissPending: (clientMsgId: string) => setPending((p) => p.filter((m) => m.clientMsgId !== clientMsgId)),
+  };
+}
+
+/**
+ * Sends typing=true at most every 3s while the user types, and typing=false after a
+ * pause or as soon as the input is emptied.
+ */
+export function useTypingSignal(setTyping: (typing: boolean) => void) {
+  const last = useRef(0);
+  const stop = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(stop.current), []);
+  return useCallback((value: string) => {
+    if (!value.trim()) {
+      clearTimeout(stop.current);
+      if (last.current) setTyping(false);
+      last.current = 0;
+      return;
+    }
+    const now = Date.now();
+    if (now - last.current > 3_000) {
+      last.current = now;
+      setTyping(true);
+    }
+    clearTimeout(stop.current);
+    stop.current = setTimeout(() => {
+      last.current = 0;
+      setTyping(false);
+    }, 4_000);
+  }, [setTyping]);
+}
+
+export async function uploadFile(url: string, file: File, headers: Record<string, string> = {}): Promise<Attachment> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": file.type || "application/octet-stream",
+      "X-File-Name": encodeURIComponent(file.name),
+      "X-Jun-Upload": "1",
+      ...headers,
+    },
+    body: file,
+  });
+  const json = (await response.json().catch(() => ({}))) as { attachment?: Attachment; error?: { message: string } };
+  if (!response.ok || !json.attachment) throw new Error(json.error?.message ?? `Upload failed (${response.status})`);
+  return json.attachment;
+}
+
+export const isImage = (a: Attachment) => ["image/png", "image/jpeg", "image/gif", "image/webp"].includes(a.type);
+
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function formatTime(ms: number): string {
+  const d = new Date(ms);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric" });
+}

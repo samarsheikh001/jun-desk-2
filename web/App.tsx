@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
 import { api, describeError, registerPasskey, signInWithPasskey, type Me } from "./api.ts";
-import { HomePage } from "./HomePage.tsx";
+import { Shell } from "./Shell.tsx";
 import { useAction } from "./useAction.ts";
 
 export function App() {
@@ -15,7 +15,7 @@ export function App() {
   const path = window.location.pathname;
   const invite = path.match(/^\/invite\/([\w-]+)$/);
   const done = () => {
-    window.history.replaceState(null, "", "/");
+    window.history.replaceState(null, "", "/inbox");
     refresh();
   };
 
@@ -25,7 +25,7 @@ export function App() {
   if (path === "/recover") return <RecoverPage onDone={done} />;
   if (!me.setupComplete) return <SetupPage onDone={done} />;
   if (!me.user) return <LoginPage onDone={refresh} />;
-  return <HomePage me={me} onSignOut={refresh} />;
+  return <Shell me={me} onSignOut={refresh} />;
 }
 
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {

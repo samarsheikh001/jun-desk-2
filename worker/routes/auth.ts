@@ -2,7 +2,7 @@ import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simp
 import { Hono } from "hono";
 import { finishLogin, finishRegistration, startLogin, startRegistration } from "../auth/passkeys.ts";
 import { createSession, destroySession, getSessionUser, requireUser } from "../auth/session.ts";
-import { newId, safeEqual } from "../lib/crypto.ts";
+import { newId, randomToken, safeEqual } from "../lib/crypto.ts";
 import { email, object, readJson, text } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
 
@@ -45,6 +45,13 @@ auth.post("/setup/verify", async (c) => {
     c.env.DB.prepare("INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").bind(p.workspace.id, p.workspace.name, now),
     c.env.DB.prepare("INSERT INTO users (id, name, email, created_at) VALUES (?, ?, ?, ?)").bind(p.user.id, p.user.name, p.user.email, now),
     c.env.DB.prepare("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)").bind(p.workspace.id, p.user.id, now),
+    // The website widget inbox; its public key goes in the embed snippet.
+    c.env.DB.prepare("INSERT INTO inboxes (id, workspace_id, name, widget_key, created_at) VALUES (?, ?, 'Website', ?, ?)").bind(
+      newId("inb"),
+      p.workspace.id,
+      `wk_${randomToken(12)}`,
+      now,
+    ),
   ]);
   await createSession(c, payload.userId);
   return c.json({ ok: true });

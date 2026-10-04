@@ -22,12 +22,12 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
-| W-01 | Tiny loader (<5 KB) with stand-in bubble; full app loads on interaction | v1 | agreed | Heavy widgets cost 9–16 Lighthouse points; ours is a selling point | 02 |
-| W-02 | Full widget isolated in iframe or shadow DOM | v1 | agreed | No CSS/JS conflicts with host site | 02 |
+| W-01 | Tiny loader (<5 KB) with stand-in bubble; full app loads on interaction | v1 | shipped | Shipped M1: `public/widget.js` is 3.8 KB unminified; chat iframe loads on first open | 02 |
+| W-02 | Full widget isolated in iframe or shadow DOM | v1 | shipped | Shipped M1: launcher in shadow DOM, chat in an iframe from the desk origin | 02 |
 | W-03 | Streaming AI responses with resumable streams | v1 | agreed | Reconnect mustn't lose half an answer | 03 |
 | W-04 | Branding: colours, logo, position, greeting, launcher text | v1 | agreed | Table stakes | 01 |
-| W-05 | Conversation history for returning visitors | v1 | agreed | | |
-| W-06 | File and image attachments | v1 | agreed | Screenshots are the most common attachment | |
+| W-05 | Conversation history for returning visitors | v1 | shipped | Shipped M1: returning visitors see past conversations; reopens the active one | |
+| W-06 | File and image attachments | v1 | shipped | Shipped M1: R2; images inline, other types forced to download (nosniff + CSP sandbox) | |
 | W-07 | "Talk to a human" always visible | v1 | agreed | #1 AI-support complaint is not reaching a human | 01 |
 | W-08 | Offline mode: collect email and promise a reply outside business hours | v1 | agreed | Depends on business hours (I-10) | |
 | W-09 | AI-rendered UI: allow-listed cards, forms, buttons, choice chips | v2 | proposed | Declarative (A2UI/ChatKit-style), not arbitrary HTML | 02 |
@@ -107,9 +107,9 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
-| I-01 | Real-time shared inbox: AI, pending, open, snoozed, resolved views | v1 | agreed | | 03 |
-| I-02 | Assignment: manual, round-robin, capacity-based | v1 | agreed | Manual assignment in v1; round-robin and capacity-based in v1.1 (D-12) | 03 |
-| I-03 | Typing indicators, read receipts, agent presence | v1 | agreed | | 03 |
+| I-01 | Real-time shared inbox: AI, pending, open, snoozed, resolved views | v1 | shipped | Shipped M1: Open/Pending/Resolved/All + mine/unassigned filters, live via WorkspaceHub DO | 03 |
+| I-02 | Assignment: manual, round-robin, capacity-based | v1 | agreed | Manual assignment shipped in M1; round-robin and capacity-based in v1.1 (D-12) | 03 |
+| I-03 | Typing indicators, read receipts, agent presence | v1 | shipped | Shipped M1: typing both ways, read receipts ("Seen"), agent presence avatars | 03 |
 | I-04 | Agent takeover / barge-in on an AI conversation | v1 | agreed | | 03 |
 | I-05 | Internal notes and @mentions | v1 | agreed | | |
 | I-06 | Saved replies / macros | v1 | agreed | | |
@@ -129,7 +129,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
-| C-01 | Web widget | v1 | agreed | | |
+| C-01 | Web widget | v1 | shipped | Shipped in M1 (2026-10-04) | |
 | C-02 | Email (inbound forwarding and outbound replies) | v2 | proposed | Second most important channel | 01 |
 | C-03 | Slack Connect / shared channels | v1.1 | agreed | Uses the deploying company's own Slack app, installed only in its own workspace. Customers talk to us in shared Slack Connect channels; each thread = conversation; AI answers in-thread or hands off. B2B core channel (Pylon/Plain). D-13 Moved to v1.1 2026-10-04 (Slack is secondary). | 01 |
 | C-09 | Team replies from Slack: only chats handed off to a human appear, as a thread whose first message is the handoff brief, debug context and transcript link; replies sync back to the visitor. Setting: "post all new chats" for small teams | v1 | agreed | Shares the Slack app + thread-sync layer with C-03. D-13 |  |
