@@ -17,6 +17,8 @@
 
 ## M0 — Foundation
 
+> **Status 2026-10-04: built and tested locally.** Passkey auth passes an 11-step e2e test (software authenticator) against the real Worker + local D1. Still to do: one real Deploy-to-Cloudflare run (needs the repo public) and a real-device passkey check; CLA bot setup.
+
 *Demo: click "Deploy to Cloudflare" → an empty Jun Desk is live, and you can log in.*
 
 | ID | Feature | Size | |
@@ -24,10 +26,10 @@
 | T-09 | Deploy-to-Cloudflare button (D1, DOs, Vectorize, R2, Workers AI provisioned) | M | 🚀 |
 | T-07 | Repo layout, licenses (AGPL server, MIT widget/SDK), CLA bot | S | 🚀 |
 | T-01 | Workspaces, members, roles; multi-workspace schema from day one (D-09) | M | 🚀 |
-| T-02 | Built-in auth: magic link + Google | M | 🚀 |
+| T-02 | Built-in auth: passkeys (D-17) | M | 🚀 |
 | T-12 | D1 migrations run automatically on deploy/upgrade | S | 🚀 |
 
-**Decide before starting:**
+**Decided 2026-10-04** (see `decisions.md`):
 - **D-11 data layer.** Recommendation: D1 is the source of truth for conversations and messages; each conversation's Durable Object holds live state (sockets, typing, the agent loop) and writes through to D1.
 - **D-05 tickets.** Recommendation: one `conversation` table with a type flag.
 - **Repo layout.** The deploy button needs a self-contained Workers app. Recommendation: the deployable Worker sits at the repo root; the widget and SDK are packages whose builds go into the Worker's static assets.
@@ -153,7 +155,7 @@
 
 ## Open before M0
 
-- [ ] D-11 data layer (recommendation above)
-- [ ] D-05 tickets model (recommendation above)
-- [ ] Repo layout for the deploy button (recommendation above)
-- [ ] Mark the remaining `proposed` v1 features as `agreed` (or cut) in `features.md`
+- [x] D-11 data layer: D1 is the source of truth, Durable Objects hold live state (2026-10-04)
+- [x] D-05 tickets: one conversation table with a type flag (2026-10-04)
+- [x] Repo layout: Worker at the repo root, `packages/` built into its assets (2026-10-04)
+- [x] All v1 features agreed (2026-10-04)

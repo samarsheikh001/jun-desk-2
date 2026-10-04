@@ -4,10 +4,6 @@ Open questions block parts of the backlog (`Dep: D-xx` in `docs/features.md`). W
 
 ## Open questions
 
-### D-05 — Tickets: separate entity or conversation type?
-- LibreDesk converts conversations into tickets; Chatwoot keeps one conversation model. Affects the data model early.
-- **Leaning:** single `conversation` with a type flag. *(proposal)*
-
 ### D-06 — Product name and positioning line
 - Working name "Jun Desk". Positioning draft: *"Open-source AI support desk for B2B SaaS. Deploy to your own Cloudflare account in one click."*
 
@@ -16,10 +12,6 @@ Open questions block parts of the backlog (`Dep: D-xx` in `docs/features.md`). W
 - Claude via BYO Anthropic key gives the best quality; prompted as a secret at deploy.
 - **Leaning:** support both; setup wizard recommends Claude Sonnet 5.5, falls back to Workers AI if no key. *(proposal)*
 - **2026-10-04 — user wants ChatGPT/OpenAI.** "Login with ChatGPT" isn't viable for the live agent (see `research/06-chatgpt-login.md`). Proposal: OpenAI via API key as a provider, routed through Cloudflare AI Gateway. Open: is OpenAI the default, or one option among Claude / OpenAI / Workers AI? Also: use "Sign in with ChatGPT" for the local eval CLI (`jun eval`)?
-
-### D-11 — Data layer details
-- D1 for durable records, Durable Object SQLite for hot per-conversation state, Vectorize for KB, R2 for files (see `research/04-cloudflare-self-host.md`).
-- Open: one D1 for everything vs. D1 + per-conversation DO storage as the source of truth for messages? Optional Postgres/Hyperdrive "scale mode" later?
 
 ### D-13 — Slack implementation details
 - Each self-hosted install needs its **own Slack app** (OAuth credentials can't be shared across installs). Plan: bundled app manifest + guided setup (T-13).
@@ -45,3 +37,8 @@ Open questions block parts of the backlog (`Dep: D-xx` in `docs/features.md`). W
 - **2026-10-03 — D-16 — OSS first (v1), hosted cloud in v2.** Multi-workspace data model from day one so the cloud isn't a rewrite.
 - **2026-10-04 — D-13 — Slack is secondary; Slack Connect moves to v1.1.** Core is widget, AI agent, debug context and inbox. v1 keeps only team replies from Slack (C-09). Slack Connect channels (C-03) and AI drafts in them (C-12) move to v1.1, alongside "Add to Slack" (C-10).
 - **2026-10-04 — D-10 — Sign in with ChatGPT for development only.** We build and test the AI against the developer's own ChatGPT plan via OpenAI's official open-source flow (loopback sign-in, `packages/llm` + `jun` CLI). Before release we switch to an API key (`OpenAIProvider`, already implemented, AI Gateway-compatible). Release default provider still open.
+- **2026-10-04 — D-11 — Data layer: D1 is the source of truth; Durable Objects hold live state.** Conversations, messages, contacts and everything else are records in D1. Each conversation's Durable Object holds sockets, typing, presence and the AI loop, and writes through to D1. Inbox lists and reports query D1 directly. The cloud can use one D1 per workspace later.
+- **2026-10-04 — D-05 — One `conversation` table with a type flag** (`chat` / `ticket`). One inbox, one data model.
+- **2026-10-04 — Repo layout: the deployable Worker lives at the repo root** (`wrangler.jsonc`, `src/`). `packages/` holds the widget, SDK, llm and cli, which build into the Worker's static assets. Satisfies the deploy button's self-contained rule.
+- **2026-10-04 — All v1 features agreed.** v1 is locked as in `build-plan.md` (45 launch-critical, 11 can slip to v1.1).
+- **2026-10-04 — D-17 — Passkeys for login.** Magic links need an email service (a verified domain) and Google login needs OAuth keys, both of which break one-click deploy. The owner is created on first visit using a `SETUP_TOKEN` secret the deploy button prompts for; the same token recovers owner access. Agents join through invite links. Magic link, Google and SSO can be optional add-ons later.

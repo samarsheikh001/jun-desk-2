@@ -2,23 +2,32 @@
 
 An open-source, AI-first customer support desk for B2B SaaS, deployable to your own Cloudflare account in one click: an embeddable website widget, live visitor tracking, an AI agent that answers and takes actions, and a real-time inbox for human agents. Think Intercom/Fin, Chatbase, Crisp — rebuilt for 2026.
 
-## Current phase: planning, with an early LLM spike
+## Current phase: building v1 (M0 done locally, M1 next)
 
-Planning is mostly done (see docs below); M0 in `docs/build-plan.md` hasn't started. The only code so far is the LLM provider layer and a dev CLI. Don't scaffold the Worker/dashboard or pick frameworks unless asked.
+Plan: `docs/build-plan.md`. Build milestone by milestone; keep the Deploy button working at every step.
 
 ## Code
 
-npm workspaces, TypeScript run directly by Node ≥22.18 (type stripping, **no build step**):
+npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stripping, no build step); `worker/` and `web/` are bundled by Vite:
 - Only erasable TS syntax (no enums, namespaces or constructor parameter properties); relative imports use `.ts` extensions.
 - `packages/llm` uses web-standard APIs only (fetch, crypto.subtle, web streams) so it runs on Node and Cloudflare Workers. Node-only code goes in `packages/cli`.
-- Zero runtime dependencies so far; keep it that way unless there's a clear reason.
+- `packages/` has zero runtime dependencies; the app uses Hono, React and SimpleWebAuthn. Add dependencies only with a clear reason.
+
+| Path | What |
+|---|---|
+| `worker/` | Hono API under `/api`, Durable Objects (`Conversation`, stub until M1). Passkey auth in `worker/auth/`. |
+| `web/` | React dashboard (Vite), served as the Worker's static assets |
+| `migrations/` | D1 migrations (`NNNN_name.sql`); applied by `npm run dev` (local) and `npm run deploy` (remote) |
+| `scripts/e2e-auth.ts` | Passkey e2e test with a software authenticator; run against `npm run dev` on a fresh local DB |
 
 | Package | What |
 |---|---|
 | `packages/llm` | Provider interface; `ChatGPTProvider` (Sign in with ChatGPT, **dev only**); `OpenAIProvider` (API key; for release). Responses API streaming, error mapping. |
 | `packages/cli` | `jun` CLI: `login chatgpt`, `logout`, `whoami`, `models`, `ask`, `chat`. Credentials in `~/.jun/chatgpt.json` (`$JUN_HOME` overrides). |
 
-Commands: `npm test` · `npm run typecheck` · `npm run jun -- <command>`
+Commands: `npm run dev` · `npm test` · `npm run test:e2e` · `npm run typecheck` · `npm run build` · `npm run cf-typegen` (after changing `wrangler.jsonc`) · `npm run jun -- <command>`
+
+Worker conventions: throw `HttpError` for expected failures (rendered as `{ error: { code, message } }`); non-GET API requests must be JSON (CSRF guard in `worker/index.ts`); IDs are prefixed random strings (`newId("usr")`), timestamps are epoch ms; secrets/tokens are stored only as SHA-256 hashes.
 
 **Sign in with ChatGPT is development-only (D-10).** OpenAI allows plan usage for open-source, locally run apps spending the signed-in user's own plan. Released/deployed builds must use `OpenAIProvider` with an API key (or another API-key provider). Never wire `ChatGPTProvider` into anything that serves website visitors in a release. Use only OpenAI's documented flow, never the Codex `backend-api` workaround.
 
@@ -53,10 +62,12 @@ Commands: `npm test` · `npm run typecheck` · `npm run jun -- <command>`
   - **No external services required** for a working install: no Postgres, Redis, Clerk/Auth0, or paid SaaS. Optional integrations are fine.
   - Workers only, not Pages; the deployable app must be self-contained in its directory.
 - **Business model: open source + paid hosted cloud (cloud ships in v2).** Server/dashboard AGPL-3.0; widget, SDKs and agent-config format MIT; CLA required for contributions. Data model is multi-workspace from day one (the cloud is multi-tenant), even though self-hosted v1 shows one workspace.
+- **Login: passkeys (D-17)**, owner created with `SETUP_TOKEN`, agents via invite links. No email or OAuth service required.
+- **Data and layout:** D1 is the source of truth; each conversation's Durable Object holds live state and writes through to D1. One `conversation` table with a `chat`/`ticket` type. The Worker lives at the repo root; `packages/` builds into its assets.
 - **Stack: Cloudflare.** Workers serve the API, dashboard and widget assets. Durable Objects handle realtime, presence and the per-conversation agent (Agents SDK). D1 holds durable records, Vectorize the KB, R2 files.
 - **Positioning — three pillars** (`docs/research/05-differentiation.md`): **P1 support that sees the bug** (lead: the widget captures errors and failed requests, the AI diagnoses, files Linear/GitHub issues), **P2 your desk, your Cloudflare**, **P3 support agent as code** (config in git, evals). v1 must demo all three.
 - **Slack is secondary, not a core feature or pillar.** The core is the widget, AI agent, debug context and inbox. v1 includes only team replies from Slack (handed-off chats); customer Slack Connect channels are v1.1; don't let Slack drive architecture or priorities.
 
 ## Still open
 
-Slack rate limits for C-10 (D-13), default release LLM provider (D-10: OpenAI API key vs Claude vs Workers AI), data layer details (D-11), tickets model (D-05).
+Slack rate limits for C-10 (D-13), default release LLM provider (D-10: OpenAI API key vs Claude vs Workers AI).
