@@ -9,6 +9,7 @@
       header { padding: 16px 24px; background: #fff; border-bottom: 1px solid #e4e4df; font-weight: 700; }
       main { max-width: 720px; margin: 40px auto; padding: 0 16px; }
       .card { background: #fff; border: 1px solid #e4e4df; border-radius: 12px; padding: 20px 24px; margin-bottom: 16px; }
+      button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #c9c9c3; background: #fff; cursor: pointer; }
       .note { color: #6b6b66; font-size: 14px; }
       code { background: #f0f0ec; padding: 1px 6px; border-radius: 4px; }
     </style>
@@ -24,11 +25,27 @@
       <div class="card">
         <h2>Billing</h2>
         <p>Your plan: <strong>Team</strong> · next invoice on the 1st.</p>
-        <p class="note">(Later milestones capture errors on pages like this so the AI can see what broke.)</p>
+        <p>
+          <button id="pay">Pay invoice</button>
+          <button id="chart">Show usage chart</button>
+          <span id="status" class="note"></span>
+        </p>
+        <p class="note">Try it: click a button (one request fails, one throws a JavaScript error), then ask in the chat "why can't I pay my invoice?". The widget shares what went wrong, masked, so the AI and your team can see it.</p>
       </div>
       <p class="note" id="missing" hidden>Add <code>?key=wk_…</code> to the URL. Settings → Install the chat widget has a link with your key.</p>
     </main>
     <script>
+      // P1 demo: a payment request that fails with a 500, and a chart that throws.
+      document.getElementById("pay").onclick = function () {
+        document.getElementById("status").textContent = "Paying…";
+        fetch("/api/demo/billing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ invoice: "inv_2041", email: "pat@customer.test" }) })
+          .then(function (r) { document.getElementById("status").textContent = r.ok ? "Paid" : "Something went wrong. Please try again."; });
+      };
+      document.getElementById("chart").onclick = function () {
+        var usage = undefined;
+        document.getElementById("status").textContent = "Chart failed to load.";
+        setTimeout(function () { usage.series.map(String); });
+      };
       var key = new URLSearchParams(location.search).get("key");
       if (key) {
         var s = document.createElement("script");

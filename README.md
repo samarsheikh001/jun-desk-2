@@ -2,7 +2,7 @@
 
 Open-source AI support desk for B2B SaaS that knows what broke before your customer finishes typing — running in your own Cloudflare account.
 
-> **Status: early development (M2).** Live chat widget, real-time inbox, and an AI assistant that answers from your docs with citations and hands off to your team. See [`docs/build-plan.md`](docs/build-plan.md).
+> **Status: early development (M4).** Live chat widget, real-time inbox, an AI assistant that answers from your docs with citations, and **support that sees the bug**: the widget notices errors and failed requests in your customer's browser, so the AI and your team know what broke. See [`docs/build-plan.md`](docs/build-plan.md).
 
 ## Deploy
 
@@ -15,6 +15,12 @@ The button creates the Worker, a D1 database and a Durable Object namespace in y
 Then open your Worker's URL, enter the setup token, and create a passkey (fingerprint, face or device PIN). No email service, OAuth app or database server is needed.
 
 > Passkeys are tied to the hostname you create them on. If you later move the desk to a custom domain, sign in on the old URL and add a passkey on the new one, or use the recovery page (`/recover`).
+
+## The widget
+
+Paste the snippet from **Settings → Install the chat widget**, ideally in `<head>` so it sees errors from the start of the page.
+
+The loader also keeps a short, in-memory list of what went wrong in the visitor's browser: JavaScript errors, failed requests (status only, never bodies) and pages visited. It's shared with your team only when the visitor sends a message. Query values are stripped and emails, tokens and secrets are masked before anything leaves the browser (and again on the server). To turn it off, add `data-capture="off"` to the script tag.
 
 ## AI assistant
 

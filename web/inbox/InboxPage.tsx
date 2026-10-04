@@ -4,6 +4,7 @@ import { api } from "../api.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList } from "../components/MessageList.tsx";
 import { navigate } from "../lib/router.ts";
+import { DebugPanel } from "./DebugPanel.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
 import type { Hub } from "../Shell.tsx";
 
@@ -104,6 +105,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
                   <span className="row">
                     <strong>{contactLabel(c.contact)}</strong>
                     {c.handling === "ai" && <em className="tag ai-tag" title="The AI assistant is answering">AI</em>}
+                    {c.debugIssueCount > 0 && <em className="tag issue-tag" title="Errors or failed requests in the visitor's browser">⚠ {c.debugIssueCount}</em>}
                     <span className="spacer" />
                     <span className="muted small">{formatTime(c.lastMessageAt)}</span>
                   </span>
@@ -172,7 +174,9 @@ function Thread({ conversationId, workspaceId, me, members }: { conversationId: 
   if (!conversation || !initial) return <div className="thread empty muted">Loading…</div>;
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "Teammate";
 
+  const visitorMessages = thread.messages.filter((m) => m.authorType === "visitor").length;
   return (
+    <div className="thread-wrap">
     <section className="thread">
       <header className="thread-head">
         <div>
@@ -235,5 +239,7 @@ function Thread({ conversationId, workspaceId, me, members }: { conversationId: 
         }}
       />
     </section>
+    <DebugPanel conversationId={conversationId} refreshKey={visitorMessages + conversation.debugIssueCount * 1000} />
+    </div>
   );
 }

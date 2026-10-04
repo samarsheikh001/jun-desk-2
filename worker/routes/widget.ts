@@ -54,6 +54,8 @@ function sendInput(body: Record<string, unknown>) {
     clientMsgId: String(body.clientMsgId ?? ""),
     body: typeof body.body === "string" ? body.body : "",
     attachments: Array.isArray(body.attachments) ? (body.attachments as Attachment[]) : [],
+    // Debug snapshot from the loader (P1); sanitized by the Conversation object.
+    context: body.context,
   };
 }
 

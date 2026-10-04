@@ -21,13 +21,19 @@ function Attachments({ attachments }: { attachments: Attachment[] }) {
   );
 }
 
+/** `inline code` spans (AI replies often quote paths like `/api/billing`). */
+function withCode(text: string, key: number): ReactNode {
+  return text.split(/(`[^`\n]+`)/g).map((part, i) =>
+    part.length > 2 && part.startsWith("`") && part.endsWith("`") ? <code key={`${key}-${i}`}>{part.slice(1, -1)}</code> : <Fragment key={`${key}-${i}`}>{part}</Fragment>,
+  );
+}
+
 /** Renders [1]-style citations as small superscript links to the cited source. */
 function withCitations(body: string, sources: Source[] | undefined): ReactNode {
-  if (!sources?.length) return body;
   return body.split(/(\[\d{1,2}\])/g).map((part, i) => {
     const n = /^\[(\d{1,2})\]$/.exec(part)?.[1];
-    const source = n ? sources[Number(n) - 1] : undefined;
-    if (!source) return <Fragment key={i}>{part}</Fragment>;
+    const source = n ? sources?.[Number(n) - 1] : undefined;
+    if (!source) return <Fragment key={i}>{withCode(part, i)}</Fragment>;
     return source.url ? (
       <a key={i} className="cite" href={source.url} target="_blank" rel="noreferrer" title={source.title}>{n}</a>
     ) : (

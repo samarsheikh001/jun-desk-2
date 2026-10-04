@@ -32,6 +32,8 @@ app.use("*", async (c, next) => {
 });
 
 app.get("/health", (c) => c.json({ ok: true }));
+// Used only by public/demo.html to show P1: a request that fails like a real bug would.
+app.post("/demo/billing", (c) => c.json({ error: { code: "payment_provider_timeout", message: "Upstream payment provider timed out" } }, 500));
 app.route("/", auth);
 app.route("/", workspaces);
 app.route("/", conversations);

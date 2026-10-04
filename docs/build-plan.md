@@ -88,6 +88,8 @@
 
 ## M4 — P1: support that sees the bug ⭐
 
+> **Status 2026-10-04: built and tested locally.** In headless Chrome on the demo page: "Pay invoice" fails with a real 500 and a chart throws; the visitor asks "Why can't I pay my invoice?"; the AI answers "Your request to /api/demo/billing failed with a server error (500) at 21:11:42. I've flagged this to our team." and hands off; the agent sees both events in the debug panel. e2e-debug (6 steps) checks masking end to end. **This is the first good moment to show design partners.**
+
 *Demo: the test site throws a 500 on /api/billing. The visitor asks "why can't I pay?" The AI answers "your request to /api/billing failed at 14:02, I've flagged it", and the agent sees the debug panel.*
 
 | ID | Feature | Size | |

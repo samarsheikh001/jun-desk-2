@@ -84,3 +84,31 @@ test("FTS query quotes terms and drops stopwords", () => {
   assert.equal(ftsQuery('How do I get a "refund" for /api/billing?'), '"get" OR "refund" OR "api" OR "billing"');
   assert.equal(ftsQuery("is it the"), null);
 });
+
+test("parseReply: answers, handoffs and escalations", async () => {
+  const { parseReply } = await import("./agent.ts");
+  assert.deepEqual(parseReply("HANDOFF: needs a refund"), { kind: "handoff", reason: "needs a refund" });
+  assert.deepEqual(parseReply("  "), { kind: "handoff", reason: "The AI couldn't answer from the knowledge base." });
+  assert.deepEqual(parseReply("Refunds take 14 days [1]."), { kind: "answer", text: "Refunds take 14 days [1].", escalate: null });
+  assert.deepEqual(parseReply("Your payment request failed with a 500 at 14:02. I've flagged it.\nESCALATE: POST /api/billing returns 500"), {
+    kind: "answer",
+    text: "Your payment request failed with a 500 at 14:02. I've flagged it.",
+    escalate: "POST /api/billing returns 500",
+  });
+});
+
+test("streamVisible never shows HANDOFF or ESCALATE lines, even mid-stream", async () => {
+  const { streamVisible } = await import("./agent.ts");
+  assert.equal(streamVisible("HAND"), "");
+  assert.equal(streamVisible("HANDOFF: refund"), "");
+  assert.equal(streamVisible("Hello"), "Hello");
+  assert.equal(streamVisible("It failed.\nES"), "It failed.");
+  assert.equal(streamVisible("It failed.\nESCALATE: POST /api/billing 500"), "It failed.");
+  assert.equal(streamVisible("It failed.\nEspecially"), "It failed.\nEspecially");
+});
+
+test("citations in full-width brackets (some models) are understood", () => {
+  const { text, sources } = resolveCitations("Refunds within 14 days【1】 or credit【2†L3-L5】.", [hit("A"), hit("B")]);
+  assert.equal(text, "Refunds within 14 days[1] or credit[2].");
+  assert.equal(sources.length, 2);
+});

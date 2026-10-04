@@ -14,5 +14,6 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
   },
-  "include": ["web/**/*.ts", "web/**/*.tsx", "shared/**/*.ts", "vite.config.ts"]
+  "include": ["web/**/*.ts", "web/**/*.tsx", "shared/**/*.ts", "vite.config.ts"],
+  "exclude": ["**/*.test.ts"]
 }

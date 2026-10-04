@@ -61,6 +61,28 @@ class WidgetApi {
 }
 
 const postToHost = (message: unknown) => window.parent !== window && window.parent.postMessage(message, "*");
+
+/**
+ * Asks the loader on the host page for its debug snapshot (recent errors, failed requests,
+ * page trail; already masked). Resolves to undefined if there's no loader or it's slow.
+ */
+function hostContext(): Promise<unknown> {
+  if (window.parent === window) return Promise.resolve(undefined);
+  const id = crypto.randomUUID();
+  return new Promise((resolve) => {
+    const done = (value: unknown) => {
+      window.removeEventListener("message", onMessage);
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const onMessage = (e: MessageEvent) => {
+      if (e.source === window.parent && e.data?.type === "jun:context" && e.data.id === id) done(e.data.context);
+    };
+    const timer = setTimeout(() => done(undefined), 500);
+    window.addEventListener("message", onMessage);
+    postToHost({ type: "jun:context-request", id });
+  });
+}
 const unread = (c: ConversationSummary) => c.lastMessageAuthor === "agent" && c.lastSeq > c.visitorReadSeq;
 
 export function WidgetApp({ widgetKey }: { widgetKey: string }) {
@@ -208,16 +230,17 @@ function WidgetThread({
 
   const send = async (body: string, attachments: Attachment[]) => {
     setError(null);
+    const context = await hostContext();
     if (conversationId) {
       thread.setTyping(false);
-      thread.send(body, attachments);
+      thread.send(body, attachments, undefined, context);
       return;
     }
     // First message: create the visitor (if needed) and the conversation in one go.
     try {
       await api.ensureVisitor();
       const r = await api.call<{ conversation: ConversationSummary; message: Message }>("/conversations", {
-        body: { clientMsgId: crypto.randomUUID(), body, attachments },
+        body: { clientMsgId: crypto.randomUUID(), body, attachments, context },
       });
       onStarted(r.conversation);
     } catch (e) {

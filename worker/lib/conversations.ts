@@ -2,7 +2,7 @@ import type { Attachment, AuthorType, ConversationStatus, ConversationSummary, H
 
 export const SUMMARY_SELECT = `
   SELECT c.id, c.status, c.handling, c.assignee_id, c.last_seq, c.last_message_at, c.last_message_preview,
-         c.last_message_author, c.agent_read_seq, c.visitor_read_seq, c.created_at,
+         c.last_message_author, c.agent_read_seq, c.visitor_read_seq, c.created_at, c.debug_issue_count,
          ct.id AS contact_id, ct.name AS contact_name, ct.email AS contact_email
   FROM conversations c JOIN contacts ct ON ct.id = c.contact_id`;
 
@@ -18,6 +18,7 @@ export interface SummaryRow {
   agent_read_seq: number;
   visitor_read_seq: number;
   created_at: number;
+  debug_issue_count: number;
   contact_id: string;
   contact_name: string | null;
   contact_email: string | null;
@@ -37,6 +38,7 @@ export function toSummary(row: SummaryRow): ConversationSummary {
     agentReadSeq: row.agent_read_seq,
     visitorReadSeq: row.visitor_read_seq,
     createdAt: row.created_at,
+    debugIssueCount: row.debug_issue_count,
   };
 }
 

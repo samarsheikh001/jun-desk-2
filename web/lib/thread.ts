@@ -105,9 +105,9 @@ export function useThread(options: {
 
   /** Optimistically shows the message and sends it over the socket. Returns false if offline. */
   const send = useCallback(
-    (body: string, attachments: Attachment[] = [], clientMsgId: string = crypto.randomUUID()) => {
+    (body: string, attachments: Attachment[] = [], clientMsgId: string = crypto.randomUUID(), context?: unknown) => {
       setPending((p) => [...p.filter((m) => m.clientMsgId !== clientMsgId), { clientMsgId, body, attachments }]);
-      const sent = sendEvent({ type: "send", clientMsgId, body, attachments });
+      const sent = sendEvent({ type: "send", clientMsgId, body, attachments, ...(context !== undefined ? { context } : {}) });
       if (!sent) setPending((p) => p.map((m) => (m.clientMsgId === clientMsgId ? { ...m, failed: "Not connected. Retry when back online." } : m)));
       return sent;
     },

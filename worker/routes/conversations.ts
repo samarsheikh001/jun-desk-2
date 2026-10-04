@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
 import type { ConversationStatus } from "../../shared/protocol.ts";
 import { requireUser } from "../auth/session.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
@@ -86,6 +87,30 @@ conversations.get("/conversations/:cid", async (c) => {
   const ref = await requireConversation(c, c.req.param("cid"));
   const [conversation, messages] = await Promise.all([loadSummary(c.env.DB, ref.conversationId), loadMessages(c.env.DB, ref.conversationId, { includeInternal: true })]);
   return c.json({ conversation, messages });
+});
+
+// Debug context (S-03): the latest snapshot's environment plus every captured event,
+// merged across snapshots (each message sends the loader's whole recent buffer).
+conversations.get("/conversations/:cid/context", async (c) => {
+  const ref = await requireConversation(c, c.req.param("cid"));
+  const rows = await c.env.DB.prepare("SELECT context FROM debug_snapshots WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 20")
+    .bind(ref.conversationId)
+    .all<{ context: string }>();
+  if (rows.results.length === 0) return c.json({ context: null, events: [], issueCount: 0 });
+  const snapshots = rows.results.map((r) => JSON.parse(r.context) as DebugContext);
+  const seen = new Set<string>();
+  const events: DebugEvent[] = [];
+  for (const snapshot of snapshots) {
+    for (const e of snapshot.events) {
+      const key = `${e.t}|${e.kind}|${e.url ?? ""}|${e.message ?? ""}|${e.status ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      events.push(e);
+    }
+  }
+  events.sort((a, b) => b.t - a.t);
+  const { events: _latestEvents, ...latest } = snapshots[0]!;
+  return c.json({ context: latest, events: events.slice(0, 100), issueCount: events.filter(isIssue).length });
 });
 
 conversations.patch("/conversations/:cid", async (c) => {

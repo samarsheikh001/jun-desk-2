@@ -21,6 +21,8 @@ await step("owner signs in (recovery passkey) and finds the widget key", async (
   ownerId = me.user.id;
   widgetKey = (await agent.call(`/workspaces/${workspaceId}/inbox`)).json.inbox.widgetKey;
   assert.match(widgetKey, /^wk_/);
+  // This suite tests human chat: make sure the AI isn't answering (other suites may turn it on).
+  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: false, provider: "workers-ai" } });
 });
 
 await step("agent hub socket connects and reports presence", async () => {

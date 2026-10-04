@@ -5,6 +5,7 @@ import type { SearchHit } from "./query.ts";
 // Prompting and post-processing for the support agent. Pure functions.
 
 export const HANDOFF_PREFIX = "HANDOFF";
+export const ESCALATE_PREFIX = "ESCALATE";
 export const MAX_AI_TURNS = 8;
 
 /** The visitor plainly asking for a person skips the model entirely. */
@@ -14,7 +15,7 @@ export function asksForHuman(text: string): boolean {
   return HUMAN_REQUEST.test(text.trim());
 }
 
-export function systemPrompt(options: { workspaceName: string; instructions: string; hits: SearchHit[] }): string {
+export function systemPrompt(options: { workspaceName: string; instructions: string; hits: SearchHit[]; technical?: string[] }): string {
   const sources = options.hits.length
     ? options.hits
         .map((h, i) => `[${i + 1}] ${h.title}${h.heading ? ` › ${h.heading}` : ""}${h.url ? ` (${h.url})` : ""}\n${h.text}`)
@@ -32,7 +33,57 @@ Rules:
 - Be concise and friendly: a few short sentences or a short list. Reply in the customer's language.
 
 Sources:
-${sources}`;
+${sources}${
+    options.technical?.length
+      ? `
+
+Technical context from the customer's browser (captured automatically, oldest first, times in their timezone):
+${options.technical.join("\n")}
+
+How to use the technical context:
+- If an error or failed request in it explains the customer's problem, say plainly what failed and when (for example: "your request to /api/billing failed with a server error (500) at 14:02"), say you've flagged it to the team, and don't guess the cause or promise a fix. Then end your reply with one final line: ${ESCALATE_PREFIX}: <one-line summary for engineers>.
+- If it's unrelated to their question, don't mention it.`
+      : ""
+  }`;
+}
+
+export type ReplyOutcome =
+  | { kind: "handoff"; reason: string }
+  | { kind: "answer"; text: string; escalate: string | null };
+
+// Regex literals (must match HANDOFF_PREFIX / ESCALATE_PREFIX).
+const HANDOFF_LINE = /^HANDOFF:?\s*/;
+const ESCALATE_LINE = /^\s*ESCALATE:?\s*(.*)$/m;
+
+/** Interprets a finished model reply: a HANDOFF line, or an answer with an optional ESCALATE line. */
+export function parseReply(raw: string): ReplyOutcome {
+  const text = raw.trim();
+  if (!text || text.startsWith(HANDOFF_PREFIX)) {
+    const reason = text.replace(HANDOFF_LINE, "").split("\n")[0]?.trim();
+    return { kind: "handoff", reason: reason || "The AI couldn't answer from the knowledge base." };
+  }
+  const match = ESCALATE_LINE.exec(text);
+  if (!match) return { kind: "answer", text, escalate: null };
+  return { kind: "answer", text: text.slice(0, match.index).trim(), escalate: match[1]?.trim() || "Reported by the AI from the customer's browser errors." };
+}
+
+/**
+ * What the visitor may see of a reply while it streams: nothing while it could still be a
+ * HANDOFF line, and never an ESCALATE line (held back while a line could become one).
+ */
+export function streamVisible(raw: string): string {
+  const head = raw.trimStart();
+  if (head.startsWith(HANDOFF_PREFIX) || (head.length < HANDOFF_PREFIX.length + 2 && HANDOFF_PREFIX.startsWith(head.slice(0, HANDOFF_PREFIX.length)))) return "";
+  const lines = raw.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    const isLast = i === lines.length - 1;
+    if (line.startsWith(ESCALATE_PREFIX)) break;
+    if (isLast && line && ESCALATE_PREFIX.startsWith(line)) break; // could still become "ESCALATE:"
+    out.push(lines[i]!);
+  }
+  return out.join("\n");
 }
 
 /** Recent public conversation as model input (agents' messages count as the assistant side). */
@@ -56,7 +107,9 @@ export function searchQuery(history: Message[]): string {
  */
 export function resolveCitations(text: string, hits: SearchHit[]): { text: string; sources: Source[] } {
   const order: number[] = [];
-  const out = text.replace(/\[(\d{1,2})\]/g, (match, n: string) => {
+  // Some models cite as 【1】 or 【1†source】; normalise to [1] first.
+  const normalized = text.replace(/[【［[](\d{1,2})(?:†[^】］\]]*)?[】］\]]/g, "[$1]");
+  const out = normalized.replace(/\[(\d{1,2})\]/g, (match, n: string) => {
     const index = Number(n) - 1;
     if (!hits[index]) return "";
     if (!order.includes(index)) order.push(index);
@@ -72,6 +125,7 @@ export const HANDOFF_MESSAGES = {
   default: "I'll get a teammate to help with this. They'll reply right here.",
   limit: "Our assistant isn't available right now, but a teammate will reply right here.",
   error: "I couldn't answer that just now, so I've asked a teammate to help. They'll reply right here.",
+  escalated: "I've passed this to the team with the technical details. They'll follow up right here.",
 } as const;
 
 export function briefPrompt(): string {
@@ -80,5 +134,5 @@ Use only facts from the transcript. Never invent what was said, steps taken, or 
 Write 2-4 short lines, no preamble:
 Issue: what the customer needs.
 Tried: what the AI actually answered, or "Nothing yet" if it didn't answer.
-Next: the most useful next step for the agent.`;
+Next: the most useful next step for the agent. If technical context shows an error or failed request, quote it exactly (method, path, status, time).`;
 }

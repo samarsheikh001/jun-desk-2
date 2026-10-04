@@ -215,10 +215,31 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .conv-list { display: none; }
 }
 
+/* ---------- debug panel (P1) ---------- */
+.thread-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; min-width: 0; }
+.debug-panel { border-left: 1px solid var(--border); background: var(--surface); overflow: auto; padding: 14px 16px; display: grid; gap: 10px; align-content: start; }
+.debug-panel h3 { margin: 0; font-size: 0.9rem; }
+.debug-panel code { font-size: 0.8rem; word-break: break-all; }
+.env { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; }
+.env dt { color: var(--muted); }
+.env dd { margin: 0; min-width: 0; }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ev { display: grid; grid-template-columns: 58px 1fr; gap: 6px; padding: 6px 8px; border-radius: 8px; background: var(--bg); }
+.ev.bad { background: #fdecec; }
+.ev .status { font-weight: 600; }
+.ev.bad .status { color: var(--error); }
+.ev-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.ev pre { white-space: pre-wrap; font-size: 0.75rem; margin: 4px 0 0; }
+.issue-count, .issue-tag { color: var(--error); font-weight: 600; }
+.issue-tag { background: #fdecec; margin-left: 4px; }
+@media (prefers-color-scheme: dark) { .ev.bad, .issue-tag { background: #3a1d1d; } }
+@media (max-width: 1100px) { .thread-wrap { grid-template-columns: 1fr; } .debug-panel { display: none; } }
+
 /* ---------- AI ---------- */
 .ai-tag { margin-left: 6px; }
 .msg.ai .bubble { background: var(--tag); color: var(--text); border-color: transparent; }
 .msg.ai.streaming .bubble { opacity: 0.9; }
+.bubble code { font-size: 0.85em; padding: 0 4px; border-radius: 4px; background: var(--surface); }
 .cite { font-size: 0.7em; vertical-align: super; margin: 0 1px; padding: 0 4px; border-radius: 6px; background: var(--surface); text-decoration: none; }
 .sources { margin: 4px 4px 0; padding-left: 18px; color: var(--muted); }
 .sources a { color: var(--muted); }

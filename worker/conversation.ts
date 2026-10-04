@@ -16,15 +16,17 @@ import {
   asksForHuman,
   briefPrompt,
   HANDOFF_MESSAGES,
-  HANDOFF_PREFIX,
   MAX_AI_TURNS,
+  parseReply,
   resolveCitations,
   searchQuery,
+  streamVisible,
   systemPrompt,
   toChatMessages,
 } from "./ai/agent.ts";
 import { AiUnavailableError, createProvider, loadAiSettings } from "./ai/providers.ts";
 import { searchKnowledge } from "./ai/search.ts";
+import { describeEvents, isIssue, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { newId } from "./lib/crypto.ts";
 
@@ -42,6 +44,8 @@ export interface SendInput {
   clientMsgId: string;
   body: string;
   attachments?: Attachment[] | undefined;
+  /** Visitor's debug snapshot from the loader; sanitized before storing. */
+  context?: unknown;
 }
 
 export type SendResult = { ok: true; message: Message } | { ok: false; code: string; message: string };
@@ -236,10 +240,32 @@ export class Conversation extends DurableObject<Env> {
       clientMsgId: input.clientMsgId,
     });
 
+    if (participant.role === "visitor" && input.context !== undefined) await this.#storeContext(ref, message.seq, input.context);
+
     // The AI answers visitor messages in AI-handled conversations, from an alarm so the
     // sender isn't kept waiting (and so it's retried if the object restarts).
     if (participant.role === "visitor") await this.ctx.storage.setAlarm(Date.now());
     return message;
+  }
+
+  /** Stores the visitor's browser snapshot (re-sanitized: never trust the client) for agents and the AI. */
+  async #storeContext(ref: ConversationRef, seq: number, raw: unknown): Promise<void> {
+    const context = sanitizeContext(raw);
+    if (!context) return;
+    const json = JSON.stringify(context);
+    if (json.length > 64_000) return;
+    await this.env.DB.batch([
+      this.env.DB.prepare("INSERT INTO debug_snapshots (id, conversation_id, workspace_id, message_seq, context, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(
+        newId("dbg"),
+        ref.conversationId,
+        ref.workspaceId,
+        seq,
+        json,
+        Date.now(),
+      ),
+      this.env.DB.prepare("UPDATE conversations SET debug_issue_count = ? WHERE id = ?").bind(context.events.filter(isIssue).length, ref.conversationId),
+    ]);
+    this.ctx.waitUntil(this.#publish(ref));
   }
 
   /** Stores a message (idempotent per clientMsgId), broadcasts it and updates inbox lists. */
@@ -406,12 +432,13 @@ export class Conversation extends DurableObject<Env> {
 
       const workspace = await this.env.DB.prepare("SELECT name FROM workspaces WHERE id = ?").bind(ref.workspaceId).first<{ name: string }>();
       const hits = await searchKnowledge(this.env, ref.workspaceId, searchQuery(history));
-      const instructions = systemPrompt({ workspaceName: workspace?.name ?? "this company", instructions: settings.instructions, hits });
+      const technical = await this.#technicalContext(ref);
+      const instructions = systemPrompt({ workspaceName: workspace?.name ?? "this company", instructions: settings.instructions, hits, technical });
 
-      // Stream, holding back the first characters until we know it isn't a HANDOFF line.
+      // Stream what the visitor may see: nothing that could be a HANDOFF line, never an ESCALATE line.
       const streamId = newId("str");
       let text = "";
-      let released = false;
+      let shown = "";
       let usageInfo: unknown;
       for await (const event of provider.stream({ instructions, messages: toChatMessages(history) })) {
         if (event.type === "done") {
@@ -419,31 +446,28 @@ export class Conversation extends DurableObject<Env> {
           break;
         }
         text += event.text;
-        if (!released) {
-          const head = text.trimStart();
-          if (HANDOFF_PREFIX.startsWith(head.slice(0, HANDOFF_PREFIX.length)) && head.length < HANDOFF_PREFIX.length + 2) continue;
-          if (head.startsWith(HANDOFF_PREFIX)) continue; // swallow the whole handoff line
-          released = true;
-          this.#streaming = { streamId, text };
-          this.#broadcast({ type: "ai_delta", streamId, text, replace: true });
+        const visible = streamVisible(text);
+        if (visible.length === 0 || visible === shown) continue;
+        if (shown && visible.startsWith(shown)) {
+          this.#broadcast({ type: "ai_delta", streamId, text: visible.slice(shown.length) });
         } else {
-          this.#streaming = { streamId, text: this.#streaming!.text + event.text };
-          this.#broadcast({ type: "ai_delta", streamId, text: event.text });
+          this.#broadcast({ type: "ai_delta", streamId, text: visible, replace: true });
         }
+        shown = visible;
+        this.#streaming = { streamId, text: visible };
       }
       await this.#recordUsage(ref.workspaceId, month, usageInfo);
 
       // A teammate may have taken over while we were writing: drop the answer.
       if ((await this.#handling(ref)) !== "ai") return false;
 
-      const trimmed = text.trim();
-      if (trimmed.startsWith(HANDOFF_PREFIX) || !trimmed) {
-        const reason = trimmed.replace(new RegExp(`^${HANDOFF_PREFIX}:?\\s*`), "").split("\n")[0]?.trim() || "The AI couldn't answer from the knowledge base.";
-        await this.#handoff(ref, reason, HANDOFF_MESSAGES.default, provider, history);
+      const outcome = parseReply(text);
+      if (outcome.kind === "handoff") {
+        await this.#handoff(ref, outcome.reason, HANDOFF_MESSAGES.default, provider, history, technical);
         return false;
       }
-      const { text: body, sources } = resolveCitations(trimmed, hits);
-      await this.#insert(ref, {
+      const { text: body, sources } = resolveCitations(outcome.text, hits);
+      const answer = await this.#insert(ref, {
         authorType: "ai",
         authorId: null,
         authorName: null,
@@ -451,6 +475,14 @@ export class Conversation extends DurableObject<Env> {
         clientMsgId: `ai:${last.seq}`, // one answer per visitor message, even if this turn is retried
         meta: sources.length ? { sources } : {},
       });
+      this.#streaming = undefined;
+      this.#thinking = false;
+      this.#broadcast({ type: "ai_status", state: "idle" });
+      if (outcome.escalate) {
+        // P1: the AI explained what broke; now the team gets it with the technical details.
+        await this.#handoff(ref, `Bug flagged by the AI: ${outcome.escalate}`, HANDOFF_MESSAGES.escalated, provider, [...history, answer], technical);
+        return false;
+      }
       return true;
     } catch (error) {
       console.error("AI turn failed:", error);
@@ -464,7 +496,17 @@ export class Conversation extends DurableObject<Env> {
   }
 
   /** Hands an AI conversation to the team: tells the visitor, and leaves agents a brief (AI-04). */
-  async #handoff(ref: ConversationRef, reason: string, visitorText: string, provider?: LlmProvider, history?: Message[]): Promise<void> {
+  /** The visitor's latest browser snapshot as prompt lines (P1). */
+  async #technicalContext(ref: ConversationRef): Promise<string[]> {
+    const row = await this.env.DB.prepare("SELECT context FROM debug_snapshots WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1")
+      .bind(ref.conversationId)
+      .first<{ context: string }>();
+    if (!row) return [];
+    const context = JSON.parse(row.context) as DebugContext;
+    return [`Page: ${context.page.url}${context.page.title ? ` ("${context.page.title}")` : ""}`, ...describeEvents(context).slice(-25)];
+  }
+
+  async #handoff(ref: ConversationRef, reason: string, visitorText: string, provider?: LlmProvider, history?: Message[], technical: string[] = []): Promise<void> {
     const changed = await this.env.DB.prepare("UPDATE conversations SET handling = 'human', status = 'open' WHERE id = ? AND handling = 'ai'")
       .bind(ref.conversationId)
       .run();
@@ -475,7 +517,9 @@ export class Conversation extends DurableObject<Env> {
     let brief = "";
     if (provider && history) {
       try {
-        const transcript = history.map((m) => `${m.authorType === "visitor" ? "Customer" : m.authorType === "ai" ? "AI" : "Agent"}: ${m.body}`).join("\n");
+        const transcript =
+          history.map((m) => `${m.authorType === "visitor" ? "Customer" : m.authorType === "ai" ? "AI" : "Agent"}: ${m.body}`).join("\n") +
+          (technical.length ? `\n\nTechnical context from the customer's browser:\n${technical.join("\n")}` : "");
         let out = "";
         const work = (async () => {
           for await (const e of provider.stream({ instructions: briefPrompt(), messages: [{ role: "user", content: transcript.slice(-6000) }] })) {

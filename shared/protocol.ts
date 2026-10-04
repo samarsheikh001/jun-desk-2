@@ -54,11 +54,14 @@ export interface ConversationSummary {
   agentReadSeq: number;
   visitorReadSeq: number;
   createdAt: number;
+  /** Errors + failed requests in the visitor's latest browser snapshot (P1). */
+  debugIssueCount: number;
 }
 
 /** Messages a client sends on a conversation socket. */
 export type ClientEvent =
-  | { type: "send"; clientMsgId: string; body: string; attachments?: Attachment[] }
+  /** `context`: the visitor's debug snapshot from the loader (visitors only; see shared/debug.ts). */
+  | { type: "send"; clientMsgId: string; body: string; attachments?: Attachment[]; context?: unknown }
   | { type: "typing"; typing: boolean }
   | { type: "read"; seq: number }
   /** Visitor asks for a person (W-07). */
