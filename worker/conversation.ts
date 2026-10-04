@@ -390,12 +390,18 @@ export class Conversation extends DurableObject<Env> {
 
   /** One AI turn. Returns true if it replied (so the caller checks for newer messages). */
   async #aiTurn(ref: ConversationRef): Promise<boolean> {
-    if ((await this.#handling(ref)) !== "ai") return false;
-    const history = await loadMessages(this.env.DB, ref.conversationId, { includeInternal: false, limit: 40 });
+    const month = new Date().toISOString().slice(0, 7);
+    // Independent lookups in parallel: every round trip here delays the first word.
+    const [handling, history, settings, usage] = await Promise.all([
+      this.#handling(ref),
+      loadMessages(this.env.DB, ref.conversationId, { includeInternal: false, limit: 40 }),
+      loadAiSettings(this.env, ref.workspaceId),
+      this.env.DB.prepare("SELECT replies FROM ai_usage WHERE workspace_id = ? AND month = ?").bind(ref.workspaceId, month).first<{ replies: number }>(),
+    ]);
+    if (handling !== "ai") return false;
     const last = history.at(-1);
     if (!last || last.authorType !== "visitor") return false;
 
-    const settings = await loadAiSettings(this.env, ref.workspaceId);
     if (!settings.enabled) {
       await this.#handoff(ref, "AI replies are turned off.", HANDOFF_MESSAGES.default);
       return false;
@@ -408,8 +414,6 @@ export class Conversation extends DurableObject<Env> {
       await this.#handoff(ref, `The AI has answered ${MAX_AI_TURNS} times without resolving it.`, HANDOFF_MESSAGES.default);
       return false;
     }
-    const month = new Date().toISOString().slice(0, 7);
-    const usage = await this.env.DB.prepare("SELECT replies FROM ai_usage WHERE workspace_id = ? AND month = ?").bind(ref.workspaceId, month).first<{ replies: number }>();
     if ((usage?.replies ?? 0) >= settings.monthlyReplyCap) {
       // B-03: never go silent; hand to a human instead.
       await this.#handoff(ref, `Monthly AI reply cap (${settings.monthlyReplyCap}) reached.`, HANDOFF_MESSAGES.limit);
@@ -430,9 +434,11 @@ export class Conversation extends DurableObject<Env> {
         throw error;
       }
 
-      const workspace = await this.env.DB.prepare("SELECT name FROM workspaces WHERE id = ?").bind(ref.workspaceId).first<{ name: string }>();
-      const hits = await searchKnowledge(this.env, ref.workspaceId, searchQuery(history));
-      const technical = await this.#technicalContext(ref);
+      const [workspace, hits, technical] = await Promise.all([
+        this.env.DB.prepare("SELECT name FROM workspaces WHERE id = ?").bind(ref.workspaceId).first<{ name: string }>(),
+        searchKnowledge(this.env, ref.workspaceId, searchQuery(history)),
+        this.#technicalContext(ref),
+      ]);
       const instructions = systemPrompt({ workspaceName: workspace?.name ?? "this company", instructions: settings.instructions, hits, technical });
 
       // Stream what the visitor may see: nothing that could be a HANDOFF line, never an ESCALATE line.

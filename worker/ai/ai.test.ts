@@ -105,6 +105,19 @@ test("streamVisible never shows HANDOFF or ESCALATE lines, even mid-stream", asy
   assert.equal(streamVisible("It failed.\nES"), "It failed.");
   assert.equal(streamVisible("It failed.\nESCALATE: POST /api/billing 500"), "It failed.");
   assert.equal(streamVisible("It failed.\nEspecially"), "It failed.\nEspecially");
+  // Mid-line, as some models write it.
+  assert.equal(streamVisible("I've flagged it. ESCAL"), "I've flagged it.");
+  assert.equal(streamVisible("I've flagged it. ESCALATE: POST /api/billing 500"), "I've flagged it.");
+  assert.equal(streamVisible("Ends with E"), "Ends with");
+});
+
+test("parseReply finds ESCALATE mid-line too", async () => {
+  const { parseReply } = await import("./agent.ts");
+  assert.deepEqual(parseReply("It failed with a 500 at 17:06. I've flagged this to the team. ESCALATE: POST /api/billing returns 500"), {
+    kind: "answer",
+    text: "It failed with a 500 at 17:06. I've flagged this to the team.",
+    escalate: "POST /api/billing returns 500",
+  });
 });
 
 test("citations in full-width brackets (some models) are understood", () => {

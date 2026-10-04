@@ -63,7 +63,14 @@ export const widget = new Hono<AppEnv>();
 
 widget.get("/widget/:key/config", async (c) => {
   const inbox = await widgetInbox(c);
-  return c.json({ workspaceName: inbox.workspaceName, greeting: inbox.settings.greeting ?? "Hi! How can we help?" });
+  return c.json({
+    workspaceName: inbox.workspaceName,
+    greeting: inbox.settings.greeting ?? "Hi! How can we help?",
+    // P-01: offer help when the page has an error (on unless turned off).
+    proactive: inbox.settings.proactive !== false,
+    /** Whether new chats are answered by the AI first (the widget shows its typing dots right away). */
+    ai: (await loadAiSettings(c.env, inbox.workspaceId)).enabled,
+  });
 });
 
 widget.post("/widget/:key/visitor", async (c) => {

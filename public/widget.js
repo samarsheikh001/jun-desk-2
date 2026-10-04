@@ -17,6 +17,7 @@
   // ---------- debug capture (P1). Same masking rules as shared/debug.ts. ----------
   var events = [];
   var capture = script.getAttribute("data-capture") !== "off";
+  var nativeFetch = window.fetch;
 
   function redact(s, max) {
     max = max || 500;
@@ -41,6 +42,7 @@
     e.t = Date.now();
     events.push(e);
     if (events.length > 40) events.shift();
+    maybeNudge(e);
   }
   // Our own traffic (the chat iframe, uploads) isn't the customer's problem.
   function ours(u) { try { var x = new URL(String(u), location.href); return x.origin === origin && /^\/(api\/(widget|files)|widget)/.test(x.pathname); } catch (e) { return false; } }
@@ -61,7 +63,6 @@
         push({ kind: "error", message: "Unhandled promise rejection: " + redact(r && r.message || r), stack: stackOf(r) });
       });
 
-      var nativeFetch = window.fetch;
       if (nativeFetch) {
         window.fetch = function (input, init) {
           var url = typeof input === "string" ? input : input && input.url || String(input);
@@ -115,6 +116,34 @@
     };
   }
 
+  // ---------- proactive help (P-01): offer a chat when something really breaks ----------
+  var nudged = false, nudgeTimer, nudgeText = "";
+  function worthNudging(e) {
+    if (e.kind === "error") return true;
+    // Failed API calls, not noisy asset loads or 404s on GETs.
+    return e.kind === "network" && !/^failed to load/.test(e.message || "") &&
+      (e.status === 0 || e.status >= 500 || (e.status >= 400 && e.method !== "GET"));
+  }
+  function maybeNudge(e) {
+    if (nudged || open || !worthNudging(e)) return;
+    nudgeText = /pay|billing|checkout|invoice|subscri|card|charge/i.test(e.url || "")
+      ? "Looks like your payment didn't go through. Want a hand?"
+      : "Looks like something went wrong on this page. Want a hand?";
+    clearTimeout(nudgeTimer);
+    nudgeTimer = setTimeout(showNudge, 1200); // errors come in bursts; wait for things to settle
+  }
+  function showNudge() {
+    if (nudged || open) return;
+    (nativeFetch || fetch)(origin + "/api/widget/" + encodeURIComponent(key) + "/config").then(function (r) { return r.json(); }).then(function (cfg) {
+      if (!cfg.proactive || nudged || open) return;
+      nudged = true;
+      var card = root.querySelector(".nudge");
+      card.querySelector(".nudge-text").textContent = nudgeText;
+      card.style.display = "block";
+    }).catch(function () {});
+  }
+  function hideNudge() { var card = root.querySelector(".nudge"); if (card) card.style.display = "none"; }
+
   // ---------- launcher ----------
   var host = document.createElement("div");
   host.setAttribute("data-jun-desk", "");
@@ -130,7 +159,13 @@
     ".frame{position:fixed;right:20px;bottom:88px;width:380px;height:min(640px,calc(100vh - 120px));border:0;border-radius:16px;" +
     "box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:2147483000;background:#fff;display:none}" +
     "@media (max-width:480px){.frame{right:0;bottom:0;width:100vw;height:100vh;border-radius:0}}" +
+    ".nudge{position:fixed;right:20px;bottom:88px;max-width:280px;padding:14px 16px;border-radius:14px;background:#fff;color:#1c1c1a;" +
+    "box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:2147483000;font:14px/1.45 system-ui,sans-serif;display:none}" +
+    ".nudge p{margin:0 18px 10px 0}.nudge .go{border:0;border-radius:8px;padding:7px 12px;background:" + color + ";color:#fff;font:600 13px system-ui,sans-serif;cursor:pointer}" +
+    ".nudge .x{position:absolute;top:6px;right:8px;border:0;background:none;font-size:18px;line-height:1;color:#6b6b66;cursor:pointer}" +
     "</style>" +
+    '<div class="nudge" role="dialog" aria-label="Need help?"><button class="x" aria-label="Dismiss">×</button>' +
+    '<p class="nudge-text"></p><button class="go">Chat with us</button></div>' +
     '<button class="btn" aria-label="Open chat" aria-expanded="false">' +
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="badge"></span></button>';
@@ -144,8 +179,10 @@
     if (frame && frame.contentWindow) frame.contentWindow.postMessage(message, origin);
   }
 
+  var pendingOpener = "";
   function setOpen(next) {
     open = next;
+    if (open) hideNudge();
     if (open && !frame) {
       frame = document.createElement("iframe");
       frame.className = "frame";
@@ -158,15 +195,25 @@
     button.setAttribute("aria-expanded", String(open));
     button.setAttribute("aria-label", open ? "Close chat" : "Open chat");
     post({ type: open ? "jun:open" : "jun:close" });
+    if (open && pendingOpener && frame && frame.contentWindow) post({ type: "jun:proactive", text: pendingOpener });
   }
 
   button.addEventListener("click", function () { setOpen(!open); });
+  root.querySelector(".nudge .x").addEventListener("click", hideNudge);
+  root.querySelector(".nudge .go").addEventListener("click", function () {
+    pendingOpener = nudgeText;
+    setOpen(true);
+  });
 
   window.addEventListener("message", function (e) {
     if (e.origin !== origin || !e.data || !frame || e.source !== frame.contentWindow) return;
     var type = e.data.type;
     // The frame says when it's listening; tell it whether it's currently shown.
-    if (type === "jun:ready") post({ type: open ? "jun:open" : "jun:close" });
+    if (type === "jun:ready") {
+      post({ type: open ? "jun:open" : "jun:close" });
+      if (pendingOpener) post({ type: "jun:proactive", text: pendingOpener });
+    }
+    if (type === "jun:proactive-shown") pendingOpener = "";
     if (type === "jun:close") setOpen(false);
     if (type === "jun:context-request") post({ type: "jun:context", id: e.data.id, context: snapshot() });
     if (type === "jun:unread") {

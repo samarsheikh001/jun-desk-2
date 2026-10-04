@@ -23,6 +23,7 @@ npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stri
 | `public/widget.js` | Embeddable loader (MIT, plain JS, keep under 5 KB); `public/demo.html?key=` is a test page |
 | `web/` | React dashboard (Vite), served as the Worker's static assets |
 | `migrations/` | D1 migrations (`NNNN_name.sql`); applied by `npm run dev` (local) and `npm run deploy` (remote) |
+| `scripts/bench-models.ts` | Latency/behaviour comparison of Workers AI chat models on three support questions (run against the e2e server) |
 | `scripts/e2e-*.ts` | E2E on a separate dev server + DB (`JUN_STATE_DIR=.wrangler/e2e-state`, port 5174, see README) so your own local desk isn't wiped: `e2e-auth`, `e2e-chat`, `e2e-ai` (real Workers AI). Helpers in `e2e-lib.ts` |
 
 | Package | What |

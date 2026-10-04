@@ -12,7 +12,7 @@ export interface AiSettings {
 
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
   openai: "gpt-6.1-sol",
-  "workers-ai": "@cf/openai/gpt-oss-120b",
+  "workers-ai": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   chatgpt: "gpt-6.1-sol",
 };
 
@@ -65,14 +65,16 @@ export class WorkersAIProvider implements LlmProvider {
     let usage: unknown;
     for await (const message of parseSse(stream)) {
       if (message.data === "[DONE]") break;
-      let payload: { response?: string; usage?: unknown; choices?: { delta?: { content?: string | null }; text?: string }[] };
+      let payload: { response?: string | number; usage?: unknown; choices?: { delta?: { content?: string | number | null }; text?: string }[] };
       try {
         payload = JSON.parse(message.data);
       } catch {
         continue;
       }
       // Older models stream {response}; OpenAI-compatible ones stream chat-completion chunks.
-      const delta = payload.response ?? payload.choices?.[0]?.delta?.content ?? payload.choices?.[0]?.text ?? "";
+      // Tokens can arrive as JSON numbers (a "0" token is the number 0), so stringify, don't truthy-check.
+      const raw = payload.response ?? payload.choices?.[0]?.delta?.content ?? payload.choices?.[0]?.text;
+      const delta = raw == null ? "" : String(raw);
       if (payload.usage) usage = payload.usage;
       if (delta) {
         text += delta;

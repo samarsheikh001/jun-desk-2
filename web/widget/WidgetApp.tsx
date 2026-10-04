@@ -87,14 +87,14 @@ const unread = (c: ConversationSummary) => c.lastMessageAuthor === "agent" && c.
 
 export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const api = useMemo(() => new WidgetApi(widgetKey), [widgetKey]);
-  const [config, setConfig] = useState<{ workspaceName: string; greeting: string } | null>(null);
+  const [config, setConfig] = useState<{ workspaceName: string; greeting: string; ai: boolean } | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [view, setView] = useState<{ kind: "home" } | { kind: "thread"; id: string | null }>({ kind: "home" });
+  const [view, setView] = useState<{ kind: "home" } | { kind: "thread"; id: string | null; opener?: string }>({ kind: "home" });
   const [open, setOpen] = useState(window.parent === window);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.call<{ workspaceName: string; greeting: string }>("/config").then(setConfig, (e: Error) => setError(e.message));
+    api.call<{ workspaceName: string; greeting: string; ai: boolean }>("/config").then(setConfig, (e: Error) => setError(e.message));
     if (api.token) {
       api.call<{ conversations: ConversationSummary[] }>("/conversations").then(
         (r) => {
@@ -114,6 +114,11 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       if (e.source !== window.parent) return;
       if (e.data?.type === "jun:open") setOpen(true);
       if (e.data?.type === "jun:close") setOpen(false);
+      // The visitor clicked "Chat with us" on a proactive nudge: start a new chat with that opener.
+      if (e.data?.type === "jun:proactive" && typeof e.data.text === "string") {
+        setView({ kind: "thread", id: null, opener: e.data.text.slice(0, 200) });
+        postToHost({ type: "jun:proactive-shown" });
+      }
     };
     window.addEventListener("message", onMessage);
     // Only now can we hear the loader's reply, so ask for the current state.
@@ -171,10 +176,13 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           api={api}
           conversationId={view.id}
           handling={conversations.find((c) => c.id === view.id)?.handling ?? null}
+          opener={view.opener}
+          aiEnabled={config.ai}
           open={open}
           onStarted={(c) => {
             upsert(c);
-            setView({ kind: "thread", id: c.id });
+            // Keep the proactive opener at the top of the conversation it started.
+            setView((v) => ({ kind: "thread", id: c.id, ...(v.kind === "thread" && v.opener ? { opener: v.opener } : {}) }));
           }}
           onConversation={upsert}
         />
@@ -187,6 +195,8 @@ function WidgetThread({
   api,
   conversationId,
   handling,
+  opener,
+  aiEnabled,
   open,
   onStarted,
   onConversation,
@@ -194,12 +204,16 @@ function WidgetThread({
   api: WidgetApi;
   conversationId: string | null;
   handling: "ai" | "human" | null;
+  opener?: string | undefined;
+  aiEnabled: boolean;
   open: boolean;
   onStarted: (c: ConversationSummary) => void;
   onConversation: (c: ConversationSummary) => void;
 }) {
   const [initial, setInitial] = useState<Message[] | null>(conversationId ? null : []);
   const [error, setError] = useState<string | null>(null);
+  /** First message is on its way (no conversation yet): show it, and the AI's dots, right away. */
+  const [starting, setStarting] = useState<string | null>(null);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -222,7 +236,12 @@ function WidgetThread({
   });
   const onTyping = useTypingSignal(thread.setTyping);
 
-  const latest = thread.messages.at(-1)?.seq ?? 0;
+  const lastMessage = thread.messages.at(-1);
+  const awaitingAi = Boolean(
+    (handling === "ai" || (!conversationId && starting && aiEnabled)) && !thread.aiStream && (thread.pending.length > 0 || lastMessage?.authorType === "visitor" || starting),
+  );
+
+  const latest = lastMessage?.seq ?? 0;
   useEffect(() => {
     if (open && document.visibilityState === "visible" && latest > 0) thread.markRead(latest);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -237,6 +256,7 @@ function WidgetThread({
       return;
     }
     // First message: create the visitor (if needed) and the conversation in one go.
+    setStarting(body);
     try {
       await api.ensureVisitor();
       const r = await api.call<{ conversation: ConversationSummary; message: Message }>("/conversations", {
@@ -244,6 +264,7 @@ function WidgetThread({
       });
       onStarted(r.conversation);
     } catch (e) {
+      setStarting(null);
       setError((e as Error).message);
     }
   };
@@ -252,18 +273,23 @@ function WidgetThread({
   return (
     <>
       <div className="w-body">
-        {thread.messages.length === 0 && thread.pending.length === 0 && (
-          <p className="muted small pad">Ask anything. A teammate will reply here.</p>
+        {opener ? (
+          <div className="msg other ai w-opener">
+            <div className="bubble">{opener} Tell me what you were trying to do and I'll take a look.</div>
+          </div>
+        ) : (
+          thread.messages.length === 0 && thread.pending.length === 0 && <p className="muted small pad">Ask anything. A teammate will reply here.</p>
         )}
         <MessageList
           messages={thread.messages}
-          pending={thread.pending}
+          pending={starting && !conversationId ? [{ clientMsgId: "starting", body: starting, attachments: [] }] : thread.pending}
           mine={(m) => m.authorType === "visitor"}
           authorLabel={(m) => (m.authorType === "visitor" ? "You" : m.authorType === "ai" ? "AI assistant" : m.authorName ?? "Support")}
           otherReadSeq={thread.otherReadSeq}
           typing={thread.typing}
           aiStream={thread.aiStream}
-          aiThinking={thread.aiThinking}
+          // Show the AI "typing" the instant the visitor sends, not when the server gets going.
+          aiThinking={thread.aiThinking || awaitingAi}
           onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
           onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
         />

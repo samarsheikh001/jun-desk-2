@@ -45,6 +45,9 @@ export async function searchKnowledge(env: Env, workspaceId: string, query: stri
   const byId = new Map(rows.results.map((r) => [r.id, r]));
   const candidates = ids.map((id) => byId.get(id)).filter((r): r is Omit<SearchHit, "score"> => r !== undefined);
 
+  // Nothing to choose between: skip the reranker round trip.
+  if (candidates.length <= limit) return candidates.map((c) => ({ ...c, score: fused.get(c.id) ?? 0 }));
+
   try {
     const result = (await env.AI.run(RERANK_MODEL, {
       query: q,

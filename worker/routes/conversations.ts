@@ -40,10 +40,25 @@ conversations.use("/conversations/*", requireUser);
 conversations.get("/workspaces/:id/inbox", async (c) => {
   const workspaceId = c.req.param("id");
   await requireMember(c, workspaceId);
-  const inbox = await c.env.DB.prepare("SELECT id, name, widget_key AS widgetKey FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1")
+  const inbox = await c.env.DB.prepare("SELECT id, name, widget_key AS widgetKey, settings FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1")
     .bind(workspaceId)
-    .first();
-  return c.json({ inbox });
+    .first<{ id: string; name: string; widgetKey: string; settings: string }>();
+  return c.json({ inbox: inbox && { ...inbox, settings: JSON.parse(inbox.settings) as Record<string, unknown> } });
+});
+
+// Widget settings (owners/admins): currently just proactive help.
+conversations.patch("/workspaces/:id/inbox", async (c) => {
+  const workspaceId = c.req.param("id");
+  const role = await c.env.DB.prepare("SELECT role FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, c.get("user").id).first<{ role: string }>();
+  if (!role) throw new HttpError(404, "not_found", "Workspace not found.");
+  if (role.role === "agent") throw new HttpError(403, "forbidden", "Only owners and admins can change this.");
+  const body = await readJson(c.req);
+  const inbox = await c.env.DB.prepare("SELECT id, settings FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1").bind(workspaceId).first<{ id: string; settings: string }>();
+  if (!inbox) throw new HttpError(404, "not_found", "No widget inbox.");
+  const settings = JSON.parse(inbox.settings) as Record<string, unknown>;
+  if (typeof body.proactive === "boolean") settings.proactive = body.proactive;
+  await c.env.DB.prepare("UPDATE inboxes SET settings = ? WHERE id = ?").bind(JSON.stringify(settings), inbox.id).run();
+  return c.json({ settings });
 });
 
 conversations.get("/workspaces/:id/conversations", async (c) => {

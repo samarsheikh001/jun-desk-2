@@ -62,7 +62,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | S-03 | Debug-context panel on each conversation: recent errors, failed requests, page trail | v1 | shipped | Shipped M4: "Customer context" panel (page, browser, screen, locale) + "What happened" timeline; ⚠ count badge in the inbox list | 02, 05 |
 | S-04 | Short session replay (last ~60s) attached on widget open | v3 | proposed | Heavy: privacy masking, storage. Consider integrating rrweb | 02 |
 | S-05 | AI uses debug context: summarises what happened and diagnoses ("/api/billing returned 500") | v1 | shipped | Shipped M4: AI gets the timeline; explains what failed and when, then ESCALATE → hands off with a brief quoting the failing request | 02, 05 |
-| S-06 | Struggle signals trigger a context-aware AI opener | v2 | proposed | "Looks like checkout failed — want help?" Needs P-01 | 02 |
+| S-06 | Struggle signals trigger a context-aware AI opener | v1 | shipped | Shipped 2026-10-04 (pulled forward from v2): loader shows "Looks like your payment didn't go through. Want a hand?" ~1 s after a JS error or failed API call; chat opens with that opener; once per page; toggle in Settings | 02 |
 | S-07 | PII masking and redaction controls for captured data | v1 | shipped | Shipped M4: no request/response bodies; query values stripped; emails, tokens, keys, secrets, card-like numbers masked in the browser and again on the server; data-capture="off" | 02 |
 | S-08 | Create a Linear/Jira/GitHub issue from a conversation with debug context attached | v2 | proposed | **P1**. Moved up: B2B (D-01). Gleap has this (closed) | 02, 05 |
 | S-09 | AI drafts a fix PR from a bug conversation (via coding agent) | later | proposed | **P1** stretch. Gleap Kai Code and LogRocket already do it | 05 |
@@ -146,7 +146,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
-| P-01 | Signal-triggered AI openers (struggle, page, segment) | v2 | proposed | Replaces "30s on /pricing" pop-ups | 02 |
+| P-01 | Signal-triggered AI openers (struggle, page, segment) | v1 | building | Partly shipped with S-06 (error-triggered nudge). Page/segment triggers still v2 | 02 |
 | P-02 | Public API / webhook to start an AI conversation from the customer's backend (e.g. payment failed) | v2 | proposed | Fin Proactive Procedures equivalent | 02 |
 | P-03 | Basic targeted messages (page/URL rules) | v2 | proposed | Simple version before P-01 | 02 |
 | P-04 | Outbound campaigns (email/in-app broadcasts) | later | proposed | Scope creep toward marketing tools | |

@@ -25,7 +25,7 @@ export function SettingsPage({ me }: { me: Me }) {
 
   return (
     <main className="content">
-      {workspace && <InstallPanel workspaceId={workspace.workspaceId} />}
+      {workspace && <InstallPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
       {workspace && <AiPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
 
       {error && <p className="error">{error}</p>}
@@ -55,12 +55,20 @@ export function SettingsPage({ me }: { me: Me }) {
   );
 }
 
-function InstallPanel({ workspaceId }: { workspaceId: string }) {
+function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const [widgetKey, setWidgetKey] = useState<string | null>(null);
+  const [proactive, setProactive] = useState(true);
   const [copied, setCopied] = useState(false);
   useEffect(() => {
-    api<{ inbox: { widgetKey: string } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => setWidgetKey(r.inbox?.widgetKey ?? null));
+    api<{ inbox: { widgetKey: string; settings: { proactive?: boolean } } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => {
+      setWidgetKey(r.inbox?.widgetKey ?? null);
+      setProactive(r.inbox?.settings.proactive !== false);
+    });
   }, [workspaceId]);
+  const toggleProactive = async (value: boolean) => {
+    setProactive(value);
+    await api(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body: { proactive: value } });
+  };
   if (!widgetKey) return null;
 
   const snippet = `<script src="${window.location.origin}/widget.js" data-key="${widgetKey}" async></script>`;
@@ -78,6 +86,10 @@ function InstallPanel({ workspaceId }: { workspaceId: string }) {
           <button className="small" onClick={async () => { await navigator.clipboard.writeText(snippet); setCopied(true); }}>{copied ? "Copied ✓" : "Copy"}</button>
         </div>
       </div>
+      <label className="check small" style={{ marginTop: 12 }}>
+        <input type="checkbox" checked={proactive} disabled={!canEdit} onChange={(e) => void toggleProactive(e.target.checked)} />
+        Offer help when something breaks on the page (e.g. "Looks like your payment didn't go through. Want a hand?")
+      </label>
     </section>
   );
 }
