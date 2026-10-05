@@ -170,6 +170,10 @@ export const SOCKET_PROTOCOL = "jun";
 export const MAX_MESSAGE_LENGTH = 10_000;
 export const MAX_ATTACHMENTS = 10;
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+/** K-02: knowledge files (PDF, DOCX, Markdown, text): per-file size and per-workspace count. */
+export const MAX_KB_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_KB_FILES = 200;
+export const KB_FILE_EXTENSIONS = [".pdf", ".docx", ".md", ".markdown", ".txt"];
 /** W-12: the optional comment with a rating. */
 export const MAX_CSAT_COMMENT = 1000;
 

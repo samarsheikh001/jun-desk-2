@@ -65,6 +65,8 @@ Colour, logo, greeting, button side and business hours are set in **Settings** a
 
 Turn it on in **Settings** (or from Get started) and add your docs under **Knowledge**: paste a docs or help-center URL and it reads the sitemap, re-syncs daily, and lets you see and prune exactly what it indexed. Snippets cover anything that isn't on the web.
 
+- **Files:** drop PDF, DOCX, Markdown or text files (up to 10 MB each, 200 per workspace) on the Knowledge page. Originals stay in your R2 bucket. If Workers AI can't embed them (say its daily free allocation ran out), they're still found by keyword search, and the next re-index adds the vectors.
+
 - **Workers AI** is the default. It's built in and needs no key. Mistral Small 3.1 answered all five of our benchmark questions correctly at about 1 s to the first word (`scripts/bench-models.ts`).
 - **OpenAI**: run `npx wrangler secret put OPENAI_API_KEY`. `OPENAI_BASE_URL` routes it through Cloudflare AI Gateway.
 - **ChatGPT sign-in** spends your own ChatGPT plan. Settings → AI assistant → ChatGPT sign-in → Sign in with ChatGPT. Locally it returns to the desk by itself; on a deployed desk, paste back the address of the page that doesn't load. OpenAI's terms cover plan usage for your own use, not a desk answering the public.

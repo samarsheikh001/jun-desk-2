@@ -331,6 +331,18 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--bg); border-radius: 
 .kb-filter { width: 200px; }
 .kb-chunks > li { display: list-item; padding: 0; border: 0; }
 
+/* Knowledge files (K-02) */
+.kb-upload { display: grid; gap: 8px; }
+.kb-drop { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; justify-content: space-between; padding: 14px 16px; border: 1.5px dashed var(--border); border-radius: 10px; background: var(--bg); }
+.kb-drop.over { border-color: var(--accent); background: var(--tag); }
+.kb-uploads { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.kb-uploads li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 4px 0; }
+.kb-upload-name { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.kb-uploads progress { flex: 1; min-width: 80px; max-width: 220px; height: 6px; accent-color: var(--accent); }
+.kb-uploads .error { flex-basis: 100%; }
+.kb-file-doc { padding: 6px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display: grid; gap: 2px; }
+.kb-warn { flex-basis: 100%; margin: 4px 0 0; padding: 6px 10px; border-radius: 8px; border: 1px solid color-mix(in srgb, #c98a12 45%, var(--border)); background: color-mix(in srgb, #c98a12 12%, var(--surface)); color: var(--text); }
+
 /* Widget appearance + hours (W-04, I-10) */
 .appearance { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
 @media (max-width: 760px) { .appearance { grid-template-columns: 1fr; } }
