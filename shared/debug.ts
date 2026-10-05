@@ -3,14 +3,17 @@
 // dashboard (timeline). The loader (public/widget.js) applies the same redaction rules
 // in plain JS; keep them in sync.
 
-export type DebugEventKind = "error" | "network" | "navigation";
+/** app_error: the host app's own words, from JunDesk.reportError({ message, code? }) (S-12). */
+export type DebugEventKind = "error" | "network" | "navigation" | "app_error";
 
 export interface DebugEvent {
   /** Epoch ms. */
   t: number;
   kind: DebugEventKind;
-  /** error: message; network: error text for failures without a status. */
+  /** error / app_error: message; network: error text for failures without a status. */
   message?: string;
+  /** app_error: the app's optional error code (`[\w.-]`, at most 60 chars). */
+  code?: string;
   /** error: "file:line"; */
   source?: string;
   /** error: first lines of the stack. */
@@ -68,7 +71,13 @@ export function cleanUrl(input: unknown, pageOrigin?: string): string {
   }
 }
 
-const KINDS = new Set<DebugEventKind>(["error", "network", "navigation"]);
+const KINDS = new Set<DebugEventKind>(["error", "network", "navigation", "app_error"]);
+export const MAX_APP_ERROR = 300;
+
+/** An app error code: masked, then only `[\w.-]`, at most 60 chars; "" when nothing's left. */
+export function cleanCode(input: unknown): string {
+  return typeof input === "string" ? redact(input, 60).replace(/[^\w.-]/g, "") : "";
+}
 
 /**
  * Validates and re-redacts context from the browser. Never trust the client: unknown
@@ -93,6 +102,16 @@ export function sanitizeContext(raw: unknown): DebugContext | null {
     const ev = e as Record<string, unknown>;
     if (!KINDS.has(ev.kind as DebugEventKind)) continue;
     const out: DebugEvent = { t: num(ev.t), kind: ev.kind as DebugEventKind };
+    if (out.kind === "app_error") {
+      // Only what reportError() sends: a message and an optional code.
+      const message = typeof ev.message === "string" ? redact(ev.message.trim(), MAX_APP_ERROR) : "";
+      if (!message) continue;
+      out.message = message;
+      const code = cleanCode(ev.code);
+      if (code) out.code = code;
+      events.push(out);
+      continue;
+    }
     if (ev.message != null) out.message = redact(ev.message);
     if (ev.source != null) out.source = redact(ev.source, 300);
     if (ev.stack != null) out.stack = redact(ev.stack, 800).split("\n").slice(0, 5).join("\n");
@@ -115,9 +134,9 @@ export function sanitizeContext(raw: unknown): DebugContext | null {
   };
 }
 
-/** Errors and failed requests (what the inbox badge counts). */
+/** Errors (the browser's and the app's own) and failed requests (what the inbox badge counts). */
 export function isIssue(e: DebugEvent): boolean {
-  return e.kind === "error" || (e.kind === "network" && (e.status === 0 || (e.status ?? 0) >= 400));
+  return e.kind === "error" || e.kind === "app_error" || (e.kind === "network" && (e.status === 0 || (e.status ?? 0) >= 400));
 }
 
 /** "14:02:11" in the visitor's timezone when known. */
@@ -138,6 +157,7 @@ export function describeEvents(context: DebugContext): string[] {
       const outcome = e.status ? `HTTP ${e.status}` : `failed${e.message ? ` (${e.message})` : ""}`;
       return `[${at}] ${e.method ?? "GET"} ${e.url} → ${outcome}${e.durationMs != null ? ` in ${e.durationMs} ms` : ""}`;
     }
+    if (e.kind === "app_error") return `[${at}] The app reported an error: ${e.message}${e.code ? ` (code ${e.code})` : ""}`;
     return `[${at}] JavaScript error: ${e.message}${e.source ? ` at ${e.source}` : ""}`;
   });
 }

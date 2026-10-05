@@ -55,7 +55,8 @@ export function toSummary(row: SummaryRow): ConversationSummary {
 
 /** What a visitor may see of their conversation: no tags (I-07). */
 export function forVisitor(summary: ConversationSummary): ConversationSummary {
-  return { ...summary, tags: [] };
+  // Tags and the debug issue count are for agents only.
+  return { ...summary, tags: [], debugIssueCount: 0 };
 }
 
 export async function loadSummary(db: D1Database, conversationId: string): Promise<ConversationSummary | null> {
@@ -138,7 +139,7 @@ export async function loadDebugContext(
   const events: DebugEvent[] = [];
   for (const snapshot of snapshots) {
     for (const e of snapshot.events) {
-      const key = `${e.t}|${e.kind}|${e.url ?? ""}|${e.message ?? ""}|${e.status ?? ""}`;
+      const key = `${e.t}|${e.kind}|${e.url ?? ""}|${e.message ?? ""}|${e.status ?? ""}|${e.code ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
       events.push(e);

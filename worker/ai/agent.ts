@@ -86,6 +86,7 @@ ${options.technical.join("\n")}
 
 How to use the technical context:
 - If an error or failed request in it explains the customer's problem, say plainly what failed and when (for example: "your request to /api/billing failed with a server error (500) at 14:02"), say you've flagged it to the team, and don't guess the cause or promise a fix. Then end your reply with one final line: ${ESCALATE_PREFIX}: <one-line summary for engineers>.
+- "The app reported an error" lines are the website's own words for what went wrong (like a row number or a missing field): use them to explain it plainly, but never repeat their code or masked placeholders like [email].
 - If it's unrelated to their question, don't mention it.`
       : ""
   }`;

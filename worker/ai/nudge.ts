@@ -18,7 +18,11 @@ Reply with the message only.`;
 /** The failure as facts for the model (already masked by the loader and again by the server). */
 export function nudgeFacts(event: DebugEvent, page: { url: string; title: string }): string {
   const lines = [`Page: ${page.title || "(untitled)"} (${page.url})`];
-  if (event.kind === "network") {
+  if (event.kind === "app_error") {
+    // S-12: the app's own words for the visitor's problem; the code is for engineers, not the line.
+    lines.push(`The website told the visitor what didn't work, in its own words: "${event.message ?? ""}"`);
+    lines.push("Rephrase that for the visitor, keeping details like a row number or field name.");
+  } else if (event.kind === "network") {
     lines.push(`A request the page made failed: ${event.method ?? "GET"} ${event.url ?? "?"} → ${event.status ? `HTTP ${event.status}` : "no response"}${event.message ? ` (${event.message})` : ""}`);
   } else {
     lines.push(`A JavaScript error happened: ${event.message ?? "unknown error"}`);
@@ -32,18 +36,22 @@ export function nudgeFacts(event: DebugEvent, page: { url: string; title: string
  * The model's line, if it's usable on a customer's page: one short sentence, no technical
  * detail leaking through. Otherwise null (the caller falls back to the generic line).
  */
-export function cleanNudge(raw: string): string | null {
+export function cleanNudge(raw: string, appMessage?: string): string | null {
   let text = raw.trim().split("\n")[0]!.trim().replace(/^["'“”*_\s]+|["'“”*_\s]+$/g, "");
   if (!text) return null;
   if (!/want a hand\?$/i.test(text)) text = `${text.replace(/[.!?]*$/, ".")} Want a hand?`;
   if (text.length > 140) return null;
+  // Numbers the app itself told the visitor ("row 142") aren't status codes.
+  const appNumbers = new Set(appMessage?.match(/\d+/g) ?? []);
+  const check = text.replace(/\d+/g, (n) => (appNumbers.has(n) ? "#" : n));
   // Anything that looks technical stays out of the visitor's sight.
-  if (/https?:|\/[a-z0-9_-]+\/|\b[1-5]\d\d\b|\b(error|exception|undefined|null|api|http|status|stack|typeerror|500|404)\b/i.test(text)) return null;
+  if (/https?:|\/[a-z0-9_-]+\/|\[(email|token|key|number|redacted)\]|\b[1-5]\d\d\b|\b(error|exception|undefined|null|api|http|status|stack|typeerror|500|404)\b/i.test(check)) return null;
   return text;
 }
 
 /** Same failure on the same page → same line; lets the route cache instead of calling the model. */
 export function nudgeCacheKey(workspaceId: string, event: DebugEvent, page: { url: string; title: string }): string {
-  const what = event.kind === "network" ? `${event.method} ${event.url} ${event.status}` : `${event.message} ${event.source ?? ""}`;
+  const what =
+    event.kind === "network" ? `${event.method} ${event.url} ${event.status}` : event.kind === "app_error" ? `${event.message} ${event.code ?? ""}` : `${event.message} ${event.source ?? ""}`;
   return `${workspaceId}|${page.url}|${page.title}|${event.kind}|${what}`;
 }

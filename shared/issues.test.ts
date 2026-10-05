@@ -70,6 +70,18 @@ test("errors: message and the top stack frame", () => {
   assert.equal(errorsSection([]), "## Errors\n\nNone recorded.");
 });
 
+test("S-12 app errors: in the Errors section, the steps and the fallback's actual", () => {
+  const app = sanitizeContext({ page: { url: "https://app.acme.dev/import" }, events: [{ t: T + 2000, kind: "app_error", message: "Row 42: missing `email` for pat@customer.test", code: "import.row_invalid" }] })!.events;
+  const all = [...events, ...app];
+  const section = errorsSection(all, "Europe/London");
+  assert.match(section, /- 14:02:12 `Payment failed for \[email\]`/);
+  assert.match(section, /- 14:02:13 Reported by the app: `Row 42: missing 'email' for \[email\]` \(code `import\.row_invalid`\)/);
+  assert.equal(inferSteps({ environment, events: all }).at(-1), "The app reports an error: `Row 42: missing 'email' for [email]` (code `import.row_invalid`)");
+  const withApp = { ...facts, events: all };
+  assert.equal(fallbackNarrative(withApp).actual, "The app reported: `Row 42: missing 'email' for [email]` (code `import.row_invalid`).");
+  assert.match(buildDraft(fallbackNarrative(withApp), withApp).body, /## Errors\n\n[^#]*Reported by the app: `Row 42/);
+});
+
 test("environment: browser, OS, screen, locale, page; account without personal data", () => {
   const section = environmentSection(environment, facts.account);
   assert.match(section, /- Page: `https:\/\/app\.acme\.dev\/billing\?session=…` \(Billing · \[email\]\)/);
