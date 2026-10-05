@@ -19,6 +19,7 @@ import { AiUnavailableError, createModel, loadAiSettings, type AgentModel } from
 import { runAgent } from "./ai/run.ts";
 import type { ToolAction } from "./ai/tools.ts";
 import { describeEvents, isIssue, sanitizeContext, type DebugContext } from "../shared/debug.ts";
+import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { newId } from "./lib/crypto.ts";
 
@@ -371,8 +372,30 @@ export class Conversation extends DurableObject<Env> {
     // Keep answering while the newest public message is an unanswered visitor message.
     for (let i = 0; i < 3; i++) {
       const answered = await this.#aiTurn(ref);
-      if (!answered) return;
+      if (!answered) break;
     }
+    // With the team (from the start, or just handed off) and outside business hours: say so.
+    await this.#maybeAway(ref);
+  }
+
+  /** I-10: one automatic "we're away, back Monday at 09:00" per closed period, for human-handled chats. */
+  async #maybeAway(ref: ConversationRef): Promise<void> {
+    const row = await this.env.DB.prepare(
+      `SELECT c.handling, i.settings,
+              (SELECT MAX(created_at) FROM messages m WHERE m.conversation_id = c.id AND m.author_type = 'agent') AS last_agent_at
+       FROM conversations c JOIN inboxes i ON i.id = c.inbox_id WHERE c.id = ?`,
+    )
+      .bind(ref.conversationId)
+      .first<{ handling: Handling; settings: string; last_agent_at: number | null }>();
+    if (!row || row.handling !== "human") return;
+    const hours = (JSON.parse(row.settings) as { hours?: BusinessHours }).hours;
+    const now = Date.now();
+    if (!hours?.enabled || isOpen(hours, now)) return;
+    // Someone on the team is replying right now anyway.
+    if (row.last_agent_at && now - row.last_agent_at < 15 * 60 * 1000) return;
+    const until = nextOpening(hours, now) ?? now + 24 * 60 * 60 * 1000;
+    // Keyed by the next opening: one per closed period, even if retried.
+    await this.#insert(ref, { authorType: "system", authorId: null, authorName: null, body: awayText(hours, now), clientMsgId: `away:${until}`, meta: { away: true } });
   }
 
   async #handling(ref: ConversationRef): Promise<Handling | null> {

@@ -138,3 +138,14 @@ test("S-11 nudge: facts describe the failure; unsafe or rambling lines fall back
   assert.equal(cleanNudge(`${"Very long ".repeat(20)}Want a hand?`), null);
   assert.equal(cleanNudge(GENERIC_NUDGE), GENERIC_NUDGE);
 });
+
+test("K-04: excluded pages match by exact URL or path prefix", async () => {
+  const { isExcluded } = await import("./urls.ts");
+  const rules = ["https://docs.acme.test/old-page?utm_source=x", "/blog/", "/changelog*"];
+  assert.equal(isExcluded(new URL("https://docs.acme.test/old-page"), rules), true, "exact URL (tracking params dropped)");
+  assert.equal(isExcluded(new URL("https://docs.acme.test/old-page-2"), rules), false);
+  assert.equal(isExcluded(new URL("https://docs.acme.test/blog/launch"), rules), true);
+  assert.equal(isExcluded(new URL("https://docs.acme.test/changelog-2026"), rules), true);
+  assert.equal(isExcluded(new URL("https://docs.acme.test/guides/blog/"), rules), false, "prefixes start at the root");
+  assert.equal(isExcluded(new URL("https://docs.acme.test/x"), undefined), false);
+});

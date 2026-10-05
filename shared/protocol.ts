@@ -18,6 +18,8 @@ export interface MessageMeta {
   handoffReason?: string;
   /** Agent config version that wrote an AI answer (AI-18). */
   configVersion?: number;
+  /** I-10: the automatic "we're away" reply. */
+  away?: boolean;
 }
 
 export interface Attachment {

@@ -125,9 +125,28 @@ function hostContext(): Promise<unknown> {
 }
 const unread = (c: ConversationSummary) => c.lastMessageAuthor === "agent" && c.lastSeq > c.visitorReadSeq;
 
+interface WidgetConfig {
+  workspaceName: string;
+  greeting: string;
+  ai: boolean;
+  color: string;
+  replyTime: string;
+  logoUrl: string | null;
+  hours: { open: boolean; back: string | null } | null;
+}
+
+/** W-04: the desk's brand colour on the frame (with readable text on top of it). */
+function applyBrand(color: string): void {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return;
+  const n = parseInt(color.slice(1), 16);
+  const lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  document.documentElement.style.setProperty("--accent", color);
+  document.documentElement.style.setProperty("--accent-text", lum > 0.65 ? "#1c1c1a" : "#ffffff");
+}
+
 export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const api = useMemo(() => new WidgetApi(widgetKey), [widgetKey]);
-  const [config, setConfig] = useState<{ workspaceName: string; greeting: string; ai: boolean } | null>(null);
+  const [config, setConfig] = useState<WidgetConfig | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [view, setView] = useState<{ kind: "home" } | { kind: "thread"; id: string | null; opener?: Opener }>({ kind: "home" });
   const [open, setOpen] = useState(window.parent === window);
@@ -138,7 +157,13 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const [identityVersion, setIdentityVersion] = useState(0);
 
   useEffect(() => {
-    api.call<{ workspaceName: string; greeting: string; ai: boolean }>("/config").then(setConfig, (e: Error) => setError(e.message));
+    api.call<WidgetConfig>("/config").then(
+      (c) => {
+        applyBrand(c.color);
+        setConfig(c);
+      },
+      (e: Error) => setError(e.message),
+    );
   }, [api]);
 
   useEffect(() => {
@@ -219,9 +244,14 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     <div className="w-shell">
       <header className="w-head">
         {view.kind === "thread" && <button className="ghost icon" aria-label="Back" onClick={() => setView({ kind: "home" })}>‹</button>}
+        {config.logoUrl && <img className="w-logo" src={config.logoUrl} alt="" />}
         <div>
           <strong>{config.workspaceName}</strong>
-          <div className="small w-sub">We usually reply in a few minutes</div>
+          <div className="small w-sub">
+            {config.hours && !config.hours.open
+              ? `We're away${config.hours.back ? ` · back ${config.hours.back}` : ""}${config.ai ? ". The assistant can still help." : ""}`
+              : config.replyTime}
+          </div>
         </div>
         <span className="spacer" />
         {window.parent !== window && <button className="ghost icon" aria-label="Close chat" onClick={() => postToHost({ type: "jun:close" })}>×</button>}

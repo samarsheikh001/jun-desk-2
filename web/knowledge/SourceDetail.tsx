@@ -1,0 +1,145 @@
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { api } from "../api.ts";
+import { useAction } from "../useAction.ts";
+
+// K-04: what a knowledge source contains, and the knobs to fix it: edit a snippet, cap or
+// skip pages of a website, remove a page (kept out of future syncs), see its indexed text.
+
+interface Detail {
+  source: { id: string; kind: "website" | "snippet"; url: string | null; title: string; body: string | null; maxPages: number; exclude: string[] };
+  documents: { id: string; url: string; title: string | null; chunkCount: number; updatedAt: number }[];
+}
+
+function pathOf(url: string, base: string | null): string {
+  try {
+    const u = new URL(url);
+    return base && u.origin === new URL(base).origin ? `${u.pathname}${u.search}` : url;
+  } catch {
+    return url;
+  }
+}
+
+function Chunks({ base, documentId }: { base: string; documentId: string }) {
+  const [chunks, setChunks] = useState<{ heading: string; text: string }[] | null>(null);
+  useEffect(() => {
+    api<{ chunks: { heading: string; text: string }[] }>(`${base}/documents/${documentId}`).then((r) => setChunks(r.chunks), () => setChunks([]));
+  }, [base, documentId]);
+  if (!chunks) return <div className="muted small">Loading…</div>;
+  return (
+    <ol className="kb-chunks">
+      {chunks.map((c, i) => (
+        <li key={i} className="small">
+          {c.heading && <div className="strong">{c.heading}</div>}
+          <div className="muted">{c.text}</div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export function SourceDetail({ base, sourceId, canEdit, onChanged }: { base: string; sourceId: string; canEdit: boolean; onChanged: () => void }) {
+  const url = `${base}/${sourceId}`;
+  const [detail, setDetail] = useState<Detail | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+  const [saved, setSaved] = useState(false);
+  const { busy, error, run } = useAction();
+  const load = useCallback(async () => setDetail(await api<Detail>(url)), [url]);
+  useEffect(() => {
+    load().catch(() => {});
+  }, [load]);
+  if (!detail) return <div className="kb-detail muted small">Loading…</div>;
+  const { source, documents } = detail;
+
+  const save = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    run(async () => {
+      await api(url, {
+        method: "PATCH",
+        body:
+          source.kind === "snippet"
+            ? { title: data.get("title"), body: data.get("body") }
+            : { title: data.get("title"), maxPages: Number(data.get("maxPages")), exclude: String(data.get("exclude") ?? "") },
+      });
+      await load();
+      onChanged();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    });
+  };
+
+  const shown = documents.filter((d) => !filter || `${d.title ?? ""} ${d.url}`.toLowerCase().includes(filter.toLowerCase()));
+
+  return (
+    <div className="kb-detail">
+      <form onSubmit={save} className="kb-edit">
+        <label className="field">
+          <span className="small">Title</span>
+          <input name="title" defaultValue={source.title} disabled={!canEdit} maxLength={200} />
+        </label>
+        {source.kind === "snippet" ? (
+          <label className="field">
+            <span className="small">Text</span>
+            <textarea name="body" rows={8} defaultValue={source.body ?? ""} disabled={!canEdit} />
+          </label>
+        ) : (
+          <>
+            <label className="field">
+              <span className="small">Max pages</span>
+              <input name="maxPages" type="number" min={1} max={2000} defaultValue={source.maxPages} disabled={!canEdit} style={{ width: 120 }} />
+            </label>
+            <label className="field">
+              <span className="small">Skip these pages <span className="muted">(one per line: a full URL, or a path like /blog/ or /changelog*)</span></span>
+              <textarea name="exclude" rows={3} defaultValue={source.exclude.join("\n")} disabled={!canEdit} placeholder="/blog/" />
+            </label>
+          </>
+        )}
+        {canEdit && (
+          <div className="row">
+            <button className="small" disabled={busy}>{source.kind === "snippet" ? "Save and re-index" : "Save"}</button>
+            {source.kind === "website" && <span className="muted small">Page limits and skips apply on the next sync.</span>}
+            {saved && <span className="muted small">Saved ✓</span>}
+          </div>
+        )}
+        {error && <p className="error small">{error}</p>}
+      </form>
+
+      {source.kind === "website" && (
+        <>
+          <div className="row">
+            <span className="strong small">{documents.length} indexed page{documents.length === 1 ? "" : "s"}</span>
+            <span className="spacer" />
+            {documents.length > 8 && <input className="kb-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter pages" />}
+          </div>
+          <ul className="kb-docs">
+            {shown.map((d) => (
+              <li key={d.id}>
+                <div className="row">
+                  <button className="link small" onClick={() => setOpen(open === d.id ? null : d.id)} title="Show what the AI can quote from this page">
+                    {open === d.id ? "▾" : "▸"} {d.title || pathOf(d.url, source.url)}
+                  </button>
+                  <span className="spacer" />
+                  <span className="muted small">{d.chunkCount} chunk{d.chunkCount === 1 ? "" : "s"}</span>
+                  <a className="small" href={d.url} target="_blank" rel="noreferrer">Open</a>
+                  {canEdit && (
+                    <button
+                      className="ghost small"
+                      disabled={busy}
+                      title="Remove it now and skip it in future syncs"
+                      onClick={() => run(async () => { await api(`${url}/documents/${d.id}`, { method: "DELETE" }); await load(); onChanged(); })}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <div className="muted small">{pathOf(d.url, source.url)}</div>
+                {open === d.id && <Chunks base={url} documentId={d.id} />}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}

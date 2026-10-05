@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, registerPasskey, type Me } from "./api.ts";
 import { AiPanel } from "./AiPanel.tsx";
+import { AppearancePanel, HoursPanel, type InboxSettings } from "./settings/WidgetPanels.tsx";
 import { useAction } from "./useAction.ts";
 
 interface Passkey { id: string; name: string | null; backedUp: number; createdAt: number; lastUsedAt: number | null }
@@ -26,6 +27,7 @@ export function SettingsPage({ me }: { me: Me }) {
   return (
     <main className="content">
       {workspace && <InstallPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
+      {workspace && <WidgetSettings workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={workspace.role !== "agent"} />}
       {workspace && <AiPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
 
       {error && <p className="error">{error}</p>}
@@ -348,5 +350,21 @@ function TokensPanel({ workspaceId }: { workspaceId: string }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/** W-04 appearance and I-10 hours share the widget inbox's settings. */
+function WidgetSettings({ workspaceId, workspaceName, canEdit }: { workspaceId: string; workspaceName: string; canEdit: boolean }) {
+  const [inbox, setInbox] = useState<{ widgetKey: string; settings: InboxSettings } | null>(null);
+  useEffect(() => {
+    api<{ inbox: { widgetKey: string; settings: InboxSettings } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => setInbox(r.inbox), () => {});
+  }, [workspaceId]);
+  if (!inbox) return null;
+  const onSaved = (settings: InboxSettings) => setInbox({ ...inbox, settings });
+  return (
+    <>
+      <AppearancePanel workspaceId={workspaceId} widgetKey={inbox.widgetKey} workspaceName={workspaceName} settings={inbox.settings} canEdit={canEdit} onSaved={onSaved} />
+      <HoursPanel workspaceId={workspaceId} settings={inbox.settings} canEdit={canEdit} onSaved={onSaved} />
+    </>
   );
 }

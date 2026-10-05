@@ -314,3 +314,38 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--bg); border-radius: 
   .visitors td { border: none; padding: 2px 0; }
   .visitor-action { text-align: left; }
 }
+
+/* Knowledge source detail (K-04) */
+.kb-source { flex-wrap: wrap; }
+.kb-title { flex: 1; min-width: 140px; text-align: left; color: var(--text); font-weight: 500; }
+.kb-detail { flex-basis: 100%; display: grid; gap: 10px; margin: 8px 0 4px; padding: 12px 14px; background: var(--bg); border-radius: 10px; }
+.kb-edit { display: grid; gap: 8px; }
+.kb-docs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 420px; overflow: auto; }
+.kb-docs > li { padding: 6px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display: grid; gap: 2px; }
+.kb-chunks { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+.kb-filter { width: 200px; }
+.kb-chunks > li { display: list-item; padding: 0; border: 0; }
+
+/* Widget appearance + hours (W-04, I-10) */
+.appearance { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
+@media (max-width: 760px) { .appearance { grid-template-columns: 1fr; } }
+fieldset.field { border: 0; padding: 0; margin: 0; min-width: 0; }
+.logo-thumb { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); }
+.wpreview { position: relative; height: 330px; background: var(--bg); border-radius: 12px; border: 1px dashed var(--border); }
+.wpreview-frame { position: absolute; bottom: 64px; right: 12px; width: 210px; border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); font-size: 0.85rem; }
+.wpreview.left .wpreview-frame { right: auto; left: 12px; }
+.wpreview-head { display: flex; gap: 8px; align-items: center; padding: 10px 12px; }
+.wpreview-head img { width: 26px; height: 26px; border-radius: 6px; object-fit: cover; background: #fff; }
+.wpreview-body { padding: 14px 12px; display: grid; gap: 10px; justify-items: start; }
+.wpreview-cta { padding: 5px 10px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; }
+.wpreview-btn { position: absolute; bottom: 12px; right: 12px; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
+.wpreview.left .wpreview-btn { right: auto; left: 12px; }
+.hours-grid { display: grid; gap: 6px; }
+.hours-row input[type="time"] { width: 120px; }
+
+/* Contact sidebar (I-08) */
+.contact-edit { display: grid; gap: 6px; }
+.contact-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.contact-history a { display: grid; gap: 1px; padding: 6px 8px; border-radius: 8px; background: var(--bg); color: var(--text); text-decoration: none; }
+.contact-history a:hover { background: var(--tag); }
+input[type="color"] { width: 44px; height: 38px; padding: 3px; cursor: pointer; }

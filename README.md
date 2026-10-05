@@ -79,7 +79,7 @@ npm run dev                      # dashboard + Worker on http://localhost:5173
 | `npm run dev` | Applies local D1 migrations, then runs Vite with the Worker in the Workers runtime |
 | `npm run build` then `npm run deploy` | Build; then deploy to your Cloudflare account with remote D1 migrations (handles first install and upgrades). Set the secret once with `npx wrangler secret put SETUP_TOKEN` |
 | `npm test` | Unit tests (`packages/`, `worker/`, `shared/`) |
-| `npm run test:e2e` | Auth, chat, AI, debug context, agent-as-code and visitors/identity end to end against a dev server on a fresh DB: run `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then `BASE_URL=http://localhost:5174 npm run test:e2e`. Uses real Workers AI |
+| `npm run test:e2e` | Auth, chat, AI, debug context, agent-as-code, visitors/identity and inbox/widget polish end to end against a dev server on a fresh DB: run `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then `BASE_URL=http://localhost:5174 npm run test:e2e`. Uses real Workers AI |
 | `npm run typecheck` | Packages, Worker and dashboard |
 | `npm run jun -- <command>` | `jun` CLI: `login <desk-url>`, `init`, `pull`, `push`, `eval`; dev LLM: `login chatgpt`, `ask`, `chat`, `models` |
 

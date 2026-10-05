@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { formatEventTime, isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
 import type { AiAction, ConversationSummary } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
+import { navigate } from "../lib/router.ts";
 
 interface ContextResponse {
   context: Omit<DebugContext, "events"> | null;
@@ -94,30 +95,98 @@ function AiActions({ actions }: { actions: AiAction[] }) {
 }
 
 interface ContactDetails {
+  name: string | null;
   externalId: string | null;
   email: string | null;
   verified: boolean;
   attributes: Record<string, string | number | boolean>;
+  createdAt: number;
+  lastSeenAt: number;
 }
 
-/** V-03/V-05: who the customer is, as their account in the host app says (verified contacts only). */
-function CustomerCard({ workspaceId, contact }: { workspaceId: string; contact: ConversationSummary["contact"] }) {
+interface PastConversation {
+  id: string;
+  status: string;
+  lastMessageAt: number;
+  preview: string | null;
+}
+
+const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+
+/**
+ * I-08: who the customer is (verified details from the host app, or what an agent noted for
+ * an anonymous visitor) and their other conversations.
+ */
+function ContactCard({ workspaceId, contact, conversationId, refreshKey }: { workspaceId: string; contact: ConversationSummary["contact"]; conversationId: string; refreshKey: number }) {
+  const base = `/workspaces/${workspaceId}/contacts/${contact.id}`;
   const [details, setDetails] = useState<ContactDetails | null>(null);
+  const [history, setHistory] = useState<PastConversation[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (!contact.verified) return setDetails(null);
-    api<{ contact: ContactDetails }>(`/workspaces/${workspaceId}/contacts/${contact.id}`).then((r) => setDetails(r.contact), () => setDetails(null));
-  }, [workspaceId, contact.id, contact.verified]);
+    api<{ contact: ContactDetails }>(base).then((r) => setDetails(r.contact), () => setDetails(null));
+    api<{ conversations: PastConversation[] }>(`${base}/conversations`).then((r) => setHistory(r.conversations), () => setHistory([]));
+  }, [base, refreshKey, contact.name, contact.email, contact.verified]);
   if (!details) return null;
+
+  const save = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    setError(null);
+    try {
+      await api(base, { method: "PATCH", body: { name: String(data.get("name") ?? ""), email: String(data.get("email") ?? "") } });
+      setDetails({ ...details, name: String(data.get("name") ?? "") || null, email: String(data.get("email") ?? "") || null });
+      setEditing(false);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  const others = history.filter((h) => h.id !== conversationId);
+
   return (
     <>
-      <h3>Customer <span className="verified" title="Identity verified by your site">✓ verified</span></h3>
-      <dl className="env small">
-        {details.email && (<><dt>Email</dt><dd>{details.email}</dd></>)}
-        {details.externalId && (<><dt>User ID</dt><dd><code>{details.externalId}</code></dd></>)}
-        {Object.entries(details.attributes).map(([k, v]) => (
-          <span key={k} style={{ display: "contents" }}><dt>{k}</dt><dd>{String(v)}</dd></span>
-        ))}
-      </dl>
+      <div className="row">
+        <h3>Customer {details.verified && <span className="verified" title="Identity verified by your site">✓ verified</span>}</h3>
+        <span className="spacer" />
+        {!details.verified && !editing && <button className="ghost small" onClick={() => setEditing(true)}>Edit</button>}
+      </div>
+      {editing ? (
+        <form className="contact-edit" onSubmit={save}>
+          <input name="name" defaultValue={details.name ?? ""} placeholder="Name" maxLength={200} autoFocus />
+          <input name="email" type="email" defaultValue={details.email ?? ""} placeholder="Email" maxLength={320} />
+          <div className="row">
+            <button className="small">Save</button>
+            <button type="button" className="ghost small" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+          {error && <span className="error small">{error}</span>}
+        </form>
+      ) : (
+        <dl className="env small">
+          {details.name && (<><dt>Name</dt><dd>{details.name}</dd></>)}
+          {details.email && (<><dt>Email</dt><dd>{details.email}</dd></>)}
+          {details.externalId && (<><dt>User ID</dt><dd><code>{details.externalId}</code></dd></>)}
+          {Object.entries(details.attributes).map(([k, v]) => (
+            <span key={k} style={{ display: "contents" }}><dt>{k}</dt><dd>{String(v)}</dd></span>
+          ))}
+          <dt>First seen</dt><dd>{day(details.createdAt)}</dd>
+          {!details.verified && !details.name && !details.email && (<><dt /><dd className="muted">Anonymous visitor. Add a name or email if they tell you.</dd></>)}
+        </dl>
+      )}
+      {others.length > 0 && (
+        <>
+          <h3>Other conversations ({others.length})</h3>
+          <ul className="contact-history">
+            {others.map((h) => (
+              <li key={h.id}>
+                <a href={`/inbox/${h.id}`} onClick={(e) => { e.preventDefault(); navigate(`/inbox/${h.id}`); }}>
+                  <span className="small">{h.preview || "Conversation"}</span>
+                  <span className="muted small">{h.status === "resolved" ? "Resolved" : h.status === "open" ? "Open" : h.status} · {day(h.lastMessageAt)}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </>
   );
 }
@@ -136,9 +205,9 @@ export function DebugPanel({ conversationId, workspaceId, contact, refreshKey }:
   if (!data.context) {
     return (
       <aside className="debug-panel">
-        <CustomerCard workspaceId={workspaceId} contact={contact} />
+        <ContactCard workspaceId={workspaceId} contact={contact} conversationId={conversationId} refreshKey={refreshKey} />
         <AiActions actions={actions} />
-        <h3>Customer context</h3>
+        <h3>Browser</h3>
         <p className="muted small">No browser details for this conversation. They appear when the visitor writes from a page with the widget installed.</p>
       </aside>
     );
@@ -147,9 +216,9 @@ export function DebugPanel({ conversationId, workspaceId, contact, refreshKey }:
   const shown = onlyIssues ? data.events.filter(isIssue) : data.events;
   return (
     <aside className="debug-panel">
-      <CustomerCard workspaceId={workspaceId} contact={contact} />
+      <ContactCard workspaceId={workspaceId} contact={contact} conversationId={conversationId} refreshKey={refreshKey} />
       <AiActions actions={actions} />
-      <h3>Customer context</h3>
+      <h3>Browser</h3>
       <dl className="env small">
         <dt>Page</dt>
         <dd><code>{context.page.url}</code>{context.page.title && <div className="muted">{context.page.title}</div>}</dd>

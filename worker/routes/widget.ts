@@ -13,6 +13,9 @@ import { generateText } from "ai";
 import { sanitizeContext, type DebugEvent } from "../../shared/debug.ts";
 import { cleanNudge, GENERIC_NUDGE, nudgeCacheKey, nudgeFacts, nudgePrompt } from "../ai/nudge.ts";
 import { createModel, loadAiSettings } from "../ai/providers.ts";
+import { describeOpening, isOpen, nextOpening, type BusinessHours } from "../../shared/hours.ts";
+
+export const DEFAULT_COLOR = "#2f5bea";
 import { storeUpload } from "./files.ts";
 
 // Public API used by the widget frame. Visitors are anonymous contacts identified by a
@@ -72,15 +75,51 @@ function sendInput(body: Record<string, unknown>) {
 
 export const widget = new Hono<AppEnv>();
 
+// Public look and status of the widget. The loader reads it on customers' sites (colour,
+// position), so it allows any origin; nothing here is secret.
 widget.get("/widget/:key/config", async (c) => {
   const inbox = await widgetInbox(c);
-  return c.json({
-    workspaceName: inbox.workspaceName,
-    greeting: inbox.settings.greeting ?? "Hi! How can we help?",
-    // P-01: offer help when the page has an error (on unless turned off).
-    proactive: inbox.settings.proactive !== false,
-    /** Whether new chats are answered by the AI first (the widget shows its typing dots right away). */
-    ai: (await loadAiSettings(c.env, inbox.workspaceId)).enabled,
+  const s = inbox.settings;
+  const hours = s.hours as BusinessHours | undefined;
+  const now = Date.now();
+  const open = isOpen(hours, now);
+  const next = open ? null : nextOpening(hours, now);
+  return c.json(
+    {
+      workspaceName: typeof s.displayName === "string" ? s.displayName : inbox.workspaceName,
+      greeting: typeof s.greeting === "string" ? s.greeting : "Hi! How can we help?",
+      // P-01: offer help when the page has an error (on unless turned off).
+      proactive: s.proactive !== false,
+      /** Whether new chats are answered by the AI first (the widget shows its typing dots right away). */
+      ai: (await loadAiSettings(c.env, inbox.workspaceId)).enabled,
+      // W-04 branding.
+      color: typeof s.color === "string" ? s.color : DEFAULT_COLOR,
+      position: s.position === "left" ? "left" : "right",
+      replyTime: typeof s.replyTime === "string" ? s.replyTime : "We usually reply in a few minutes",
+      logoUrl: typeof s.logoKey === "string" ? `/api/widget/${encodeURIComponent(c.req.param("key"))}/logo?v=${s.logoKey}` : null,
+      // I-10: shown in the widget header ("Back tomorrow at 09:00 (London time)").
+      hours: hours?.enabled ? { open, back: next && hours ? describeOpening(next, hours.timezone, now) : null } : null,
+    },
+    200,
+    { "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=60" },
+  );
+});
+
+// W-04: the workspace logo shown in the widget header.
+widget.get("/widget/:key/logo", async (c) => {
+  const inbox = await widgetInbox(c);
+  if (typeof inbox.settings.logoKey !== "string") throw new HttpError(404, "not_found", "No logo.");
+  const object = await c.env.FILES.get(inbox.settings.logoKey);
+  if (!object) throw new HttpError(404, "not_found", "No logo.");
+  return new Response(object.body, {
+    headers: {
+      "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
+      // The URL changes (?v=) whenever the logo does.
+      "Cache-Control": "public, max-age=86400",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'",
+      "Access-Control-Allow-Origin": "*",
+    },
   });
 });
 

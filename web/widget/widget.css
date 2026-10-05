@@ -16,3 +16,4 @@ body { background: var(--surface); }
 .w-body .messages { overflow: visible; }
 .w-body .msg { max-width: 85%; }
 .w-opener { margin: 16px 16px 0; }
+.w-logo { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; background: #fff; }

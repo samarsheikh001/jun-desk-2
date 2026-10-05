@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
+import { SourceDetail } from "./SourceDetail.tsx";
 
 interface SourceRow {
   id: string;
@@ -35,6 +36,7 @@ const ago = (ms: number | null) => {
 export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const base = `/workspaces/${workspaceId}/knowledge`;
   const [sources, setSources] = useState<SourceRow[] | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const { busy, error, run } = useAction();
 
   const load = useCallback(async () => setSources((await api<{ sources: SourceRow[] }>(base)).sources), [base]);
@@ -103,10 +105,10 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
         ) : (
           <ul className="list">
             {sources.map((s) => (
-              <li key={s.id}>
-                <span>
-                  {s.kind === "website" ? "🌐" : "📝"} {s.kind === "website" && s.url ? <a href={s.url} target="_blank" rel="noreferrer">{s.title}</a> : s.title}
-                </span>
+              <li key={s.id} className="kb-source">
+                <button className="link kb-title" onClick={() => setExpanded(expanded === s.id ? null : s.id)} aria-expanded={expanded === s.id}>
+                  {expanded === s.id ? "▾" : "▸"} {s.kind === "website" ? "🌐" : "📝"} {s.title}
+                </button>
                 <span className="muted small">
                   {s.status === "syncing" || s.status === "pending"
                     ? `Syncing… ${s.pendingJobs > 0 ? `${plural(s.pendingJobs, "page")} queued` : ""}`
@@ -129,6 +131,7 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
                     </button>
                   </>
                 )}
+                {expanded === s.id && <SourceDetail base={base} sourceId={s.id} canEdit={canEdit} onChanged={() => load().catch(() => {})} />}
               </li>
             ))}
           </ul>

@@ -1,6 +1,6 @@
 import { chatgptOAuth as oauth, tokensFromResponse, type ChatGPTCredentials } from "@jun/llm";
 import { Hono } from "hono";
-import { deleteSource, DEFAULT_MAX_PAGES, indexSnippet, startSync } from "../ai/knowledge.ts";
+import { deleteSource, DEFAULT_MAX_PAGES, indexSnippet, removeDocument, startSync, type SourceSettings } from "../ai/knowledge.ts";
 import { DEFAULT_MODELS, devChatGPTAllowed, loadAiSettings, type ProviderId } from "../ai/providers.ts";
 import { searchKnowledge } from "../ai/search.ts";
 import { requireUser } from "../auth/session.ts";
@@ -227,6 +227,79 @@ ai.post("/workspaces/:id/knowledge/:sourceId/sync", async (c) => {
   if (!source) throw new HttpError(404, "not_found", "Source not found.");
   if (source.kind === "website") await startSync(c.env, c.req.param("sourceId"));
   else await indexSnippet(c.env, c.req.param("sourceId"));
+  return c.json({ ok: true });
+});
+
+// K-04: what a source contains (pages, chunk counts) and its settings.
+ai.get("/workspaces/:id/knowledge/:sourceId", async (c) => {
+  const workspaceId = c.req.param("id");
+  await memberRole(c, workspaceId);
+  const source = await c.env.DB.prepare("SELECT id, kind, url, title, body, settings FROM kb_sources WHERE id = ? AND workspace_id = ?")
+    .bind(c.req.param("sourceId"), workspaceId)
+    .first<{ id: string; kind: string; url: string | null; title: string; body: string | null; settings: string }>();
+  if (!source) throw new HttpError(404, "not_found", "Source not found.");
+  const settings = JSON.parse(source.settings) as SourceSettings;
+  const documents = await c.env.DB.prepare(
+    `SELECT d.id, d.url, d.title, d.updated_at AS updatedAt, (SELECT COUNT(*) FROM kb_chunks k WHERE k.document_id = d.id) AS chunkCount
+     FROM kb_documents d WHERE d.source_id = ? AND d.content_hash IS NOT NULL ORDER BY d.url LIMIT 1000`,
+  )
+    .bind(source.id)
+    .all();
+  return c.json({
+    source: { id: source.id, kind: source.kind, url: source.url, title: source.title, body: source.body, maxPages: settings.maxPages ?? DEFAULT_MAX_PAGES, exclude: settings.exclude ?? [] },
+    documents: documents.results,
+  });
+});
+
+// K-04: rename, edit a snippet (re-indexed now), or change a website's page cap / skipped pages (next sync).
+ai.patch("/workspaces/:id/knowledge/:sourceId", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  const sourceId = c.req.param("sourceId");
+  const source = await c.env.DB.prepare("SELECT kind, title, body, settings FROM kb_sources WHERE id = ? AND workspace_id = ?")
+    .bind(sourceId, workspaceId)
+    .first<{ kind: string; title: string; body: string | null; settings: string }>();
+  if (!source) throw new HttpError(404, "not_found", "Source not found.");
+  const body = await readJson(c.req);
+  const title = body.title === undefined ? source.title : text(body, "title", { max: 200 });
+  if (source.kind === "snippet") {
+    const snippet = body.body === undefined ? (source.body ?? "") : text(body, "body", { max: 20_000 });
+    await c.env.DB.prepare("UPDATE kb_sources SET title = ?, body = ? WHERE id = ?").bind(title, snippet, sourceId).run();
+    await indexSnippet(c.env, sourceId);
+    return c.json({ ok: true });
+  }
+  const settings = JSON.parse(source.settings) as SourceSettings;
+  if (body.maxPages !== undefined) {
+    const n = Number(body.maxPages);
+    if (!Number.isInteger(n) || n < 1 || n > 2000) throw new HttpError(400, "invalid_field", "Max pages must be a whole number from 1 to 2000.");
+    settings.maxPages = n;
+  }
+  if (body.exclude !== undefined) {
+    const list = (Array.isArray(body.exclude) ? body.exclude.map(String) : String(body.exclude).split(/\n+/)).map((s) => s.trim()).filter(Boolean);
+    const bad = list.filter((s) => !s.startsWith("/") && !/^https?:\/\//.test(s));
+    if (bad.length) throw new HttpError(400, "invalid_field", `Use a path like /blog/ or a full URL: ${bad.slice(0, 3).join(", ")}`);
+    settings.exclude = [...new Set(list)].slice(0, 500);
+  }
+  await c.env.DB.prepare("UPDATE kb_sources SET title = ?, settings = ? WHERE id = ?").bind(title, JSON.stringify(settings), sourceId).run();
+  return c.json({ ok: true });
+});
+
+// K-04: exactly what was indexed from one page (what the AI can quote).
+ai.get("/workspaces/:id/knowledge/:sourceId/documents/:docId", async (c) => {
+  const workspaceId = c.req.param("id");
+  await memberRole(c, workspaceId);
+  const rows = await c.env.DB.prepare(
+    "SELECT heading, text FROM kb_chunks WHERE document_id = ? AND source_id = ? AND workspace_id = ? ORDER BY position",
+  )
+    .bind(c.req.param("docId"), c.req.param("sourceId"), workspaceId)
+    .all<{ heading: string; text: string }>();
+  return c.json({ chunks: rows.results });
+});
+
+ai.delete("/workspaces/:id/knowledge/:sourceId/documents/:docId", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  if (!(await removeDocument(c.env, workspaceId, c.req.param("sourceId"), c.req.param("docId")))) throw new HttpError(404, "not_found", "Page not found.");
   return c.json({ ok: true });
 });
 

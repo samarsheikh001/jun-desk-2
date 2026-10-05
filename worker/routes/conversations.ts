@@ -5,6 +5,7 @@ import { requireUser } from "../auth/session.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
 import { loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
 import { connectConversation, connectHub, notifyConversationChanged, sendMessage } from "../lib/realtime.ts";
+import { parseHours } from "../../shared/hours.ts";
 import { normalizeDomains } from "../lib/origins.ts";
 import { object, readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
@@ -58,6 +59,30 @@ conversations.patch("/workspaces/:id/inbox", async (c) => {
   if (!inbox) throw new HttpError(404, "not_found", "No widget inbox.");
   const settings = JSON.parse(inbox.settings) as Record<string, unknown>;
   if (typeof body.proactive === "boolean") settings.proactive = body.proactive;
+  // W-04 branding.
+  if (body.color !== undefined) {
+    if (typeof body.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(body.color)) throw new HttpError(400, "invalid_field", "Colour must look like #2f5bea.");
+    settings.color = body.color.toLowerCase();
+  }
+  if (body.position !== undefined) {
+    if (body.position !== "left" && body.position !== "right") throw new HttpError(400, "invalid_field", "Position must be left or right.");
+    settings.position = body.position;
+  }
+  for (const [field, max] of [["greeting", 200], ["replyTime", 80], ["displayName", 80]] as const) {
+    if (body[field] === undefined) continue;
+    if (typeof body[field] !== "string") throw new HttpError(400, "invalid_field", `${field} must be text.`);
+    const value = (body[field] as string).trim().slice(0, max);
+    if (value) settings[field] = value;
+    else delete settings[field];
+  }
+  // I-10 business hours.
+  if (body.hours !== undefined) {
+    try {
+      settings.hours = parseHours(body.hours);
+    } catch (error) {
+      throw new HttpError(400, "invalid_field", (error as Error).message);
+    }
+  }
   if (body.allowedDomains !== undefined) {
     const { domains, invalid } = normalizeDomains(body.allowedDomains);
     if (invalid.length) throw new HttpError(400, "invalid_field", `Not a domain: ${invalid.join(", ")}. Use e.g. acme.com or *.acme.com.`);

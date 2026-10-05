@@ -15,7 +15,7 @@
   var key = script.getAttribute("data-key");
   if (!key) return console.warn("[Jun Desk] Missing data-key on the widget script tag.");
   var origin = new URL(script.src).origin;
-  var color = script.getAttribute("data-color") || "#2f5bea";
+  var color = script.getAttribute("data-color"); // overrides the desk's branding colour
 
   // ---------- debug capture (P1). Same masking rules as shared/debug.ts. ----------
   var events = [];
@@ -201,27 +201,43 @@
   var root = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
   root.innerHTML =
     "<style>" +
-    ":host{all:initial}" +
+    ":host{all:initial}.w{--c:#2f5bea;--t:#fff;visibility:hidden}.w.on{visibility:visible}" +
+    ".l .btn,.l .frame,.l .nudge{right:auto;left:20px}" +
     ".btn{position:fixed;right:20px;bottom:20px;width:56px;height:56px;border-radius:50%;border:0;cursor:pointer;" +
-    "background:" + color + ";color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.2);z-index:2147483000;display:grid;place-items:center;transition:transform .15s}" +
+    "background:var(--c);color:var(--t);box-shadow:0 6px 20px rgba(0,0,0,.2);z-index:2147483000;display:grid;place-items:center;transition:transform .15s}" +
     ".btn:hover{transform:scale(1.05)}.btn svg{width:26px;height:26px}" +
     ".badge{position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#e5484d;" +
     "color:#fff;font:600 11px/18px system-ui,sans-serif;display:none}" +
     ".frame{position:fixed;right:20px;bottom:88px;width:380px;height:min(640px,calc(100vh - 120px));border:0;border-radius:16px;" +
     "box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:2147483000;background:#fff;display:none}" +
-    "@media (max-width:480px){.frame{right:0;bottom:0;width:100vw;height:100vh;border-radius:0}}" +
+    "@media (max-width:480px){.frame,.l .frame{right:0;left:0;bottom:0;width:100vw;height:100vh;border-radius:0}}" +
     ".nudge{position:fixed;right:20px;bottom:88px;max-width:280px;padding:14px 16px;border-radius:14px;background:#fff;color:#1c1c1a;" +
     "box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:2147483000;font:14px/1.45 system-ui,sans-serif;display:none}" +
-    ".nudge p{margin:0 18px 10px 0}.nudge-from{font-size:12px;color:#6b6b66;margin-bottom:4px}.nudge .go{border:0;border-radius:8px;padding:7px 12px;background:" + color + ";color:#fff;font:600 13px system-ui,sans-serif;cursor:pointer}" +
+    ".nudge p{margin:0 18px 10px 0}.nudge-from{font-size:12px;color:#6b6b66;margin-bottom:4px}.nudge .go{border:0;border-radius:8px;padding:7px 12px;background:var(--c);color:var(--t);font:600 13px system-ui,sans-serif;cursor:pointer}" +
     ".nudge .x{position:absolute;top:6px;right:8px;border:0;background:none;font-size:18px;line-height:1;color:#6b6b66;cursor:pointer}" +
-    "</style>" +
+    "</style><div class=\"w\">" +
     '<div class="nudge" role="dialog" aria-label="Need help?"><button class="x" aria-label="Dismiss">×</button>' +
     '<div class="nudge-from"></div><p class="nudge-text"></p><button class="go">Chat with us</button></div>' +
     '<button class="btn" aria-label="Open chat" aria-expanded="false">' +
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="badge"></span></button>';
+    '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="badge"></span></button></div>';
 
+  var wrap = root.querySelector(".w");
   var button = root.querySelector(".btn");
+  // W-04: colour and side from the desk's settings, so changing them needs no new snippet.
+  // Hidden until then (at most 1.5 s) so the button doesn't flash in the default colour.
+  function brand(cfg) {
+    var c = color || (cfg && cfg.color);
+    if (c && /^#[0-9a-f]{6}$/i.test(c)) {
+      var n = parseInt(c.slice(1), 16), lum = (0.299 * (n >> 16) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255;
+      wrap.style.setProperty("--c", c);
+      wrap.style.setProperty("--t", lum > 0.65 ? "#1c1c1a" : "#fff");
+    }
+    if (cfg && cfg.position === "left") wrap.classList.add("l");
+    wrap.classList.add("on");
+  }
+  setTimeout(brand, 1500);
+  (nativeFetch || fetch)(origin + "/api/widget/" + encodeURIComponent(key) + "/config").then(function (r) { return r.json(); }).then(brand, function () { brand(); });
   var badge = root.querySelector(".badge");
   var frame = null;
   var open = false;
@@ -240,7 +256,7 @@
       frame.title = "Chat";
       frame.allow = "clipboard-write";
       frame.src = origin + "/widget?key=" + encodeURIComponent(key) + (consented ? "" : "&persist=0");
-      root.appendChild(frame);
+      wrap.appendChild(frame);
     }
     if (frame) frame.style.display = open ? "block" : "none";
     button.setAttribute("aria-expanded", String(open));

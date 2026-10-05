@@ -25,7 +25,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | W-01 | Tiny loader (<5 KB) with stand-in bubble; full app loads on interaction | v1 | shipped | Shipped M1: `public/widget.js` is 3.8 KB unminified; chat iframe loads on first open | 02 |
 | W-02 | Full widget isolated in iframe or shadow DOM | v1 | shipped | Shipped M1: launcher in shadow DOM, chat in an iframe from the desk origin | 02 |
 | W-03 | Streaming AI responses with resumable streams | v1 | shipped | Shipped M2: AI replies stream token-by-token; late joiners get the partial text | 03 |
-| W-04 | Branding: colours, logo, position, greeting, launcher text | v1 | agreed | Table stakes | 01 |
+| W-04 | Branding: colours, logo, position, greeting, launcher text | v1 | shipped | Shipped M7: Settings → Widget appearance (name, greeting, reply time, colour with readable text, left/right, logo PNG/JPEG/WebP/GIF ≤ 512 KB, live preview). The loader reads it from /config (CORS), so no snippet change; data-color still overrides | 01 |
 | W-05 | Conversation history for returning visitors | v1 | shipped | Shipped M1: returning visitors see past conversations; reopens the active one | |
 | W-06 | File and image attachments | v1 | shipped | Shipped M1: R2; images inline, other types forced to download (nosniff + CSP sandbox) | |
 | W-07 | "Talk to a human" always visible | v1 | shipped | Shipped M2: "Talk to a person" while the AI is answering | 01 |
@@ -100,7 +100,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | K-01 | Website crawl with scheduled re-sync | v1 | shipped | Shipped M2: sitemap first, else link-following (depth 3, page cap), robots.txt, Queue jobs, content-hash skip, daily cron re-sync, removed pages pruned | 01, 03 |
 | K-02 | File upload (PDF, DOCX, MD, TXT) | v1 | agreed | | 01 |
 | K-03 | Manual Q&A / snippets | v1 | shipped | Shipped M2: snippets (markdown headings become sections) | |
-| K-04 | Source management: see chunks, exclude pages, re-index | v1 | agreed | | |
+| K-04 | Source management: see chunks, exclude pages, re-index | v1 | shipped | Shipped M7: per-source detail: indexed pages with chunk counts and their text, remove a page (kept out of future syncs), skip paths, page cap, edit snippets (re-indexed now) | |
 | K-05 | Hosted help centre (public articles, SEO) | v2 | proposed | Also the KB source | |
 | K-06 | Integrations: Notion, Google Drive, Confluence, Zendesk/Intercom article import | v2 | proposed | Import also helps migration | |
 | K-07 | "Content gaps" report: questions the AI couldn't answer | v2 | proposed | | |
@@ -116,9 +116,9 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | I-05 | Internal notes and @mentions | v1 | agreed | | |
 | I-06 | Saved replies / macros | v1 | agreed | | |
 | I-07 | Tags and conversation attributes | v1 | agreed | | |
-| I-08 | Contact sidebar: attributes, past conversations, page trail, debug context | v1 | agreed | Debug context lands in v2 (S-03) | |
+| I-08 | Contact sidebar: attributes, past conversations, page trail, debug context | v1 | shipped | Shipped M7: sidebar shows the customer (verified details + attributes, or what an agent noted), other conversations (linked), AI actions and browser details; agents can name/email anonymous visitors, not verified ones | |
 | I-09 | Teams and routing rules | v2 | proposed | | |
-| I-10 | Business hours and auto-replies | v1 | agreed | | |
+| I-10 | Business hours and auto-replies | v1 | shipped | Shipped M7: weekly hours in a time zone (DST-safe), away message with {when}; one automatic away reply per closed period for chats with the team (not while an agent replied in the last 15 min); widget header says "We're away · back Monday at 09:00". The AI keeps answering 24/7 | |
 | I-11 | SLA policies with breach alerts | v2 | proposed | DO alarms fit timers well | 03 |
 | I-12 | Copilot: draft reply, summarise, translate, rephrase | v2 | proposed | Table stakes in 2026, but v1 is about the autonomous agent | 01 |
 | I-13 | Keyboard-first UI and command palette | v1.1 | agreed | Pushed to v1.1 to make room for pillar slices (D-12) | |

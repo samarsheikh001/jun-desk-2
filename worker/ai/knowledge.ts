@@ -2,6 +2,7 @@ import { newId } from "../lib/crypto.ts";
 import { blocksFromText, chunkBlocks, contentHash, decodeEntities } from "./chunk.ts";
 import { embed } from "./embeddings.ts";
 import { extractPage } from "./extract.ts";
+import { isExcluded, normalizeUrl } from "./urls.ts";
 
 // Knowledge sources: websites (crawled through a Queue) and snippets (indexed directly).
 
@@ -25,10 +26,12 @@ interface SourceRow {
   settings: string;
 }
 
-interface SourceSettings {
+export interface SourceSettings {
   maxPages?: number;
   syncToken?: string;
   disallow?: string[];
+  /** K-04: pages the admin left out. Full URLs match exactly; "/path" entries are path prefixes ("*" = any). */
+  exclude?: string[];
 }
 
 const index = (env: Env, workspaceId: string) => env.KNOWLEDGE_INDEX.getByName(workspaceId);
@@ -75,6 +78,25 @@ export async function indexSnippet(env: Env, sourceId: string): Promise<void> {
   await env.DB.prepare("UPDATE kb_sources SET status = 'ready', page_count = 1, last_synced_at = ?, error = NULL WHERE id = ?").bind(Date.now(), sourceId).run();
 }
 
+/** K-04: takes one page out of the knowledge base, and keeps it out of future crawls. */
+export async function removeDocument(env: Env, workspaceId: string, sourceId: string, documentId: string): Promise<boolean> {
+  const doc = await env.DB.prepare("SELECT d.url, s.settings FROM kb_documents d JOIN kb_sources s ON s.id = d.source_id WHERE d.id = ? AND d.source_id = ? AND s.workspace_id = ?")
+    .bind(documentId, sourceId, workspaceId)
+    .first<{ url: string; settings: string }>();
+  if (!doc) return false;
+  const chunks = await env.DB.prepare("SELECT id FROM kb_chunks WHERE document_id = ?").bind(documentId).all<{ id: string }>();
+  if (chunks.results.length) await index(env, workspaceId).deleteChunks(chunks.results.map((r) => r.id));
+  const settings = JSON.parse(doc.settings) as SourceSettings;
+  settings.exclude = [...new Set([...(settings.exclude ?? []), doc.url])].slice(0, 500);
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM kb_documents WHERE id = ?").bind(documentId),
+    env.DB.prepare(
+      "UPDATE kb_sources SET settings = ?, page_count = (SELECT COUNT(*) FROM kb_documents WHERE source_id = ?2 AND content_hash IS NOT NULL) WHERE id = ?2",
+    ).bind(JSON.stringify(settings), sourceId),
+  ]);
+  return true;
+}
+
 export async function deleteSource(env: Env, workspaceId: string, sourceId: string): Promise<void> {
   await index(env, workspaceId).deleteSource(sourceId);
   await env.DB.prepare("DELETE FROM kb_sources WHERE id = ? AND workspace_id = ?").bind(sourceId, workspaceId).run();
@@ -86,18 +108,6 @@ function inScope(url: URL, start: URL): boolean {
   if (url.origin !== start.origin) return false;
   const dir = start.pathname.endsWith("/") ? start.pathname : start.pathname.slice(0, start.pathname.lastIndexOf("/") + 1);
   return url.pathname.startsWith(dir) && !SKIP_EXTENSIONS.test(url.pathname);
-}
-
-function normalizeUrl(raw: string): URL | null {
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-    url.hash = "";
-    for (const key of [...url.searchParams.keys()]) if (/^utm_|^ref$/i.test(key)) url.searchParams.delete(key);
-    return url;
-  } catch {
-    return null;
-  }
 }
 
 function allowedByRobots(url: URL, disallow: string[]): boolean {
@@ -161,6 +171,7 @@ async function claimAndEnqueue(env: Env, source: SourceRow, settings: SourceSett
   const jobs: CrawlJob[] = [];
   for (const url of urls) {
     if (budget <= 0) break;
+    if (isExcluded(url, settings.exclude)) continue;
     const href = url.toString();
     const row = await env.DB.prepare(
       `INSERT INTO kb_documents (id, workspace_id, source_id, url, sync_token, updated_at) VALUES (?, ?, ?, ?, ?, ?)
@@ -220,7 +231,7 @@ async function runPage(env: Env, job: Extract<CrawlJob, { type: "page" }>): Prom
 
   try {
     const url = new URL(job.url);
-    if (!allowedByRobots(url, settings.disallow ?? [])) return;
+    if (!allowedByRobots(url, settings.disallow ?? []) || isExcluded(url, settings.exclude)) return;
     const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "text/html" }, redirect: "follow", signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     if (!(res.headers.get("content-type") ?? "").includes("text/html")) return;
