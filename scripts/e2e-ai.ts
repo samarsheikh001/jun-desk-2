@@ -1,24 +1,24 @@
-// End-to-end test of the M2 AI agent against a running dev server, using real Workers AI
+// End-to-end test of the M2 AI agent against a running dev server, using real AI (E2E_AI_PROVIDER, default ChatGPT)
 // models (embeddings, reranker, chat). Run after e2e-auth and e2e-chat.
 //
 // Model answers vary, so assertions check behaviour (cites the right source, hands off,
 // never goes silent) rather than exact wording.
 
 import assert from "node:assert/strict";
-import { Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+import { AI_PROVIDER, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const AI_TIMEOUT = 120_000;
 const agent = new Client();
 let workspaceId = "";
 let widgetKey = "";
 
-await step("owner signs in and turns on the AI (Workers AI, no key needed)", async () => {
+await step("owner signs in and turns on the AI (ChatGPT login, or E2E_AI_PROVIDER)", async () => {
   assert.equal((await agent.register("/recover", new SoftAuthenticator(), { token: SETUP_TOKEN })).status, 200);
   workspaceId = (await agent.call("/me")).json.memberships[0].workspaceId;
   widgetKey = (await agent.call(`/workspaces/${workspaceId}/inbox`)).json.inbox.widgetKey;
   const res = await agent.call(`/workspaces/${workspaceId}/ai`, {
     method: "PUT",
-    body: { enabled: true, provider: "workers-ai", instructions: "Be brief.", monthlyReplyCap: 100 },
+    body: { enabled: true, provider: AI_PROVIDER, instructions: "Be brief.", monthlyReplyCap: 100 },
   });
   assert.equal(res.status, 200, JSON.stringify(res.json));
   assert.equal(res.json.settings.enabled, true);
@@ -140,7 +140,7 @@ await step("an agent replying takes over from the AI", async () => {
 await step("usage is counted, and at the cap chats go straight to the team", async () => {
   const usage = (await agent.call(`/workspaces/${workspaceId}/ai`)).json.usage;
   assert.ok(usage.replies >= 3, JSON.stringify(usage));
-  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: "workers-ai", monthlyReplyCap: 0 } });
+  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: AI_PROVIDER, monthlyReplyCap: 0 } });
   const { conversationId, socket } = await startChat("How do refunds work?");
   const notice = await nextMessage(socket, (m) => m.authorType === "system", 30_000);
   assert.match(notice.body, /teammate/i);

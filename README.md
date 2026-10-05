@@ -114,7 +114,7 @@ npm run dev                      # dashboard + Worker on http://localhost:5173
 |---|---|
 | `npm run dev` | Applies local D1 migrations, then runs Vite with the Worker in the Workers runtime |
 | `npm test` | Unit tests |
-| `npm run test:e2e` | Eight end-to-end suites against a dev server on a fresh database, with real Workers AI. Start the server with `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `npx wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then run `BASE_URL=http://localhost:5174 npm run test:e2e` |
+| `npm run test:e2e` | Ten end-to-end suites against a dev server on a fresh database, with real AI through your ChatGPT login (`npm run jun -- login chatgpt` once; `E2E_AI_PROVIDER=workers-ai` uses Workers AI instead). Start the server with `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `npx wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then run `BASE_URL=http://localhost:5174 npm run test:e2e` |
 | `npm run typecheck` | Packages, Worker and dashboard |
 | `npm run build` / `npm run deploy` | Build, then migrate and deploy to your Cloudflare account |
 

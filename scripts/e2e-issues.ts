@@ -1,10 +1,10 @@
 // End-to-end test of S-08 (issues from a conversation, GitHub or Linear) against a running dev
-// server. The draft uses real Workers AI. Filing never reaches GitHub or Linear here: the e2e
+// server. The draft uses real AI (E2E_AI_PROVIDER, default ChatGPT). Filing never reaches GitHub or Linear here: the e2e
 // server has neither GITHUB_TOKEN nor LINEAR_API_KEY, and the pasted-credential step removes what it
 // saves, so this checks validation and the "not configured" paths; the tracker requests are covered by worker/lib/{github,linear}.test.ts.
 
 import assert from "node:assert/strict";
-import { BASE, Client, SETUP_TOKEN, SoftAuthenticator, step, summary } from "./e2e-lib.ts";
+import { AI_PROVIDER, BASE, Client, SETUP_TOKEN, SoftAuthenticator, step, summary } from "./e2e-lib.ts";
 
 const owner = new Client();
 const teammate = new Client();
@@ -32,7 +32,7 @@ const context = {
 };
 const EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]+/;
 const setAi = (enabled: boolean) =>
-  owner.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { ...aiSettings, enabled, provider: "workers-ai", model: null, monthlyReplyCap: 1_000_000 } });
+  owner.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { ...aiSettings, enabled, provider: AI_PROVIDER, model: null, monthlyReplyCap: 1_000_000 } });
 
 await step("owner signs in; a teammate (agent role) joins", async () => {
   assert.equal((await owner.register("/recover", new SoftAuthenticator(), { token: SETUP_TOKEN })).status, 200);
@@ -161,7 +161,7 @@ const assertDraftShape = (draft: { title: string; body: string }) => {
   assert.doesNotMatch(`${draft.title}\n${draft.body}`, EMAIL, "no email addresses at all");
 };
 
-await step("the AI drafts the issue (real Workers AI) from the transcript and the masked browser details", async () => {
+await step("the AI drafts the issue (real AI (E2E_AI_PROVIDER, default ChatGPT)) from the transcript and the masked browser details", async () => {
   assert.equal((await setAi(true)).status, 200);
   const usageBefore = (await owner.call(`/workspaces/${workspaceId}/ai`)).json.usage;
   const started = Date.now();

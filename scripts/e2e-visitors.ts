@@ -1,10 +1,10 @@
 // End-to-end test of M6: identity verification (V-03), merging visitors (V-04), attributes
 // (V-05), the live visitor list over the loader's socket (V-01) and agent-started chats (V-07),
-// plus the AI using the verified customer in a tool ({user.id}). Real Workers AI for the last step.
+// plus the AI using the verified customer in a tool ({user.id}). real AI (E2E_AI_PROVIDER, default ChatGPT) for the last step.
 
 import assert from "node:assert/strict";
 import { signIdentityToken } from "../worker/lib/identity.ts";
-import { BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+import { AI_PROVIDER, BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const AI_TIMEOUT = 120_000;
 // Unique per run, so the suite can run again on the same database.
@@ -48,7 +48,7 @@ await step("owner signs in, turns the AI off for now, and creates an identity se
   workspaceId = me.memberships[0].workspaceId;
   agentName = me.user.name;
   widgetKey = (await agent.call(`/workspaces/${workspaceId}/inbox`)).json.inbox.widgetKey;
-  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: false, provider: "workers-ai", monthlyReplyCap: 1000 } });
+  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: false, provider: AI_PROVIDER, monthlyReplyCap: 1000 } });
   const res = await agent.call(`/workspaces/${workspaceId}/identity`, { body: {} });
   assert.equal(res.status, 200, JSON.stringify(res.json));
   secret = res.json.secret;
@@ -183,7 +183,7 @@ pick: [args, url]
   };
   const saved = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files, base: live.version, message: "my_account tool" } });
   assert.equal(saved.status, 200, JSON.stringify(saved.json));
-  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: "workers-ai", monthlyReplyCap: 1000 } });
+  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: AI_PROVIDER, monthlyReplyCap: 1000 } });
 
   const { token } = await newVisitor();
   await identify(token, await userToken(ADA, { name: "Ada Lovelace", email: "ada@acme.test", attributes: { plan: "pro", seats: 12 } }));

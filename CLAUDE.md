@@ -2,7 +2,7 @@
 
 An open-source, AI-first customer support desk for B2B SaaS, deployable to your own Cloudflare account in one click: an embeddable website widget, live visitor tracking, an AI agent that answers and takes actions, and a real-time inbox for human agents. Think Intercom/Fin, Chatbase, Crisp — rebuilt for 2026.
 
-## Current phase: v1 launch prep (M0–M2, M4–M7 deployed; M8 in progress: wizard + upgrade check built)
+## Current phase: v1 launch prep (M0–M7 deployed; M8: wizard, upgrade check and S-08 issues built). Launch later; until then ChatGPT sign-in is always on for the owner's desk (D-27), to be re-gated before launch (checklist in `docs/build-plan.md` M8)
 
 Plan: `docs/build-plan.md`. Build milestone by milestone; keep the Deploy button working at every step.
 
@@ -32,7 +32,7 @@ npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stri
 | `scripts/upgrade-check.ts` | T-12: `seed` an older install, upgrade the same DB, then `verify` (see the file header) |
 | `worker/routes/onboarding.ts`, `web/welcome/` | T-11 "Get started": steps computed from real state; install detected on the loader's first non-desk origin |
 | `scripts/bench-models.ts` | Latency/behaviour comparison of Workers AI chat models on five support questions, incl. a tool call (run against the e2e server after `npm run test:e2e`) |
-| `scripts/e2e-*.ts` | E2E on a separate dev server + DB (`JUN_STATE_DIR=.wrangler/e2e-state`, port 5174, see README) so your own local desk isn't wiped: `e2e-auth`, `e2e-chat`, `e2e-ai`, `e2e-debug`, `e2e-agent`, `e2e-visitors`, `e2e-polish`, `e2e-inbox`, `e2e-metrics`, `e2e-issues` (real Workers AI; `e2e-agent`/`e2e-visitors` use httpbin.org as the customer's API; `e2e-agent` runs the `jun` CLI). Helpers in `e2e-lib.ts` |
+| `scripts/e2e-*.ts` | E2E on a separate dev server + DB (`JUN_STATE_DIR=.wrangler/e2e-state`, port 5174, see README) so your own local desk isn't wiped: `e2e-auth`, `e2e-chat`, `e2e-ai`, `e2e-debug`, `e2e-agent`, `e2e-visitors`, `e2e-polish`, `e2e-inbox`, `e2e-metrics`, `e2e-issues` (real AI through your ChatGPT login: run `npm run jun -- login chatgpt` once; `E2E_AI_PROVIDER=workers-ai` switches back; `e2e-agent`/`e2e-visitors` use httpbin.org as the customer's API; `e2e-agent` runs the `jun` CLI). Helpers in `e2e-lib.ts` |
 
 | Package | What |
 |---|---|
@@ -43,7 +43,7 @@ Commands: `npm run dev` · `npm test` · `npm run test:e2e` · `npm run typechec
 
 AI conventions: the AI only answers when `conversations.handling = 'ai'`; any agent reply, the visitor's "Talk to a person", a HANDOFF line from the model, the turn limit, the monthly cap or an AI error flips it to `human` with a public notice + internal brief. AI replies are idempotent per visitor message (`clientMsgId = ai:<seq>`). Internal messages (`internal = 1`) must never reach visitors or the AI (socket broadcast uses the `agent` tag; widget and AI-history queries exclude them); an agent's note doesn't take over from the AI, show typing to the visitor, or count as a reply (away check). Tags are agents-only too: visitor-facing summaries go through `forVisitor()`. Local dev: Workers AI always calls Cloudflare (needs `CLOUDFLARE_ACCOUNT_ID` in a gitignored `.env` when the login has several accounts); the dev server binds 127.0.0.1 for the ChatGPT loopback callback; workerd can't fetch its own dev server, so crawl tests use a public URL.
 
-Agent-as-code conventions (M5, D-22): models and the tool loop go through the AI SDK (`createModel` in `providers.ts`; `model.prompt(system)` because ChatGPT plan usage takes the system prompt as `instructions`). Never call Workers AI through `workers-ai-provider` without `dedupedAi`. Live chats and evals must both go through `runAgent`, so evals test what visitors get. Tool calls are recorded in `ai_actions` (agents only); tool secrets come only from Worker secrets named `JUN_SECRET_<NAME>`, in headers. API tokens (`jun_…`) work only on `/workspaces/:id/agent*` and `/cli/whoami`, for their own workspace. Keep `packages/cli/src/template.ts` AGENTS.md in sync with `DEFAULT_AGENTS_MD`.
+Agent-as-code conventions (M5, D-22): models and the tool loop go through the AI SDK (`createModel` in `providers.ts`; `model.prompt(system)` because ChatGPT plan usage takes the system prompt as `instructions`). Never call Workers AI through `workers-ai-provider` without `dedupedAi`. Live chats and evals must both go through `runAgent`, so evals test what visitors get. One-shot prompts (nudge, brief, issue draft, eval judge) use `completeText`, never `generateText`: ChatGPT plan usage only accepts streaming requests. Tool calls are recorded in `ai_actions` (agents only); tool secrets come only from Worker secrets named `JUN_SECRET_<NAME>`, in headers. API tokens (`jun_…`) work only on `/workspaces/:id/agent*` and `/cli/whoami`, for their own workspace. Keep `packages/cli/src/template.ts` AGENTS.md in sync with `DEFAULT_AGENTS_MD`.
 
 Issue conventions (S-08, D-26): tracker credentials come from the Worker secrets `GITHUB_TOKEN` / `LINEAR_API_KEY` if set, else from what an admin pasted in Settings, kept in the workspace hub's Durable Object storage (`trackerSecret`; never D1, never returned, only the last 4 shown; `GITHUB_API_URL` / `LINEAR_API_URL` override the endpoints); issues are filed only by an agent's click, never by the AI; the body is re-masked server-side with `redact` before it's sent; the model writes only the narrative sections, everything factual comes from the masked debug context. Linear personal keys go in `Authorization` without "Bearer".
 
@@ -55,7 +55,7 @@ Realtime conventions: the Worker authenticates every socket upgrade (agent cooki
 
 Worker conventions: throw `HttpError` for expected failures (rendered as `{ error: { code, message } }`); non-GET API requests must be JSON (CSRF guard in `worker/index.ts`); IDs are prefixed random strings (`newId("usr")`), timestamps are epoch ms; secrets/tokens are stored only as SHA-256 hashes.
 
-**Sign in with ChatGPT is always available on this private desk (D-27).** Locally it returns to the dev server on 127.0.0.1; on the deployed desk it ends on a 127.0.0.1 page whose address is pasted back into Settings. Fresh installs still default to Workers AI until an admin signs in. The desk is private, not released (D-27); if it is ever released, the default must stay Workers AI or an API key, since OpenAI's terms cover plan usage for your own use, not serving the public. Use only OpenAI's documented flow, never the Codex `backend-api` workaround.
+**Sign in with ChatGPT is always available for now (D-27), on the owner's desk before launch.** Locally it returns to the dev server on 127.0.0.1; on the deployed desk it ends on a 127.0.0.1 page whose address is pasted back into Settings. Fresh installs still default to Workers AI until an admin signs in. Before launch it must be re-gated (local dev or an explicit opt-in) and the default must stay Workers AI or an API key, since OpenAI's terms cover plan usage for your own use, not serving the public. Use only OpenAI's documented flow, never the Codex `backend-api` workaround.
 
 ## Docs map
 

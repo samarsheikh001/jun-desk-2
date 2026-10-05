@@ -153,6 +153,8 @@
 
 **Status (2026-10-05): T-11 and T-12 built and verified; README rewritten; launch drafts in `docs/launch/`. Waiting on: a public repo (to test the Deploy button), a demo video, posting.**
 
+**Before launch (checklist):** re-gate ChatGPT sign-in and switch the owner's desk to an API key (D-27: it's always on for now so the owner's desk runs on their ChatGPT plan); CLA bot (D-14); make the repo public and test the Deploy button; demo video; post.
+
 | ID | Feature | Size | |
 |---|---|---|---|
 | T-11 | First-run setup wizard | M | 🚀 |

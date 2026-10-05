@@ -1,9 +1,8 @@
-import { generateText } from "ai";
 import { Hono } from "hono";
 import { redact } from "../../shared/debug.ts";
 import { buildDraft, fallbackNarrative, issueFactsText, issuePrompt, parseIssueInput, parseNarrative, parseRepo, type IssueFacts, type IssueNarrative } from "../../shared/issues.ts";
 import type { ConversationIssue } from "../../shared/protocol.ts";
-import { createModel, loadAiSettings } from "../ai/providers.ts";
+import { completeText, createModel, loadAiSettings } from "../ai/providers.ts";
 import { requireUser } from "../auth/session.ts";
 import type { ConversationRef } from "../conversation.ts";
 import { loadDebugContext, loadIssues, loadMessages } from "../lib/conversations.ts";
@@ -239,11 +238,11 @@ issues.post("/conversations/:cid/issue-draft", async (c) => {
   else {
     try {
       const model = createModel(c.env, ref.workspaceId, settings);
-      const result = await generateText({
+      const result = await completeText({
         model: model.model,
         ...model.prompt(issuePrompt()),
         messages: [{ role: "user", content: issueFactsText(facts) }],
-        maxOutputTokens: 700,
+        maxOutputTokens: 2000,
         temperature: 0.2,
         abortSignal: AbortSignal.timeout(DRAFT_TIMEOUT_MS),
       });

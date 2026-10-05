@@ -1,10 +1,9 @@
-import { generateText } from "ai";
 import type { Message } from "../../shared/protocol.ts";
 import { describeEvents, type DebugContext } from "../../shared/debug.ts";
 import { loadMessages } from "../lib/conversations.ts";
 import { asksForHuman, resolveCitations } from "./agent.ts";
 import type { AgentConfig, EvalCase, EvalOutcome } from "./config.ts";
-import type { AgentModel } from "./providers.ts";
+import { completeText, type AgentModel } from "./providers.ts";
 import { runAgent, type RunResult } from "./run.ts";
 
 // `jun eval` (AI-19): before a config change goes live, run it against
@@ -82,11 +81,11 @@ async function runCase(ctx: EvalContext, c: EvalCase): Promise<RunResult> {
 }
 
 async function judge(ctx: EvalContext, prompt: string): Promise<{ yes: boolean; why: string }> {
-  const { text } = await generateText({
+  const { text } = await completeText({
     model: ctx.model.model,
     ...ctx.model.prompt("You grade customer support replies. Be strict and literal. Answer with one word on the first line (YES or NO), then one short sentence explaining why."),
     messages: [{ role: "user", content: prompt }],
-    maxOutputTokens: 200,
+    maxOutputTokens: 800,
     temperature: 0,
   });
   const [first = "", ...rest] = text.trim().split("\n");

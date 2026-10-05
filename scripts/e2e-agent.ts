@@ -1,6 +1,6 @@
 // End-to-end test of M5, support agent as code: config versions (dashboard + API token),
 // conflict rules, an HTTP tool the live AI calls (audit log), `jun eval` over NDJSON, and
-// the `jun` CLI itself (login/init/push/pull/eval). Real Workers AI. Run after e2e-ai.
+// the `jun` CLI itself (login/init/push/pull/eval). real AI (E2E_AI_PROVIDER, default ChatGPT). Run after e2e-ai.
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -8,7 +8,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+import { AI_PROVIDER, BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const AI_TIMEOUT = 120_000;
 // A public echo API stands in for the customer's order API (workerd can't fetch its own dev server).
@@ -45,7 +45,7 @@ await step("owner signs in; AI on; the agent starts from the built-in default co
   assert.equal((await agent.register("/recover", new SoftAuthenticator(), { token: SETUP_TOKEN })).status, 200);
   workspaceId = (await agent.call("/me")).json.memberships[0].workspaceId;
   widgetKey = (await agent.call(`/workspaces/${workspaceId}/inbox`)).json.inbox.widgetKey;
-  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: "workers-ai", monthlyReplyCap: 1000 } });
+  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: AI_PROVIDER, monthlyReplyCap: 1000 } });
   const res = await agent.call(`/workspaces/${workspaceId}/agent`);
   assert.equal(res.status, 200, JSON.stringify(res.json));
   assert.ok(res.json.files["AGENTS.md"].includes("maxReplies"));

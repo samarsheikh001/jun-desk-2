@@ -1,5 +1,4 @@
 import { DurableObject } from "cloudflare:workers";
-import { generateText } from "ai";
 import {
   MAX_ATTACHMENTS,
   MAX_MESSAGE_LENGTH,
@@ -15,7 +14,7 @@ import {
 import { asksForHuman, briefPrompt, HANDOFF_MESSAGES, resolveCitations } from "./ai/agent.ts";
 import type { ToolUser } from "./ai/config.ts";
 import { loadAgentConfig } from "./ai/config-store.ts";
-import { AiUnavailableError, createModel, loadAiSettings, type AgentModel } from "./ai/providers.ts";
+import { AiUnavailableError, completeText, createModel, loadAiSettings, type AgentModel } from "./ai/providers.ts";
 import { runAgent } from "./ai/run.ts";
 import type { ToolAction } from "./ai/tools.ts";
 import { describeEvents, isIssue, sanitizeContext, type DebugContext } from "../shared/debug.ts";
@@ -608,11 +607,11 @@ export class Conversation extends DurableObject<Env> {
         const transcript =
           history.map((m) => `${m.authorType === "visitor" ? "Customer" : m.authorType === "ai" ? "AI" : "Agent"}: ${m.body}`).join("\n") +
           (technical.length ? `\n\nTechnical context from the customer's browser:\n${technical.join("\n")}` : "");
-        const { text } = await generateText({
+        const { text } = await completeText({
           model: model.model,
           ...model.prompt(briefPrompt()),
           messages: [{ role: "user", content: transcript.slice(-6000) }],
-          maxOutputTokens: 400,
+          maxOutputTokens: 1500,
           abortSignal: AbortSignal.timeout(20_000),
         });
         brief = text.trim();

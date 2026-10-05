@@ -1,9 +1,9 @@
 // End-to-end test of M4 / P1 "support that sees the bug" against a running dev server:
 // the widget's debug snapshot is masked, stored, shown to agents, and used by the AI
-// (real Workers AI) to explain the failure and flag it to the team. Run after e2e-ai.
+// (real AI (E2E_AI_PROVIDER, default ChatGPT)) to explain the failure and flag it to the team. Run after e2e-ai.
 
 import assert from "node:assert/strict";
-import { BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+import { AI_PROVIDER, BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const AI_TIMEOUT = 120_000;
 const agent = new Client();
@@ -27,11 +27,11 @@ const context = (extra: object[] = []) => ({
   ],
 });
 
-await step("owner signs in; AI on (Workers AI)", async () => {
+await step("owner signs in; AI on", async () => {
   assert.equal((await agent.register("/recover", new SoftAuthenticator(), { token: SETUP_TOKEN })).status, 200);
   workspaceId = (await agent.call("/me")).json.memberships[0].workspaceId;
   widgetKey = (await agent.call(`/workspaces/${workspaceId}/inbox`)).json.inbox.widgetKey;
-  const res = await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: "workers-ai", monthlyReplyCap: 100 } });
+  const res = await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: AI_PROVIDER, monthlyReplyCap: 100 } });
   assert.equal(res.status, 200);
 });
 

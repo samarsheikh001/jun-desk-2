@@ -10,10 +10,9 @@ import { IdentityError, verifyIdentityToken } from "../lib/identity.ts";
 import { connectConversation, connectVisitorLive, notifyConversationChanged, offeredProtocols, sendMessage } from "../lib/realtime.ts";
 import { readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
-import { generateText } from "ai";
 import { sanitizeContext, type DebugEvent } from "../../shared/debug.ts";
 import { cleanNudge, GENERIC_NUDGE, nudgeCacheKey, nudgeFacts, nudgePrompt } from "../ai/nudge.ts";
-import { createModel, loadAiSettings } from "../ai/providers.ts";
+import { completeText, createModel, loadAiSettings } from "../ai/providers.ts";
 import { describeOpening, isOpen, nextOpening, type BusinessHours } from "../../shared/hours.ts";
 
 export const DEFAULT_COLOR = "#2f5bea";
@@ -130,7 +129,9 @@ widget.get("/widget/:key/logo", async (c) => {
 // the masked failure ("Looks like the usage chart didn't load. Want a hand?"); the generic line
 // when the AI is off, over its cap or slow. Called cross-origin from customers' sites.
 const NUDGE_CACHE_S = 24 * 60 * 60;
-const NUDGE_TIMEOUT_MS = 2500;
+// ChatGPT plan models take ~3.5–4 s for this line (2026-10-05); the loader waits, and the line
+// is cached per failure and page for a day.
+const NUDGE_TIMEOUT_MS = 6000;
 
 widget.post("/widget/:key/nudge", async (c) => {
   const cors = { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" };
@@ -161,11 +162,11 @@ widget.post("/widget/:key/nudge", async (c) => {
   let text = GENERIC_NUDGE;
   try {
     const model = createModel(c.env, inbox.workspaceId, settings);
-    const result = await generateText({
+    const result = await completeText({
       model: model.model,
       ...model.prompt(nudgePrompt(inbox.workspaceName)),
       messages: [{ role: "user", content: nudgeFacts(event, context.page) }],
-      maxOutputTokens: 60,
+      maxOutputTokens: 400, // reasoning models spend part of this before the line
       temperature: 0.2,
       abortSignal: AbortSignal.timeout(NUDGE_TIMEOUT_MS),
     });

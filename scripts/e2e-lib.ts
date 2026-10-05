@@ -113,10 +113,42 @@ export class SoftAuthenticator {
 }
 
 // ---------- a browser-ish client with a cookie jar ----------
+/**
+ * The model provider the suites' real-AI steps use: the CLI's ChatGPT login by default
+ * (`npm run jun -- login chatgpt` once), so test runs don't spend the Workers AI daily free
+ * allocation the live desk relies on. `E2E_AI_PROVIDER=workers-ai` switches back.
+ */
+export const AI_PROVIDER = process.env.E2E_AI_PROVIDER ?? "chatgpt";
+const connectedWorkspaces = new Set<string>();
+
+/** Hands the test server a short-lived access token from `~/.jun/chatgpt.json` (never the refresh token). */
+async function connectTestChatGPT(client: Client, workspaceId: string): Promise<void> {
+  if (connectedWorkspaces.has(workspaceId)) return;
+  const { FileCredentialStore } = await import("../packages/cli/src/store.ts");
+  const { ChatGPTAuth } = await import("../packages/llm/src/index.ts");
+  const store = new FileCredentialStore();
+  const auth = new ChatGPTAuth(store);
+  let creds = await store.load();
+  if (!creds?.tokens) throw new Error("E2E uses your ChatGPT login: run `npm run jun -- login chatgpt` first (or set E2E_AI_PROVIDER=workers-ai).");
+  // A run takes several minutes: start with at least 30 left.
+  if (creds.tokens.expiresAt - Date.now() < 30 * 60_000) {
+    await auth.getAccessToken({ forceRefresh: true });
+    creds = await store.load();
+  }
+  const res = await client.call(`/workspaces/${workspaceId}/ai/chatgpt/access-token`, {
+    body: { accessToken: creds!.tokens!.accessToken, expiresAt: creds!.tokens!.expiresAt, clientId: creds!.clientId },
+  });
+  assert.equal(res.status, 200, `connecting the test desk to ChatGPT: ${JSON.stringify(res.json)}`);
+  connectedWorkspaces.add(workspaceId);
+}
+
 export class Client {
   cookies = new Map<string, string>();
 
   async call(path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) {
+    // Switching a workspace to ChatGPT first connects it to the CLI's login.
+    const aiPath = /^\/workspaces\/([^/]+)\/ai$/.exec(path);
+    if (aiPath && init.method === "PUT" && (init.body as { provider?: string } | undefined)?.provider === "chatgpt") await connectTestChatGPT(this, aiPath[1]!);
     const headers: Record<string, string> = { Origin: ORIGIN, ...init.headers };
     if (init.body instanceof Uint8Array) headers["X-Jun-Upload"] ??= "1";
     if (init.body !== undefined && !(init.body instanceof Uint8Array)) headers["Content-Type"] ??= "application/json";

@@ -137,6 +137,33 @@ ai.post("/workspaces/:id/ai/chatgpt/finish", async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * Local only (e2e): use an access token from the CLI's ChatGPT login (`~/.jun/chatgpt.json`)
+ * without its refresh token, so the CLI stays the one place that rotates it. When the token
+ * expires, AI turns fail and hand off, as with any AI error.
+ */
+ai.post("/workspaces/:id/ai/chatgpt/access-token", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  if (!isLoopback(new URL(c.req.url).hostname)) throw new HttpError(404, "not_found", "Not found.");
+  const body = await readJson(c.req);
+  const accessToken = typeof body.accessToken === "string" ? body.accessToken.trim() : "";
+  const expiresAt = Number(body.expiresAt);
+  if (!accessToken || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new HttpError(400, "invalid_field", "Needs an unexpired accessToken and its expiresAt.");
+  const row = await c.env.DB.prepare("SELECT credentials FROM dev_chatgpt WHERE workspace_id = ?").bind(workspaceId).first<{ credentials: string }>();
+  const existing = row ? (JSON.parse(row.credentials) as ChatGPTCredentials) : undefined;
+  const creds: ChatGPTCredentials = {
+    hostId: existing?.hostId ?? oauth.newHostId(),
+    clientId: typeof body.clientId === "string" && body.clientId ? body.clientId : (existing?.clientId ?? "cli"),
+    tokens: { accessToken, refreshToken: "", expiresAt, earliestRefreshAt: expiresAt },
+  };
+  await c.env.DB.prepare("INSERT INTO dev_chatgpt (workspace_id, credentials) VALUES (?, ?) ON CONFLICT (workspace_id) DO UPDATE SET credentials = excluded.credentials")
+    .bind(workspaceId, JSON.stringify(creds))
+    .run();
+  await c.env.WORKSPACE_HUB.getByName(workspaceId).resetChatGPT();
+  return c.json({ ok: true });
+});
+
 ai.delete("/workspaces/:id/ai/chatgpt", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);

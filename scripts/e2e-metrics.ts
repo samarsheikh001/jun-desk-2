@@ -3,7 +3,7 @@
 // real AI answer, a 👎 with a comment) and checks the report moved by exactly that. Run last.
 
 import assert from "node:assert/strict";
-import { Client, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+import { AI_PROVIDER, Client, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const AI_TIMEOUT = 90_000;
 const owner = new Client();
@@ -19,7 +19,7 @@ const report = async (days = 7) => {
   return res.json.report;
 };
 const setAi = (enabled: boolean) =>
-  owner.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { ...aiSettings, enabled, provider: "workers-ai", model: null, monthlyReplyCap: 1_000_000 } });
+  owner.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { ...aiSettings, enabled, provider: AI_PROVIDER, model: null, monthlyReplyCap: 1_000_000 } });
 
 /** A new visitor and their first message; returns what's needed to keep chatting. */
 async function startChat(body: string) {
@@ -97,7 +97,7 @@ await step("scenario: a visitor asks for a person in an AI chat (no AI turn)", a
   socket.close();
 });
 
-await step("scenario: the AI answers one chat (real Workers AI)", async () => {
+await step("scenario: the AI answers one chat (real AI (E2E_AI_PROVIDER, default ChatGPT))", async () => {
   assert.equal((await setAi(true)).status, 200);
   try {
     const chat = await startChat("Hi! What can you help me with?");

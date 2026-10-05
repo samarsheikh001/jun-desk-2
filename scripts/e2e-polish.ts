@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { signIdentityToken } from "../worker/lib/identity.ts";
-import { BASE, Client, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+import { AI_PROVIDER, BASE, Client, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const agent = new Client();
 let workspaceId = "";
@@ -113,7 +113,7 @@ await step("I-10: outside business hours a chat with the team gets one away repl
   assert.equal(config.hours.open, false);
   assert.match(config.hours.back, /at 09:00 \(UTC time\)$/);
 
-  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: false, provider: "workers-ai", monthlyReplyCap: 1000 } });
+  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: false, provider: AI_PROVIDER, monthlyReplyCap: 1000 } });
   const visitor = new Client();
   const token = (await visitor.call(`/widget/${widgetKey}/visitor`, { body: {} })).json.token as string;
   const started = await visitor.call(`/widget/${widgetKey}/conversations`, { body: { clientMsgId: crypto.randomUUID(), body: "Hello? Anyone there?" }, headers: { "X-Visitor-Token": token } });

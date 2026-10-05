@@ -5,7 +5,7 @@
 //   npm run dev  &&  npm run test:e2e
 
 import assert from "node:assert/strict";
-import { Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+import { AI_PROVIDER, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const agent = new Client();
 let workspaceId = "";
@@ -22,7 +22,7 @@ await step("owner signs in (recovery passkey) and finds the widget key", async (
   widgetKey = (await agent.call(`/workspaces/${workspaceId}/inbox`)).json.inbox.widgetKey;
   assert.match(widgetKey, /^wk_/);
   // This suite tests human chat: make sure the AI isn't answering (other suites may turn it on).
-  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: false, provider: "workers-ai" } });
+  await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: false, provider: AI_PROVIDER } });
 });
 
 await step("agent hub socket connects and reports presence", async () => {

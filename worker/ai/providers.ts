@@ -1,6 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { OPENAI_API_BASE } from "@jun/llm";
-import type { LanguageModel } from "ai";
+import { streamText, type LanguageModel, type LanguageModelUsage } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { dedupedAi } from "./workers-ai.ts";
 
@@ -43,6 +43,28 @@ export function isLoopback(hostname: string): boolean {
 }
 
 export class AiUnavailableError extends Error {}
+
+/**
+ * One whole reply, for prompts nobody watches stream (nudges, handoff briefs, issue drafts,
+ * eval grading). ChatGPT plan usage only accepts streaming requests ("Stream must be set to
+ * true"), so this streams and collects instead of calling generateText.
+ */
+export async function completeText(options: Parameters<typeof streamText>[0]): Promise<{ text: string; totalUsage: LanguageModelUsage }> {
+  let failure: unknown;
+  const result = streamText({
+    ...options,
+    onError: ({ error }) => {
+      failure ??= error;
+    },
+  });
+  try {
+    const [text, totalUsage] = await Promise.all([result.text, result.totalUsage]);
+    if (failure) throw failure;
+    return { text, totalUsage };
+  } catch (error) {
+    throw failure ?? error;
+  }
+}
 
 /** A chat model plus how this provider wants the system prompt delivered. */
 export interface AgentModel {
