@@ -54,10 +54,18 @@ Copy the snippet from **Settings → Install the chat widget**, ideally into `<h
 | `data-capture="off"` | Turns off error and request capture |
 | `data-color="#0f766e"` | Overrides the brand colour from Settings |
 | `JunDesk.open()`, `.close()`, `.toggle()` | Control the chat from your own buttons |
+| `JunDesk.reportError({ message, code? })` | Tells support what failed, in your app's words (see below) |
 
 Colour, logo, greeting, button side and business hours are set in **Settings** and apply within a minute without touching the snippet. List your domains under **Allowed websites** so nobody can reuse your (public) widget key on their own site.
 
 **What the widget captures:** JavaScript errors, failed requests (method, URL and status, never request or response bodies) and pages visited, kept in memory and sent only when the visitor writes to you. Query values are stripped, and emails, tokens, keys and card-like numbers are masked before anything leaves the browser.
+
+**Errors your app knows about:** when something fails for a reason you can name, say so. The message (up to 300 characters, masked like everything else) joins the visitor's timeline, so the AI and your agents see it, and it can trigger the "Want a hand?" nudge ("Your CSV import failed on row 42."). `code` is optional (letters, digits, `_ . -`, up to 60), for your team: agents see it in the timeline and issue drafts, and the AI is told not to repeat it. It does nothing with `data-capture="off"` or before `JunDesk.consent(true)`, and never throws.
+
+```js
+// The loader is async, so it may not be there yet.
+window.JunDesk?.reportError({ message: "Row 42: missing email", code: "import.row_invalid" });
+```
 
 **Signed-in customers:** create an identity secret in Settings → Install. Your backend signs a short-lived HS256 JWT with `sub` (the user's id) and `exp`, plus `email`, `name` and `attributes` if you like (`{ plan: "pro", seats: 12 }`). Agents then see a verified customer, chats follow them across devices, and the AI's tools can look up their own account with `{user.id}`. Without a valid token, visitors stay anonymous.
 

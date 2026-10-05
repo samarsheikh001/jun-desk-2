@@ -112,13 +112,40 @@ await step("agents see the same context live in the conversation socket backlog'
   assert.equal(list.find((c: { id: string }) => c.id === conversationId).debugIssueCount, 3);
 });
 
+await step("S-12: an app's reportError event is masked again, shown to agents, never to visitors", async () => {
+  const appError = { t: now - 2_000, kind: "app_error", message: "Row 42: missing email for pat@customer.test (token=abc123)", code: "import.row_invalid<script>", stack: "should go", status: 500 };
+  const res = await new Client().call(`/widget/${widgetKey}/conversations/${conversationId}/messages`, {
+    body: { clientMsgId: "v-ctx-3", body: "The contacts import keeps failing", context: context([appError]) },
+    headers: { "X-Visitor-Token": visitorToken },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+  const data = (await agent.call(`/conversations/${conversationId}/context`)).json;
+  assert.equal(data.issueCount, 4, "app errors count as issues");
+  const event = data.events.find((e: { kind: string }) => e.kind === "app_error");
+  assert.deepEqual(event, { t: now - 2_000, kind: "app_error", message: "Row 42: missing email for [email] (token=[redacted])", code: "import.row_invalidscript" });
+  const list = (await agent.call(`/workspaces/${workspaceId}/conversations?status=all`)).json.conversations;
+  // The list counts the latest snapshot: the failed request, the JS error and the app error.
+  assert.equal(list.find((c: { id: string }) => c.id === conversationId).debugIssueCount, 3);
+  // What the widget can read: the thread and the list, without the timeline or the count.
+  const headers = { "X-Visitor-Token": visitorToken };
+  const visible = JSON.stringify([
+    (await new Client().call(`/widget/${widgetKey}/conversations/${conversationId}`, { headers })).json,
+    (await new Client().call(`/widget/${widgetKey}/conversations`, { headers })).json,
+  ]);
+  assert.ok(visible.includes("contacts import keeps failing"), "the visitor sees their own message");
+  for (const hidden of ["Row 42", "row_invalid", "app_error"]) assert.ok(!visible.includes(hidden), `visitor sees ${hidden}`);
+  assert.ok(!/"debugIssueCount":[1-9]/.test(visible), "visitors don't get the issue count");
+});
+
+/** The loader's nudge request, from a customer's site. */
+const nudge = async (body: string) => {
+  const res = await fetch(`${BASE}/api/widget/${widgetKey}/nudge`, { method: "POST", headers: { Origin: "https://customer.example", "Content-Type": "text/plain;charset=UTF-8" }, body });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("access-control-allow-origin"), "*");
+  return (await res.json()) as { show: boolean; text?: string };
+};
+
 await step("S-11: the nudge is worded by the AI from the failure, cross-origin, with nothing technical", async () => {
-  const nudge = async (body: string) => {
-    const res = await fetch(`${BASE}/api/widget/${widgetKey}/nudge`, { method: "POST", headers: { Origin: "https://customer.example", "Content-Type": "text/plain;charset=UTF-8" }, body });
-    assert.equal(res.status, 200);
-    assert.equal(res.headers.get("access-control-allow-origin"), "*");
-    return (await res.json()) as { show: boolean; text?: string };
-  };
   const pay = await nudge(JSON.stringify({ event: { t: 1, kind: "network", method: "POST", url: "/api/billing/pay", status: 500 }, page: { url: "https://app.customer.test/billing", title: "Billing" } }));
   assert.equal(pay.show, true);
   assert.match(pay.text!, /Want a hand\?$/);
@@ -128,6 +155,21 @@ await step("S-11: the nudge is worded by the AI from the failure, cross-origin, 
   assert.match(chart.text!, /chart|usage/i, chart.text);
   assert.doesNotMatch(chart.text!, /pay/i, "no more keyword guesses");
   assert.deepEqual(await nudge("not json"), { show: false });
+});
+
+await step("S-12: a nudge from the app's own error says what failed, without the code or tech words", async () => {
+  const res = await nudge(
+    JSON.stringify({
+      event: { t: 1, kind: "app_error", message: "Row 42: missing email for pat@customer.test", code: "import.row_invalid" },
+      page: { url: "https://app.customer.test/contacts/import", title: "Import contacts" },
+    }),
+  );
+  console.log(`    nudge: ${res.text}`);
+  assert.equal(res.show, true);
+  assert.match(res.text!, /Want a hand\?$/);
+  assert.match(res.text!, /42|email|import/i, res.text);
+  assert.doesNotMatch(res.text!, /row_invalid|pat@|\[email\]|error|code|\/api|https?:/i, res.text);
+  assert.doesNotMatch(res.text!, /^Looks like something went wrong/, "the AI wrote it, not the generic line");
 });
 
 summary();

@@ -33,6 +33,18 @@ function EventRow({ event, timezone }: { event: DebugEvent; timezone: string }) 
       </li>
     );
   }
+  if (event.kind === "app_error") {
+    // S-12: the customer's app said what failed (JunDesk.reportError).
+    return (
+      <li className="ev bad">
+        <span className="ev-time">{time}</span>
+        <span>
+          <strong>{event.message}</strong>
+          <div className="muted small">Reported by the app{event.code && <> · <code>{event.code}</code></>}</div>
+        </span>
+      </li>
+    );
+  }
   return (
     <li className="ev bad">
       <span className="ev-time">{time}</span>

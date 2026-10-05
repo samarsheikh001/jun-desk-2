@@ -66,3 +66,31 @@ test("issues are errors and failed requests; descriptions read well", () => {
     "[14:03:00] GET /api/me → HTTP 304",
   ]);
 });
+
+test("S-12 app errors: message masked and capped, code [\\w.-] only, nothing else kept; an issue", () => {
+  const ctx = sanitizeContext({
+    page: { url: "https://a.dev/import" },
+    timezone: "UTC",
+    events: [
+      { t: Date.UTC(2026, 9, 5, 9, 0, 0), kind: "app_error", message: "  Row 42: missing email for pat@customer.test (token=abc123)  ", code: "import.row_invalid", stack: "x", url: "https://a.dev/secret?q=1", status: 500 },
+      { t: 2, kind: "app_error", message: "x".repeat(5000), code: "bad code!/<script>" + "y".repeat(100) },
+      { t: 3, kind: "app_error", message: "Card 4242 4242 4242 4242 declined", code: "sk_live_4eC39HqLyjWDarjtT1zdp7dc" },
+      { t: 4, kind: "app_error", message: "   " },
+      { t: 5, kind: "app_error", message: { toString: () => "object" } },
+      { t: 6, kind: "app_error", message: "No code", code: 42 },
+    ],
+  })!;
+  assert.equal(ctx.events.length, 4);
+  assert.deepEqual(ctx.events.at(-1), { t: Date.UTC(2026, 9, 5, 9, 0, 0), kind: "app_error", message: "Row 42: missing email for [email] (token=[redacted])", code: "import.row_invalid" });
+  const long = ctx.events.find((e) => e.t === 2)!;
+  assert.equal(long.message!.length, 300);
+  assert.match(long.code!, /^[\w.-]{1,60}$/);
+  assert.ok(long.code!.startsWith("badcodescript"));
+  const card = ctx.events.find((e) => e.t === 3)!;
+  assert.match(card.message!, /^Card \[number\] ?declined$/);
+  assert.equal(card.code, "key");
+  assert.deepEqual(ctx.events.find((e) => e.t === 6), { t: 6, kind: "app_error", message: "No code" });
+  assert.ok(ctx.events.every(isIssue));
+  assert.equal(describeEvents(ctx).at(-1), "[09:00:00] The app reported an error: Row 42: missing email for [email] (token=[redacted]) (code import.row_invalid)");
+  assert.equal(describeEvents({ ...ctx, events: [{ t: 0, kind: "app_error", message: "Upload too big" }] })[0], "[00:00:00] The app reported an error: Upload too big");
+});

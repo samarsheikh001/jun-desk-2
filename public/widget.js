@@ -7,7 +7,10 @@
  * disables capture. Shows the visitor on the desk's live visitor list (data-consent="required"
  * waits for JunDesk.consent(true) and stores nothing before it).
  * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt) / .logout() / .consent(bool)
+ *      / .reportError({ message, code? })
  * identify() takes a JWT your backend signs with the desk's identity secret (data-user-token works too).
+ * reportError() tells support what failed in your app's own words ("Row 42: missing email"); masked
+ * like everything else and kept in memory with the errors above.
  */
 (function () {
   var script = document.currentScript;
@@ -156,7 +159,7 @@
   // ---------- proactive help (P-01): offer a chat when something really breaks ----------
   var nudged = false, nudgeTimer, nudgeEvent;
   function worthNudging(e) {
-    if (e.kind === "error") return true;
+    if (/error$/.test(e.kind)) return true; // JS errors and the app's own (reportError)
     // Failed API calls, not noisy asset loads or 404s on GETs.
     return e.kind === "network" && !/^failed to load/.test(e.message || "") &&
       (e.status === 0 || e.status >= 500 || (e.status >= 400 && e.method !== "GET"));
@@ -309,6 +312,17 @@
       sid = null; started = null;
       store("jun:s", rid()); store("jun:t", String(Date.now()));
       connect();
+    },
+    // S-12: the app says what failed, in its own words. Same masking as shared/debug.ts.
+    reportError: function (err) {
+      try {
+        var m = err && typeof err === "object" && typeof err.message === "string" && err.message.trim();
+        if (!m || !capture || !consented) return;
+        var e = { kind: "app_error", message: redact(m, 300) };
+        var c = typeof err.code === "string" && redact(err.code, 60).replace(/[^\w.-]/g, "");
+        if (c) e.code = c;
+        push(e);
+      } catch (x) { /* never break the host page */ }
     },
     consent: function (yes) {
       consented = Boolean(yes);

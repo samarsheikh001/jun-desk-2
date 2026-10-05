@@ -137,6 +137,14 @@ test("S-11 nudge: facts describe the failure; unsafe or rambling lines fall back
   assert.equal(cleanNudge("A TypeError happened. Want a hand?"), null);
   assert.equal(cleanNudge(`${"Very long ".repeat(20)}Want a hand?`), null);
   assert.equal(cleanNudge(GENERIC_NUDGE), GENERIC_NUDGE);
+  // S-12: the app's own words; its numbers ("row 142") may show, its code never reaches the model.
+  const facts = nudgeFacts({ t: 1, kind: "app_error", message: "Row 142: missing email", code: "import.row_invalid" }, { url: "/import", title: "Import contacts" });
+  assert.match(facts, /in its own words: "Row 142: missing email"/);
+  assert.doesNotMatch(facts, /import\.row_invalid/);
+  assert.equal(cleanNudge("Your CSV import failed on row 142. Want a hand?", "Row 142: missing email"), "Your CSV import failed on row 142. Want a hand?");
+  assert.equal(cleanNudge("Your CSV import failed on row 142. Want a hand?"), null);
+  assert.equal(cleanNudge("Your import got HTTP 500. Want a hand?", "Row 142: missing email"), null);
+  assert.equal(cleanNudge("Row 9 for [email] wasn't imported. Want a hand?", "Row 9: missing name for [email]"), null);
 });
 
 test("K-04: excluded pages match by exact URL or path prefix", async () => {

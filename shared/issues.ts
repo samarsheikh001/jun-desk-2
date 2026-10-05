@@ -157,6 +157,8 @@ export function inferSteps(facts: Pick<IssueFacts, "environment" | "events">): s
       steps.push(`The page sends ${code(`${e.method ?? "GET"} ${e.url ?? "?"}`)}, which fails with ${e.status ? `HTTP ${e.status}` : `no response${e.message ? ` (${e.message})` : ""}`}`);
     } else if (e.kind === "error") {
       steps.push(`A JavaScript error is thrown: ${code(e.message ?? "unknown error")}`);
+    } else if (e.kind === "app_error") {
+      steps.push(`The app reports an error: ${appError(e)}`);
     }
   }
   if (!steps.some((s) => s.startsWith("Open ")) && facts.environment?.page.url) steps.unshift(`Open ${code(facts.environment.page.url)}`);
@@ -170,12 +172,18 @@ export function fallbackNarrative(facts: IssueFacts): IssueNarrative {
   const oneLine = redact(first.replace(/\s+/g, " ").trim(), 400);
   const title = oneLine ? (oneLine.length > 80 ? `${oneLine.slice(0, 79).trimEnd()}…` : oneLine) : "Problem reported in a support conversation";
   // The failing request says most; else the last error.
-  const failure = facts.events.findLast((e) => e.kind === "network" && isIssue(e)) ?? facts.events.findLast((e) => e.kind === "error");
+  // The app's own words say most (S-12); then the failing request; else the last error.
+  const failure =
+    facts.events.findLast((e) => e.kind === "app_error") ??
+    facts.events.findLast((e) => e.kind === "network" && isIssue(e)) ??
+    facts.events.findLast((e) => e.kind === "error");
   const actual = !failure
     ? UNKNOWN
     : failure.kind === "network"
       ? `${code(`${failure.method ?? "GET"} ${failure.url ?? "?"}`)} ${failure.status ? `returned HTTP ${failure.status}` : "got no response"}.`
-      : `JavaScript error: ${code(failure.message ?? "unknown error")}.`;
+      : failure.kind === "app_error"
+        ? `The app reported: ${appError(failure)}.`
+        : `JavaScript error: ${code(failure.message ?? "unknown error")}.`;
   return {
     title,
     summary: oneLine ? `A customer reported in a support chat: “${oneLine}”` : UNKNOWN,
@@ -216,10 +224,16 @@ function topFrame(e: DebugEvent): string | null {
   return frame ?? e.source ?? null;
 }
 
+/** "`Row 42: missing email` (code `import.row_invalid`)" for an app_error. */
+function appError(e: DebugEvent): string {
+  return `${code(e.message || "error")}${e.code ? ` (code ${code(e.code)})` : ""}`;
+}
+
 export function errorsSection(events: DebugEvent[], timezone?: string): string {
-  const errors = events.filter((e) => e.kind === "error").slice(-10);
+  const errors = events.filter((e) => e.kind === "error" || e.kind === "app_error").slice(-10);
   if (errors.length === 0) return "## Errors\n\nNone recorded.";
   const items = errors.map((e) => {
+    if (e.kind === "app_error") return `- ${at(e.t, timezone)} Reported by the app: ${appError(e)}`;
     const frame = topFrame(e);
     return `- ${at(e.t, timezone)} ${code(e.message || "JavaScript error")}${frame ? `\n  ${code(frame)}` : ""}`;
   });
