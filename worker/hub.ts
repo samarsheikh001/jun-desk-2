@@ -23,10 +23,10 @@ interface VisitorAttachment {
   inboxId: string;
   visitor: LiveVisitor;
   /** Epoch ms; with the last ping, how we tell a live socket from a dead one. */
-  connectedAt?: number;
+  connectedAt: number;
 }
 
-type AgentAttachment = PresenceEntry & { kind?: "agent"; connectedAt?: number };
+type AgentAttachment = PresenceEntry & { kind?: "agent"; connectedAt: number };
 
 /**
  * The loader and the dashboard ping every 30 s (answered automatically, even while this object
@@ -34,7 +34,8 @@ type AgentAttachment = PresenceEntry & { kind?: "agent"; connectedAt?: number };
  * or a connection cut by a deploy. Without this, ghosts stay "live" forever.
  */
 const STALE_MS = 75_000;
-const SWEEP_MS = 60_000;
+/** The sweep only closes sockets and tells agents; listings already skip stale ones. */
+const SWEEP_MS = 120_000;
 
 const clip = (value: unknown, max: number): string => (typeof value === "string" ? value.slice(0, max) : "");
 
@@ -47,6 +48,8 @@ const clip = (value: unknown, max: number): string => (typeof value === "string"
  */
 export class WorkspaceHub extends DurableObject<Env> {
   #chatgpt: ChatGPTAuth | undefined;
+  /** The sweep alarm is set (saves a storage read per connect; after eviction, setting it again is harmless). */
+  #sweepArmed = false;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
@@ -77,10 +80,9 @@ export class WorkspaceHub extends DurableObject<Env> {
           timezone: null,
           inChat: false,
         },
+        connectedAt: now,
       };
-      this.ctx.acceptWebSocket(server, ["visitor", `s:${info.sessionId}`]);
-      server.serializeAttachment({ ...attachment, connectedAt: now } satisfies VisitorAttachment);
-      await this.#scheduleSweep();
+      await this.#accept(server, ["visitor", `s:${info.sessionId}`], attachment);
       // Announced to agents on its first page event, which carries the page. The loader offers
       // no subprotocol; echo ours if a client offers it (clients reject a missing echo).
       const offered = (request.headers.get("sec-websocket-protocol") ?? "").split(",").map((p) => p.trim());
@@ -88,9 +90,7 @@ export class WorkspaceHub extends DurableObject<Env> {
     }
 
     const user = JSON.parse(request.headers.get(HUB_USER_HEADER)!) as PresenceEntry;
-    this.ctx.acceptWebSocket(server, ["agent"]);
-    server.serializeAttachment({ ...user, kind: "agent", connectedAt: Date.now() } satisfies AgentAttachment);
-    await this.#scheduleSweep();
+    await this.#accept(server, ["agent"], { ...user, kind: "agent", connectedAt: Date.now() } satisfies AgentAttachment);
     this.#send(server, { type: "visitors", visitors: this.#visitors() });
     this.#broadcastPresence();
     return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": SOCKET_PROTOCOL } });
@@ -143,13 +143,7 @@ export class WorkspaceHub extends DurableObject<Env> {
 
   /** RPC (I-02): teammates with a dashboard open right now. */
   async onlineAgentIds(): Promise<string[]> {
-    const ids = new Set<string>();
-    for (const ws of this.ctx.getWebSockets("agent")) {
-      if (!this.#alive(ws)) continue;
-      const a = ws.deserializeAttachment() as AgentAttachment | null;
-      if (a?.userId) ids.add(a.userId);
-    }
-    return [...ids];
+    return [...new Set(this.#live<AgentAttachment>("agent").map(([, a]) => a.userId))];
   }
 
   /**
@@ -178,20 +172,19 @@ export class WorkspaceHub extends DurableObject<Env> {
 
   /** RPC (W-08): is any teammate's dashboard open? Visitors only ever get this yes/no. */
   async agentsOnline(): Promise<boolean> {
-    return this.ctx.getWebSockets("agent").some((ws) => this.#alive(ws));
+    return this.#live("agent").length > 0;
   }
 
   /** RPC (V-07): deliver an agent's invite to a live visitor. False if they've left. */
   async invite(sessionId: string, invite: { id: string; body: string; from: string }): Promise<boolean> {
-    const sockets = this.ctx.getWebSockets(`s:${sessionId}`);
-    for (const ws of sockets) this.#send(ws, { t: "invite", ...invite } satisfies LiveServerEvent);
+    const sockets = this.#live(`s:${sessionId}`);
+    for (const [ws] of sockets) this.#send(ws, { t: "invite", ...invite } satisfies LiveServerEvent);
     return sockets.length > 0;
   }
 
   /** RPC: a live visitor started a chat; the list shows it (and who they are, if anonymous). */
   async linkSession(sessionId: string, contactId: string): Promise<void> {
-    for (const ws of this.ctx.getWebSockets(`s:${sessionId}`)) {
-      const a = ws.deserializeAttachment() as VisitorAttachment;
+    for (const [ws, a] of this.#live<VisitorAttachment>(`s:${sessionId}`)) {
       a.visitor.inChat = true;
       a.visitor.contact ??= { id: contactId, name: null, email: null, verified: false };
       ws.serializeAttachment(a);
@@ -248,37 +241,50 @@ export class WorkspaceHub extends DurableObject<Env> {
     await this.webSocketClose(ws);
   }
 
-  /** Every minute while anyone is connected: drop sockets that stopped pinging. */
+  /** While anyone is connected: close sockets that stopped pinging, as if they had closed. */
   override async alarm(): Promise<void> {
-    let agentGone = false;
+    this.#sweepArmed = false;
     for (const ws of this.ctx.getWebSockets()) {
-      if (this.#alive(ws)) continue;
-      const a = ws.deserializeAttachment() as VisitorAttachment | AgentAttachment | null;
+      if (ws.readyState !== WebSocket.OPEN || this.#alive(ws, ws.deserializeAttachment() as { connectedAt?: number } | null)) continue;
       try {
         ws.close(1001, "No ping");
       } catch {
         // already closing
       }
-      if (a?.kind === "visitor") {
-        if (a.visitor.pages > 0) this.#broadcast(JSON.stringify({ type: "visitor_left", sessionId: a.visitor.sessionId } satisfies HubEvent));
-      } else {
-        agentGone = true;
-      }
+      await this.webSocketClose(ws);
     }
-    if (agentGone) this.#broadcastPresence();
-    if (this.ctx.getWebSockets().some((ws) => this.#alive(ws))) await this.ctx.storage.setAlarm(Date.now() + SWEEP_MS);
+    if (this.ctx.getWebSockets().length > 0) await this.#armSweep();
   }
 
-  /** Open, and pinged (or connected) within STALE_MS. Sockets from before connectedAt existed count only once they ping. */
-  #alive(ws: WebSocket): boolean {
-    if (ws.readyState !== WebSocket.OPEN) return false;
-    const pinged = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0;
-    const connected = (ws.deserializeAttachment() as { connectedAt?: number } | null)?.connectedAt ?? 0;
-    return Date.now() - Math.max(pinged, connected) < STALE_MS;
+  /** Accepts a hibernatable socket with its attachment and makes sure the sweep is running. */
+  async #accept(server: WebSocket, tags: string[], attachment: VisitorAttachment | AgentAttachment): Promise<void> {
+    this.ctx.acceptWebSocket(server, tags);
+    server.serializeAttachment(attachment);
+    await this.#armSweep();
   }
 
-  async #scheduleSweep(): Promise<void> {
+  async #armSweep(): Promise<void> {
+    if (this.#sweepArmed) return;
     if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + SWEEP_MS);
+    this.#sweepArmed = true;
+  }
+
+  /** Pinged (or connected) within STALE_MS. The ping time is checked first: it needs no attachment. */
+  #alive(ws: WebSocket, attachment: { connectedAt?: number } | null): boolean {
+    const now = Date.now();
+    const pinged = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0;
+    return now - pinged < STALE_MS || now - (attachment?.connectedAt ?? 0) < STALE_MS;
+  }
+
+  /** Open, live sockets with their attachments. Everything that lists or messages people goes through here. */
+  #live<T extends { connectedAt?: number }>(tag: string): [WebSocket, T][] {
+    const out: [WebSocket, T][] = [];
+    for (const ws of this.ctx.getWebSockets(tag)) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      const a = ws.deserializeAttachment() as T | null;
+      if (a && this.#alive(ws, a)) out.push([ws, a]);
+    }
+    return out;
   }
 
   override async webSocketClose(ws: WebSocket): Promise<void> {
@@ -291,24 +297,17 @@ export class WorkspaceHub extends DurableObject<Env> {
   }
 
   #visitors(): LiveVisitor[] {
-    // One row per browser session: a reconnect can briefly overlap the old socket.
-    const out = new Map<string, VisitorAttachment>();
-    for (const ws of this.ctx.getWebSockets("visitor")) {
-      if (!this.#alive(ws)) continue;
-      const a = ws.deserializeAttachment() as VisitorAttachment | null;
-      if (!a || a.visitor.pages === 0) continue;
-      const seen = out.get(a.visitor.sessionId);
-      if (!seen || (a.connectedAt ?? 0) > (seen.connectedAt ?? 0)) out.set(a.visitor.sessionId, a);
-    }
-    return [...out.values()].map((a) => a.visitor);
+    // One row per browser session (a reconnect can briefly overlap the old socket): newest wins.
+    const out = new Map<string, LiveVisitor>();
+    const live = this.#live<VisitorAttachment>("visitor").sort(([, a], [, b]) => a.connectedAt - b.connectedAt);
+    for (const [, a] of live) if (a.visitor.pages > 0) out.set(a.visitor.sessionId, a.visitor);
+    return [...out.values()];
   }
 
   #broadcastPresence(closing?: WebSocket): void {
     const online = new Map<string, PresenceEntry>();
-    for (const ws of this.ctx.getWebSockets("agent")) {
-      if (ws === closing || !this.#alive(ws)) continue;
-      const user = ws.deserializeAttachment() as AgentAttachment | null;
-      if (user) online.set(user.userId, { userId: user.userId, name: user.name });
+    for (const [ws, user] of this.#live<AgentAttachment>("agent")) {
+      if (ws !== closing) online.set(user.userId, { userId: user.userId, name: user.name });
     }
     this.#broadcast(JSON.stringify({ type: "presence", online: [...online.values()] } satisfies HubEvent), closing);
   }
@@ -333,4 +332,3 @@ export class WorkspaceHub extends DurableObject<Env> {
     }
   }
 }
-
