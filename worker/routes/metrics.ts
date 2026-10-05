@@ -1,6 +1,16 @@
 import { Hono } from "hono";
 import { validTimezone } from "../../shared/hours.ts";
-import { computeMetrics, MAX_METRIC_CONVERSATIONS, parsePeriod, periodDays, type ConversationFacts, type RatingRow, type ReplyRow } from "../../shared/metrics.ts";
+import {
+  AI_OFF_HANDOFF_REASON,
+  computeMetrics,
+  MAX_METRIC_CONVERSATIONS,
+  parsePeriod,
+  periodDays,
+  type ConversationFacts,
+  type RatingRow,
+  type ReplyRow,
+} from "../../shared/metrics.ts";
+import { loadAiSettings } from "../ai/providers.ts";
 import { requireUser } from "../auth/session.ts";
 import { HttpError, type AppEnv } from "../types.ts";
 
@@ -21,10 +31,16 @@ const CONVERSATION_FACTS = `
     SELECT c.id, c.created_at AS createdAt, c.status = 'resolved' AS resolved,
       (SELECT MIN(m.created_at) FROM messages m WHERE m.conversation_id = c.id AND m.author_type = 'visitor') AS firstVisitorAt,
       (SELECT MIN(m.created_at) FROM messages m WHERE m.conversation_id = c.id AND m.author_type = 'ai' AND m.internal = 0) AS firstAiAt,
-      -- The visitor-facing handoff notice (the internal brief carries the same reason).
+      -- The visitor-facing handoff notice (the internal brief carries the same reason). A chat
+      -- that reached the AI while it was off (?5) went to the team: that's not the AI's handoff.
       (SELECT json_extract(m.meta, '$.handoffReason') FROM messages m
         WHERE m.conversation_id = c.id AND m.author_type = 'system' AND m.internal = 0 AND json_extract(m.meta, '$.handoffReason') IS NOT NULL
-        ORDER BY m.seq LIMIT 1) AS handoffReason
+          AND json_extract(m.meta, '$.handoffReason') <> ?5
+        ORDER BY m.seq LIMIT 1) AS handoffReason,
+      EXISTS (SELECT 1 FROM messages m
+        WHERE m.conversation_id = c.id AND m.author_type = 'system' AND m.internal = 0 AND json_extract(m.meta, '$.handoffReason') = ?5) AS aiOffHandoff,
+      -- A-06: the loader sends the page with the visitor's first message; no extra tracking.
+      (SELECT json_extract(d.context, '$.page.url') FROM debug_snapshots d WHERE d.conversation_id = c.id ORDER BY d.created_at LIMIT 1) AS startUrl
     FROM conversations c
     WHERE c.workspace_id = ?1 AND c.created_at >= ?2 AND c.created_at < ?3
     ORDER BY c.created_at DESC LIMIT ?4
@@ -43,8 +59,8 @@ metrics.get("/workspaces/:id/metrics", async (c) => {
   const now = Date.now();
   const { since, until } = periodDays(now, days, timezone);
   const db = c.env.DB;
-  const [conversations, ratings, replies, members] = await db.batch([
-    db.prepare(CONVERSATION_FACTS).bind(workspaceId, since, until, MAX_METRIC_CONVERSATIONS + 1),
+  const [[conversations, ratings, replies, members], ai] = await Promise.all([db.batch([
+    db.prepare(CONVERSATION_FACTS).bind(workspaceId, since, until, MAX_METRIC_CONVERSATIONS + 1, AI_OFF_HANDOFF_REASON),
     db.prepare(
       `SELECT conversation_id AS conversationId, rating, CASE WHEN rating = 'bad' THEN comment END AS comment, created_at AS createdAt
        FROM csat_ratings WHERE workspace_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at DESC LIMIT ?`,
@@ -56,15 +72,17 @@ metrics.get("/workspaces/:id/metrics", async (c) => {
        GROUP BY m.author_id`,
     ).bind(workspaceId, since, until),
     db.prepare("SELECT u.id AS userId, u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ?").bind(workspaceId),
-  ]);
+  ]), loadAiSettings(c.env, workspaceId)]);
 
-  const rows = (conversations!.results as unknown as (Omit<ConversationFacts, "resolved"> & { resolved: number })[]).map((r) => ({ ...r, resolved: r.resolved === 1 }));
+  type Row = Omit<ConversationFacts, "resolved" | "aiOffHandoff"> & { resolved: number; aiOffHandoff: number };
+  const rows = (conversations!.results as unknown as Row[]).map((r) => ({ ...r, resolved: r.resolved === 1, aiOffHandoff: r.aiOffHandoff === 1 }));
   const truncated = rows.length > MAX_METRIC_CONVERSATIONS;
   return c.json({
     report: computeMetrics({
       now,
       days,
       timezone,
+      aiEnabled: ai.enabled,
       conversations: truncated ? rows.slice(0, MAX_METRIC_CONVERSATIONS) : rows,
       ratings: ratings!.results as unknown as RatingRow[],
       replies: replies!.results as unknown as ReplyRow[],

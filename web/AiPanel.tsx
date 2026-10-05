@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { navigate } from "./lib/router.ts";
 import { useAction } from "./useAction.ts";
@@ -38,6 +38,11 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
     // Back from ChatGPT sign-in.
     if (new URLSearchParams(window.location.search).get("chatgpt") === "connected") window.history.replaceState(null, "", "/settings");
   }, [load]);
+  // Linked from Reports' "AI is off" card.
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (state && window.location.hash === "#ai-assistant") panel.current?.scrollIntoView({ block: "start" });
+  }, [state !== null]);
 
   if (!state) return null;
   const save = (e: FormEvent<HTMLFormElement>) => {
@@ -62,7 +67,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
   const providers: ProviderId[] = ["workers-ai", "openai", ...(state.devChatgpt.available || state.settings.provider === "chatgpt" ? (["chatgpt"] as const) : [])];
 
   return (
-    <section className="panel">
+    <section className="panel" id="ai-assistant" ref={panel}>
       <div className="row">
         <h2>AI assistant</h2>
         <span className="spacer" />

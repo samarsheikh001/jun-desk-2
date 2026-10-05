@@ -405,6 +405,12 @@ mark.mention { background: var(--mention); color: inherit; border-radius: 4px; p
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: grid; gap: 2px; min-width: 0; }
 .stat-value { font-size: 1.7rem; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .reports-note { margin: -6px 0 0; }
+.stat-off { color: var(--muted); }
+.panel-head { flex-wrap: wrap; gap: 2px 12px; }
+.panel-head h2 { margin: 0; }
+.reason-text.page-path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85rem; overflow-wrap: break-word; }
+.page-host { white-space: nowrap; color: var(--muted); }
+.nums { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .chart { display: grid; gap: 6px; margin-top: 10px; }
 .chart-caption { min-height: 1.5em; }
 .chart-plot { position: relative; height: 200px; padding-top: 20px; }

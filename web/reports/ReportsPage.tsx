@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { formatDuration, MAX_METRIC_CONVERSATIONS, METRIC_PERIODS, type DayPoint, type MetricPeriod, type MetricsReport } from "../../shared/metrics.ts";
 import { api, describeError } from "../api.ts";
 import { navigate } from "../lib/router.ts";
 
 // A-01: core metrics. Days are calendar days in the browser's time zone; the Worker
-// aggregates and shared/metrics.ts defines every number (see docs/features.md A-01).
+// aggregates and shared/metrics.ts defines every number (see docs/features.md A-01, A-06).
 
 const timezone = (() => {
   try {
@@ -29,8 +29,87 @@ function Stat({ label, value, detail }: { label: string; value: string; detail: 
   );
 }
 
+const goTo = (path: string) => (e: MouseEvent) => {
+  e.preventDefault();
+  navigate(path);
+};
+
+/** Stands in for "AI resolved" and "Handed off" while AI replies are off: nothing's wrong. */
+function AiOffStat() {
+  return (
+    <div className="stat">
+      <div className="muted small">AI assistant</div>
+      <div className="stat-value stat-off">Off</div>
+      <div className="muted small">
+        Your team answers every chat. <a href="/settings#ai-assistant" onClick={goTo("/settings#ai-assistant")}>Turn it on</a>
+      </div>
+    </div>
+  );
+}
+
+/** A-06: where visitors were when they opened a chat. Paths only when every page is on one site. */
+function StartPages({ pages }: { pages: MetricsReport["pages"] }) {
+  const origins = new Set(pages.top.map((p) => new URL(p.page).origin));
+  const site = origins.size === 1 ? new URL(pages.top[0]!.page).host : null;
+  const label = (page: string) => {
+    const u = new URL(page);
+    let path = u.pathname;
+    try {
+      path = decodeURI(path);
+    } catch {
+      // Not valid percent-encoding: show it as stored.
+    }
+    // Long paths wrap after a slash; with several sites the host stays on one line.
+    const parts = (site || path !== "/" ? path : "").split(/(?<=\/)/);
+    return (
+      <>
+        {!site && <span className="page-host">{u.host}</span>}
+        {parts.map((part, i) => (
+          <span key={i}>
+            {part}
+            <wbr />
+          </span>
+        ))}
+      </>
+    );
+  };
+  const rest = pages.withPage - pages.top.reduce((s, p) => s + p.count, 0);
+  return (
+    <section className="panel">
+      <div className="row panel-head">
+        <h2>Pages where chats start</h2>
+        <span className="spacer" />
+        {site && <span className="muted small nums">{site}</span>}
+      </div>
+      {pages.top.length === 0 ? (
+        <p className="muted small">
+          No chats from your site in this period. The widget notes the page a visitor is on when they send their first message.
+        </p>
+      ) : (
+        <>
+          <ul className="reasons start-pages">
+            {pages.top.map((p) => (
+              <li key={p.page} title={p.page}>
+                <div className="row">
+                  <span className="reason-text page-path">{label(p.page)}</span>
+                  <span className="muted small nums">{p.count} · {percent(p.share)}</span>
+                </div>
+                <div className="meter"><span style={{ width: `${p.share * 100}%` }} /></div>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">
+            Share of the {pages.withPage.toLocaleString()} chats that started on a known page{rest > 0 ? ` (${rest} on pages not listed)` : ""}.
+            {pages.withoutPage > 0 && ` ${pages.withoutPage} had no page (opened outside your site).`} Numbers and ids in paths are grouped as :id.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
 /** Conversations per day, stacked: resolved by the AI alone at the bottom, the rest above. */
-function DayChart({ series }: { series: DayPoint[] }) {
+function DayChart({ series, showAi }: { series: DayPoint[]; showAi: boolean }) {
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(1, ...series.map((d) => d.conversations));
   const width = 100 / series.length;
@@ -42,7 +121,8 @@ function DayChart({ series }: { series: DayPoint[] }) {
       <div className="chart-caption small">
         {point ? (
           <>
-            <span className="strong">{dayLabel(point.day, true)}</span>: {point.conversations} conversation{point.conversations === 1 ? "" : "s"}, {point.aiResolved} resolved by the AI
+            <span className="strong">{dayLabel(point.day, true)}</span>: {point.conversations} conversation{point.conversations === 1 ? "" : "s"}
+            {showAi && `, ${point.aiResolved} resolved by the AI`}
           </>
         ) : (
           <span className="muted">Hover or tap a day for its numbers.</span>
@@ -62,9 +142,9 @@ function DayChart({ series }: { series: DayPoint[] }) {
               <g key={d.day} className={hover === i ? "on" : ""} onMouseEnter={() => setHover(i)}>
                 {/* Taller than the bar, so short days are easy to hover. */}
                 <rect x={i * width} width={width} y={0} height={100} className="chart-hit" />
-                {total > ai && <rect x={x} width={w} y={100 - total} height={total - ai - (ai > 0 ? 1.5 : 0)} className="bar-rest" />}
+                {total > ai && <rect x={x} width={w} y={100 - total} height={total - ai - (ai > 0 ? 1.5 : 0)} className={showAi ? "bar-rest" : "bar-ai"} />}
                 {ai > 0 && <rect x={x} width={w} y={100 - ai} height={ai} className="bar-ai" />}
-                <title>{`${dayLabel(d.day)}: ${d.conversations} conversations, ${d.aiResolved} resolved by the AI`}</title>
+                <title>{`${dayLabel(d.day)}: ${d.conversations} conversations${showAi ? `, ${d.aiResolved} resolved by the AI` : ""}`}</title>
               </g>
             );
           })}
@@ -75,10 +155,12 @@ function DayChart({ series }: { series: DayPoint[] }) {
           <span key={t} style={{ left: `${(t + 0.5) * width}%` }}>{dayLabel(series[t]!.day)}</span>
         ))}
       </div>
-      <div className="legend small">
-        <span><i className="swatch bar-ai" /> Resolved by the AI</span>
-        <span><i className="swatch bar-rest" /> Everything else</span>
-      </div>
+      {showAi && (
+        <div className="legend small">
+          <span><i className="swatch bar-ai" /> Resolved by the AI</span>
+          <span><i className="swatch bar-rest" /> Everything else</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -126,8 +208,14 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
           {r.truncated && <p className="muted small">Based on the newest {MAX_METRIC_CONVERSATIONS.toLocaleString()} conversations in this period.</p>}
           <div className="stats">
             <Stat label="Conversations" value={r.conversations.total.toLocaleString()} detail={`${r.conversations.resolved} resolved`} />
-            <Stat label="AI resolved" value={percent(r.ai.resolutionRate)} detail={`${r.ai.resolved} of ${r.ai.conversations} AI chats`} />
-            <Stat label="Handed off" value={percent(r.ai.handoffRate)} detail={`${r.ai.handedOff} of ${r.ai.conversations} AI chats`} />
+            {r.ai.off ? (
+              <AiOffStat />
+            ) : (
+              <>
+                <Stat label="AI resolved" value={percent(r.ai.resolutionRate)} detail={`${r.ai.resolved} of ${r.ai.conversations} AI chats`} />
+                <Stat label="Handed off" value={percent(r.ai.handoffRate)} detail={`${r.ai.handedOff} of ${r.ai.conversations} AI chats`} />
+              </>
+            )}
             <Stat
               label="First response"
               value={duration(r.team.firstResponse.median)}
@@ -138,15 +226,20 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
           <p className="muted small reports-note">
             First response is the median time from a visitor's first message to the team's first reply.
             {r.ai.firstResponse.median !== null && ` The AI's first answer takes ${duration(r.ai.firstResponse.median)} (median).`}
+            {!r.ai.off && !r.ai.enabled && " AI replies are off now; the AI numbers are from earlier in the period."}
+            {!r.ai.off && r.ai.passedWhileOff > 0 &&
+              ` ${r.ai.passedWhileOff} chat${r.ai.passedWhileOff === 1 ? "" : "s"} reached the AI while it was off and went to the team; ${r.ai.passedWhileOff === 1 ? "it isn't" : "they aren't"} counted as handoffs.`}
           </p>
 
           <section className="panel">
             <h2>Conversations per day</h2>
-            <DayChart series={r.conversations.series} />
+            <DayChart series={r.conversations.series} showAi={!r.ai.off} />
           </section>
 
+          <StartPages pages={r.pages} />
+
           <div className="reports-grid">
-            <section className="panel">
+            {!r.ai.off && <section className="panel">
               <h2>Top handoff reasons</h2>
               {r.ai.reasons.length === 0 ? (
                 <p className="muted small">No handoffs in this period.</p>
@@ -163,7 +256,7 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
                   ))}
                 </ul>
               )}
-            </section>
+            </section>}
             <section className="panel">
               <h2>Recent 👎 comments</h2>
               {r.csat.badComments.length === 0 ? (
