@@ -96,7 +96,8 @@ conversations.get("/workspaces/:id/conversations", async (c) => {
   const workspaceId = c.req.param("id");
   await requireMember(c, workspaceId);
   const status = c.req.query("status") ?? "open";
-  const assignee = c.req.query("assignee"); // "me" | "unassigned" | undefined
+  const assignee = c.req.query("assignee"); // "me" | "unassigned" | "mentions" | undefined
+  const tag = c.req.query("tag");
   if (status !== "all" && !STATUSES.includes(status as ConversationStatus)) throw new HttpError(400, "invalid_field", "Unknown status.");
 
   const where = ["c.workspace_id = ?"];
@@ -110,6 +111,13 @@ conversations.get("/workspaces/:id/conversations", async (c) => {
     params.push(c.get("user").id);
   } else if (assignee === "unassigned") {
     where.push("c.assignee_id IS NULL");
+  } else if (assignee === "mentions") {
+    where.push("c.id IN (SELECT conversation_id FROM mentions WHERE user_id = ?)");
+    params.push(c.get("user").id);
+  }
+  if (tag) {
+    where.push("c.id IN (SELECT ct.conversation_id FROM conversation_tags ct JOIN tags t ON t.id = ct.tag_id WHERE t.workspace_id = c.workspace_id AND t.name = ?)");
+    params.push(tag);
   }
   const rows = await c.env.DB.prepare(`${SUMMARY_SELECT} WHERE ${where.join(" AND ")} ORDER BY c.last_message_at DESC LIMIT 100`)
     .bind(...params)
@@ -131,7 +139,12 @@ conversations.post("/workspaces/:id/files", async (c) => {
 
 conversations.get("/conversations/:cid", async (c) => {
   const ref = await requireConversation(c, c.req.param("cid"));
-  const [conversation, messages] = await Promise.all([loadSummary(c.env.DB, ref.conversationId), loadMessages(c.env.DB, ref.conversationId, { includeInternal: true })]);
+  const [conversation, messages] = await Promise.all([
+    loadSummary(c.env.DB, ref.conversationId),
+    loadMessages(c.env.DB, ref.conversationId, { includeInternal: true }),
+    // Opening the conversation reads my @mentions in it (I-05).
+    c.env.DB.prepare("UPDATE mentions SET read_at = ? WHERE conversation_id = ? AND user_id = ? AND read_at IS NULL").bind(Date.now(), ref.conversationId, c.get("user").id).run(),
+  ]);
   return c.json({ conversation, messages });
 });
 
@@ -225,6 +238,7 @@ conversations.post("/conversations/:cid/messages", async (c) => {
     clientMsgId: String(body.clientMsgId ?? crypto.randomUUID()),
     body: String(body.body ?? ""),
     attachments: Array.isArray(body.attachments) ? object(body, "attachments") : [],
+    internal: body.internal === true,
   });
   return c.json({ message });
 });

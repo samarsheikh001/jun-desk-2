@@ -1,0 +1,150 @@
+// End-to-end test of M7's inbox basics: internal notes and @mentions (I-05), saved replies
+// (I-06) and tags (I-07). Notes and tags must never reach the visitor. Run after e2e-polish.
+
+import assert from "node:assert/strict";
+import { Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+
+const owner = new Client();
+const teammate = new Client();
+const visitor = new Client();
+const run = Date.now().toString(36);
+const teammateName = `Ola ${run}`;
+let workspaceId = "";
+let widgetKey = "";
+let teammateId = "";
+let visitorToken = "";
+let conversationId = "";
+let visitorSocket: TestSocket;
+const vh = () => ({ "X-Visitor-Token": visitorToken });
+
+await step("owner signs in; a teammate joins", async () => {
+  assert.equal((await owner.register("/recover", new SoftAuthenticator(), { token: SETUP_TOKEN })).status, 200);
+  workspaceId = (await owner.call("/me")).json.memberships[0].workspaceId;
+  widgetKey = (await owner.call(`/workspaces/${workspaceId}/inbox`)).json.inbox.widgetKey;
+  const invite = await owner.call(`/workspaces/${workspaceId}/invites`, { body: { role: "agent" } });
+  const token = new URL(invite.json.url).pathname.split("/").pop()!;
+  assert.equal((await teammate.register(`/invites/${token}`, new SoftAuthenticator(), { name: teammateName, email: `ola-${run}@acme.test` })).status, 200);
+  teammateId = (await teammate.call("/me")).json.user.id;
+});
+
+await step("setup: a conversation the AI is handling, with the visitor connected", async () => {
+  visitorToken = (await visitor.call(`/widget/${widgetKey}/visitor`, { body: {} })).json.token;
+  const conv = await visitor.call(`/widget/${widgetKey}/conversations`, { body: { clientMsgId: crypto.randomUUID(), body: "My invoice export is broken" }, headers: vh() });
+  assert.equal(conv.status, 200, JSON.stringify(conv.json));
+  conversationId = conv.json.conversation.id;
+  assert.deepEqual(conv.json.conversation.tags, []);
+  // An agent reply, then "Hand back to AI": the last message isn't the visitor's, so no AI turn runs.
+  await owner.call(`/conversations/${conversationId}/messages`, { body: { clientMsgId: crypto.randomUUID(), body: "Looking into it." } });
+  assert.equal((await owner.call(`/conversations/${conversationId}`, { method: "PATCH", body: { handling: "ai" } })).json.conversation.handling, "ai");
+  visitorSocket = new TestSocket(`/api/widget/${widgetKey}/conversations/${conversationId}/ws?since=100000`, { protocols: [visitorToken] });
+  await visitorSocket.opened;
+});
+
+await step("I-05: a note @mentioning a teammate stays with the team and doesn't take over from the AI", async () => {
+  const hub = new TestSocket(`/api/workspaces/${workspaceId}/ws`, { headers: { Cookie: cookieHeader(teammate) } });
+  await hub.opened;
+  const agentSocket = new TestSocket(`/api/conversations/${conversationId}/ws?since=100000`, { headers: { Cookie: cookieHeader(owner) } });
+  await agentSocket.opened;
+  const before = (await owner.call(`/conversations/${conversationId}`)).json.conversation;
+
+  const clientMsgId = crypto.randomUUID();
+  agentSocket.send({ type: "send", clientMsgId, body: `@${teammateName.toLowerCase()} can you check the export job? Customer is on Pro.`, internal: true });
+  const ack = await agentSocket.next((e) => e.type === "message" && e.message.clientMsgId === clientMsgId);
+  assert.equal(ack.message.internal, true);
+  assert.equal(ack.message.authorType, "agent");
+  assert.deepEqual(ack.message.meta.mentions, [teammateId]);
+
+  const mention = await hub.next((e) => e.type === "mention");
+  assert.equal(mention.conversationId, conversationId);
+  assert.deepEqual(mention.userIds, [teammateId]);
+  assert.match(mention.preview, /export job/);
+
+  // A retry of the same note is a no-op: no second message, no second ping.
+  agentSocket.send({ type: "send", clientMsgId, body: "@whoever retry", internal: true });
+  assert.equal((await agentSocket.next((e) => e.type === "message" && e.message.clientMsgId === clientMsgId)).message.id, ack.message.id);
+  await hub.none((e) => e.type === "mention", 800);
+
+  // The visitor saw nothing: no message event, no typing, not in their transcript.
+  await visitorSocket.none((e) => e.type === "message" || e.type === "typing", 300);
+  const transcript = (await visitor.call(`/widget/${widgetKey}/conversations/${conversationId}`, { headers: vh() })).json.messages as { body: string }[];
+  assert.ok(!transcript.some((m) => /export job/.test(m.body)), "note leaked to the visitor");
+
+  const after = (await owner.call(`/conversations/${conversationId}`)).json;
+  assert.equal(after.conversation.handling, "ai", "a note doesn't take over");
+  assert.ok(!after.messages.some((m: { body: string }) => /took over/.test(m.body)));
+  assert.equal(after.conversation.lastMessagePreview, before.lastMessagePreview, "notes don't change the inbox preview");
+  hub.close();
+  agentSocket.close();
+});
+
+await step("I-05: the mentioned teammate sees it under 'Mentions me' until they open the conversation", async () => {
+  assert.equal((await teammate.call(`/workspaces/${workspaceId}/mentions`)).json.unread, 1);
+  assert.equal((await owner.call(`/workspaces/${workspaceId}/mentions`)).json.unread, 0, "the author isn't mentioned");
+  const mine = (await teammate.call(`/workspaces/${workspaceId}/conversations?status=all&assignee=mentions`)).json.conversations as { id: string }[];
+  assert.deepEqual(mine.map((c) => c.id), [conversationId]);
+  assert.equal((await owner.call(`/workspaces/${workspaceId}/conversations?status=all&assignee=mentions`)).json.conversations.length, 0);
+  const opened = await teammate.call(`/conversations/${conversationId}`);
+  assert.ok(opened.json.messages.some((m: { internal: boolean; body: string }) => m.internal && /export job/.test(m.body)), "agents see notes");
+  assert.equal((await teammate.call(`/workspaces/${workspaceId}/mentions`)).json.unread, 0);
+  // Still listed (it's where they were mentioned), just not new.
+  assert.equal((await teammate.call(`/workspaces/${workspaceId}/conversations?status=all&assignee=mentions`)).json.conversations.length, 1);
+});
+
+await step("I-05: visitors can't write notes; an HTTP note works like the socket", async () => {
+  const id = crypto.randomUUID();
+  visitorSocket.send({ type: "send", clientMsgId: id, body: "Am I hidden?", internal: true });
+  const ack = await visitorSocket.next((e) => e.type === "message" && e.message.clientMsgId === id);
+  assert.equal(ack.message.internal, false);
+  const note = await owner.call(`/conversations/${conversationId}/messages`, { body: { clientMsgId: crypto.randomUUID(), body: "Logged as BUG-12", internal: true } });
+  assert.equal(note.json.message.internal, true);
+  await visitorSocket.none((e) => e.type === "message" && /BUG-12/.test(e.message.body), 300);
+});
+
+await step("I-06: the team's saved replies (any member can add and edit)", async () => {
+  const base = `/workspaces/${workspaceId}/saved-replies`;
+  assert.equal((await owner.call(base, { body: { title: "", body: "x" } })).status, 400);
+  const created = await teammate.call(base, { body: { title: "Refund policy", body: "Hi {first_name}, refunds are possible within 30 days. – {agent_name}" } });
+  assert.equal(created.status, 200, JSON.stringify(created.json));
+  const id = created.json.savedReply.id;
+  assert.equal((await owner.call(`${base}/${id}`, { method: "PATCH", body: { title: "Refund policy", body: "Hi {first_name}, refunds within 60 days." } })).status, 200);
+  const list = (await owner.call(base)).json.savedReplies as { id: string; body: string }[];
+  assert.equal(list.find((r) => r.id === id)?.body, "Hi {first_name}, refunds within 60 days.");
+  assert.equal((await owner.call(`${base}/sr_missing`, { method: "PATCH", body: { title: "a", body: "b" } })).status, 404);
+  assert.equal((await new Client().call(base)).status, 401);
+  assert.equal((await teammate.call(`${base}/${id}`, { method: "DELETE" })).status, 200);
+  assert.ok(!(await owner.call(base)).json.savedReplies.some((r: { id: string }) => r.id === id));
+});
+
+await step("I-07: tags are set per conversation, deduped, filterable, and hidden from the visitor", async () => {
+  visitorSocket.events.length = 0;
+  const set = await teammate.call(`/conversations/${conversationId}/tags`, { method: "PUT", body: { tags: [`Billing-${run}`, ` billing-${run} `, `#Bug-${run}`] } });
+  assert.equal(set.status, 200, JSON.stringify(set.json));
+  assert.deepEqual(set.json.conversation.tags, [`Billing-${run}`, `Bug-${run}`]);
+  assert.equal((await teammate.call(`/conversations/${conversationId}/tags`, { method: "PUT", body: { tags: ["x".repeat(41)] } })).status, 400);
+
+  // The visitor's socket got the update, without tags; so does their conversation list.
+  const event = await visitorSocket.next((e) => e.type === "conversation");
+  assert.deepEqual(event.conversation.tags, []);
+  const visitorList = (await visitor.call(`/widget/${widgetKey}/conversations`, { headers: vh() })).json.conversations as { tags: string[] }[];
+  assert.ok(visitorList.every((c) => c.tags.length === 0));
+
+  const filtered = (await owner.call(`/workspaces/${workspaceId}/conversations?status=all&tag=${encodeURIComponent(`bug-${run}`)}`)).json.conversations as { id: string }[];
+  assert.deepEqual(filtered.map((c) => c.id), [conversationId], "tag filter is case-insensitive");
+  const tags = (await owner.call(`/workspaces/${workspaceId}/tags`)).json.tags as { id: string; name: string; conversations: number }[];
+  const billing = tags.find((t) => t.name === `Billing-${run}`)!;
+  const bug = tags.find((t) => t.name === `Bug-${run}`)!;
+  assert.equal(billing.conversations, 1);
+
+  // Admins manage tags; agents can't.
+  assert.equal((await teammate.call(`/workspaces/${workspaceId}/tags/${billing.id}`, { method: "PATCH", body: { name: "Money" } })).status, 403);
+  assert.equal((await owner.call(`/workspaces/${workspaceId}/tags/${billing.id}`, { method: "PATCH", body: { name: `bug-${run}` } })).status, 409);
+  assert.equal((await owner.call(`/workspaces/${workspaceId}/tags/${billing.id}`, { method: "PATCH", body: { name: `Payments-${run}` } })).status, 200);
+  assert.equal((await owner.call(`/workspaces/${workspaceId}/tags/${bug.id}`, { method: "DELETE" })).status, 200);
+  assert.deepEqual((await owner.call(`/conversations/${conversationId}`)).json.conversation.tags, [`Payments-${run}`]);
+
+  const cleared = await owner.call(`/conversations/${conversationId}/tags`, { method: "PUT", body: { tags: [] } });
+  assert.deepEqual(cleared.json.conversation.tags, []);
+  visitorSocket.close();
+});
+
+summary();

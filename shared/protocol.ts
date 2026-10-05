@@ -20,6 +20,8 @@ export interface MessageMeta {
   configVersion?: number;
   /** I-10: the automatic "we're away" reply. */
   away?: boolean;
+  /** I-05: user ids @mentioned in an internal note. */
+  mentions?: string[];
 }
 
 export interface Attachment {
@@ -60,12 +62,15 @@ export interface ConversationSummary {
   createdAt: number;
   /** Errors + failed requests in the visitor's latest browser snapshot (P1). */
   debugIssueCount: number;
+  /** I-07: agents only; always [] for visitors. */
+  tags: string[];
 }
 
 /** Messages a client sends on a conversation socket. */
 export type ClientEvent =
   /** `context`: the visitor's debug snapshot from the loader (visitors only; see shared/debug.ts). */
-  | { type: "send"; clientMsgId: string; body: string; attachments?: Attachment[]; context?: unknown }
+  /** `internal`: an agent's note (I-05), never shown to the visitor or the AI. */
+  | { type: "send"; clientMsgId: string; body: string; attachments?: Attachment[]; context?: unknown; internal?: boolean }
   | { type: "typing"; typing: boolean }
   | { type: "read"; seq: number }
   /** Visitor asks for a person (W-07). */
@@ -117,7 +122,9 @@ export type HubEvent =
   /** V-01: full list on connect, then one event per change. */
   | { type: "visitors"; visitors: LiveVisitor[] }
   | { type: "visitor"; visitor: LiveVisitor }
-  | { type: "visitor_left"; sessionId: string };
+  | { type: "visitor_left"; sessionId: string }
+  /** I-05: someone was @mentioned in a note; each dashboard checks whether it's them. */
+  | { type: "mention"; conversationId: string; userIds: string[]; by: string; preview: string };
 
 /** Loader → hub on the live connection. Short keys: this travels from every page view. */
 export type LiveClientEvent =

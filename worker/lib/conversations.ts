@@ -3,7 +3,8 @@ import type { Attachment, AuthorType, ConversationStatus, ConversationSummary, H
 export const SUMMARY_SELECT = `
   SELECT c.id, c.status, c.handling, c.assignee_id, c.last_seq, c.last_message_at, c.last_message_preview,
          c.last_message_author, c.agent_read_seq, c.visitor_read_seq, c.created_at, c.debug_issue_count,
-         ct.id AS contact_id, ct.name AS contact_name, ct.email AS contact_email, ct.verified_at AS contact_verified_at
+         ct.id AS contact_id, ct.name AS contact_name, ct.email AS contact_email, ct.verified_at AS contact_verified_at,
+         (SELECT json_group_array(t.name) FROM conversation_tags ctg JOIN tags t ON t.id = ctg.tag_id WHERE ctg.conversation_id = c.id) AS tags
   FROM conversations c JOIN contacts ct ON ct.id = c.contact_id`;
 
 export interface SummaryRow {
@@ -23,6 +24,7 @@ export interface SummaryRow {
   contact_name: string | null;
   contact_email: string | null;
   contact_verified_at: number | null;
+  tags: string;
 }
 
 export function toSummary(row: SummaryRow): ConversationSummary {
@@ -40,7 +42,13 @@ export function toSummary(row: SummaryRow): ConversationSummary {
     visitorReadSeq: row.visitor_read_seq,
     createdAt: row.created_at,
     debugIssueCount: row.debug_issue_count,
+    tags: (JSON.parse(row.tags) as string[]).sort((a, b) => a.localeCompare(b)),
   };
+}
+
+/** What a visitor may see of their conversation: no tags (I-07). */
+export function forVisitor(summary: ConversationSummary): ConversationSummary {
+  return { ...summary, tags: [] };
 }
 
 export async function loadSummary(db: D1Database, conversationId: string): Promise<ConversationSummary | null> {

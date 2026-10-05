@@ -20,7 +20,8 @@ import { runAgent } from "./ai/run.ts";
 import type { ToolAction } from "./ai/tools.ts";
 import { describeEvents, isIssue, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
-import { loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
+import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
+import { findMentions } from "../shared/inbox.ts";
 import { newId } from "./lib/crypto.ts";
 
 /** Who is on the other end of a socket or RPC call. The Worker authenticates before forwarding. */
@@ -39,6 +40,8 @@ export interface SendInput {
   attachments?: Attachment[] | undefined;
   /** Visitor's debug snapshot from the loader; sanitized before storing. */
   context?: unknown;
+  /** An agent's internal note (I-05). Ignored for visitors. */
+  internal?: boolean | undefined;
 }
 
 export type SendResult = { ok: true; message: Message } | { ok: false; code: string; message: string };
@@ -209,8 +212,11 @@ export class Conversation extends DurableObject<Env> {
       throw new SendError("bad_client_msg_id", "clientMsgId is required.");
     }
 
+    // A note (I-05) stays between agents: no takeover, no visitor, no AI.
+    const note = participant.role === "agent" && input.internal === true;
+
     // An agent writing in an AI-handled conversation takes it over (I-04).
-    if (participant.role === "agent") {
+    if (participant.role === "agent" && !note) {
       const took = await this.env.DB.prepare("UPDATE conversations SET handling = 'human' WHERE id = ? AND handling = 'ai'").bind(ref.conversationId).run();
       if (took.meta.changes > 0) {
         await this.#insert(ref, {
@@ -224,6 +230,7 @@ export class Conversation extends DurableObject<Env> {
       }
     }
 
+    const mentions = note ? await this.#mentioned(ref, participant, body) : [];
     const message = await this.#insert(ref, {
       authorType: participant.role,
       authorId: participant.role === "agent" ? participant.userId : participant.contactId,
@@ -231,7 +238,9 @@ export class Conversation extends DurableObject<Env> {
       body,
       attachments,
       clientMsgId: input.clientMsgId,
+      ...(note ? { internal: true, meta: mentions.length ? { mentions } : {} } : {}),
     });
+    if (participant.role === "agent" && mentions.length) await this.#notifyMentions(ref, participant.name, message);
 
     if (participant.role === "visitor" && input.context !== undefined) await this.#storeContext(ref, message.seq, input.context);
 
@@ -239,6 +248,40 @@ export class Conversation extends DurableObject<Env> {
     // sender isn't kept waiting (and so it's retried if the object restarts).
     if (participant.role === "visitor") await this.ctx.storage.setAlarm(Date.now());
     return message;
+  }
+
+  /** Teammates @mentioned in a note, not counting the author. */
+  async #mentioned(ref: ConversationRef, author: Participant & { role: "agent" }, body: string): Promise<string[]> {
+    if (!body.includes("@")) return [];
+    const members = await this.env.DB.prepare("SELECT u.id, u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ?")
+      .bind(ref.workspaceId)
+      .all<{ id: string; name: string }>();
+    return findMentions(body, members.results).filter((id) => id !== author.userId);
+  }
+
+  /** Records mentions once per note (retries are no-ops) and pings the mentioned agents' dashboards. */
+  async #notifyMentions(ref: ConversationRef, by: string, message: Message): Promise<void> {
+    const userIds = message.meta.mentions ?? [];
+    const results = await this.env.DB.batch(
+      userIds.map((userId) =>
+        this.env.DB.prepare("INSERT OR IGNORE INTO mentions (message_id, user_id, conversation_id, workspace_id, created_at) VALUES (?, ?, ?, ?, ?)").bind(
+          message.id,
+          userId,
+          ref.conversationId,
+          ref.workspaceId,
+          message.createdAt,
+        ),
+      ),
+    );
+    const fresh = userIds.filter((_, i) => (results[i]?.meta.changes ?? 0) > 0);
+    if (fresh.length === 0) return;
+    await this.env.WORKSPACE_HUB.getByName(ref.workspaceId).publish({
+      type: "mention",
+      conversationId: ref.conversationId,
+      userIds: fresh,
+      by,
+      preview: preview(message.body, message.attachments),
+    });
   }
 
   /** Stores the visitor's browser snapshot (re-sanitized: never trust the client) for agents and the AI. */
@@ -382,7 +425,7 @@ export class Conversation extends DurableObject<Env> {
   async #maybeAway(ref: ConversationRef): Promise<void> {
     const row = await this.env.DB.prepare(
       `SELECT c.handling, i.settings,
-              (SELECT MAX(created_at) FROM messages m WHERE m.conversation_id = c.id AND m.author_type = 'agent') AS last_agent_at
+              (SELECT MAX(created_at) FROM messages m WHERE m.conversation_id = c.id AND m.author_type = 'agent' AND m.internal = 0) AS last_agent_at
        FROM conversations c JOIN inboxes i ON i.id = c.inbox_id WHERE c.id = ?`,
     )
       .bind(ref.conversationId)
@@ -611,7 +654,8 @@ export class Conversation extends DurableObject<Env> {
   async #publish(ref: ConversationRef): Promise<void> {
     const conversation = await loadSummary(this.env.DB, ref.conversationId);
     if (!conversation) return;
-    this.#broadcast({ type: "conversation", conversation });
+    this.#broadcast({ type: "conversation", conversation }, { agentsOnly: true });
+    this.#broadcast({ type: "conversation", conversation: forVisitor(conversation) }, { visitorsOnly: true });
     await this.env.WORKSPACE_HUB.getByName(ref.workspaceId).publish({ type: "conversation", conversation });
   }
 
@@ -623,9 +667,9 @@ export class Conversation extends DurableObject<Env> {
     }
   }
 
-  #broadcast(event: ConversationEvent, options: { except?: WebSocket; agentsOnly?: boolean } = {}): void {
+  #broadcast(event: ConversationEvent, options: { except?: WebSocket; agentsOnly?: boolean; visitorsOnly?: boolean } = {}): void {
     const data = JSON.stringify(event);
-    for (const ws of this.ctx.getWebSockets(options.agentsOnly ? "agent" : undefined)) {
+    for (const ws of this.ctx.getWebSockets(options.agentsOnly ? "agent" : options.visitorsOnly ? "visitor" : undefined)) {
       if (ws === options.except || ws.readyState !== WebSocket.OPEN) continue;
       try {
         ws.send(data);

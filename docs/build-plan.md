@@ -132,7 +132,7 @@
 
 *Demo: it feels like a real product a team can use every day.*
 
-**Status (2026-10-05): the four launch-critical items (I-08, W-04, I-10, K-04) are built and tested (unit 63, e2e 68 incl. `e2e-polish` 6). The rest of M7 is not started.**
+**Status (2026-10-05): the four launch-critical items (I-08, W-04, I-10, K-04) are built and tested (unit 63, e2e 68 incl. `e2e-polish` 6). Inbox basics I-05, I-06, I-07 built and tested (unit 67, e2e 75 incl. `e2e-inbox` 7). W-08, W-12 and A-01 are not started.**
 
 | ID | Feature | Size | |
 |---|---|---|---|

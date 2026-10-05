@@ -10,7 +10,7 @@ What you get:
 - **An AI agent** that answers from your docs with citations and hands off to a person when it can't help, or when the customer asks. It runs on Workers AI out of the box, so you don't need an API key, and it can use OpenAI instead.
 - **Support that sees the bug.** Recent errors, failed requests and pages visited are captured in the visitor's browser, masked twice (in the browser and on the server), and shown to your agents and the AI. If something on the page breaks, the widget can offer help on its own: "Adding a team member didn't work. Want a hand?"
 - **A support agent you keep in git.** The AI's rules, procedures, tools and tests are plain files. `jun eval` replays recent real conversations against your edits before you push them, so you see which answers would change.
-- **A real-time inbox** with assignment, takeover from the AI, a contact sidebar, and a live list of who's on your site right now. You can start a chat with any of them.
+- **A real-time inbox** with assignment, takeover from the AI, internal notes with @mentions, saved replies, tags, a contact sidebar, and a live list of who's on your site right now. You can start a chat with any of them.
 
 ## Deploy
 
@@ -103,7 +103,7 @@ npm run dev                      # dashboard + Worker on http://localhost:5173
 |---|---|
 | `npm run dev` | Applies local D1 migrations, then runs Vite with the Worker in the Workers runtime |
 | `npm test` | Unit tests |
-| `npm run test:e2e` | Seven end-to-end suites against a dev server on a fresh database, with real Workers AI. Start the server with `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `npx wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then run `BASE_URL=http://localhost:5174 npm run test:e2e` |
+| `npm run test:e2e` | Eight end-to-end suites against a dev server on a fresh database, with real Workers AI. Start the server with `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `npx wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then run `BASE_URL=http://localhost:5174 npm run test:e2e` |
 | `npm run typecheck` | Packages, Worker and dashboard |
 | `npm run build` / `npm run deploy` | Build, then migrate and deploy to your Cloudflare account |
 

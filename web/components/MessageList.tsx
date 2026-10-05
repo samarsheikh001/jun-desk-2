@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { Attachment, Message, Source } from "../../shared/protocol.ts";
+import { mentionParts } from "../../shared/inbox.ts";
 import { formatSize, formatTime, isImage, type PendingMessage } from "../lib/thread.ts";
 
 function Attachments({ attachments }: { attachments: Attachment[] }) {
@@ -42,6 +43,11 @@ function withCitations(body: string, sources: Source[] | undefined): ReactNode {
   });
 }
 
+/** A note's @mentions, highlighted. */
+function withMentions(body: string, names: string[]): ReactNode {
+  return mentionParts(body, names).map((p, i) => (p.mention ? <mark key={i} className="mention">{p.text}</mark> : <Fragment key={i}>{p.text}</Fragment>));
+}
+
 function Sources({ sources }: { sources: Source[] | undefined }) {
   if (!sources?.length) return null;
   return (
@@ -68,6 +74,7 @@ export function MessageList({
   aiThinking,
   onRetry,
   onDismiss,
+  mentionNames = [],
 }: {
   messages: Message[];
   pending: PendingMessage[];
@@ -79,6 +86,8 @@ export function MessageList({
   aiThinking?: boolean;
   onRetry?: (p: PendingMessage) => void;
   onDismiss?: (p: PendingMessage) => void;
+  /** Teammates' names, to highlight @mentions in notes. */
+  mentionNames?: string[];
 }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -86,7 +95,7 @@ export function MessageList({
   }, [messages.length, pending.length, typing, aiStream?.text, aiThinking]);
 
   // "Seen" goes under the last of my messages the other side has read.
-  const lastSeenSeq = [...messages].reverse().find((m) => mine(m) && m.authorType !== "system" && m.seq <= otherReadSeq)?.seq;
+  const lastSeenSeq = [...messages].reverse().find((m) => mine(m) && m.authorType !== "system" && !m.internal && m.seq <= otherReadSeq)?.seq;
   const aiSide = mine({ authorType: "ai" } as Message) ? "own" : "other";
 
   return (
@@ -102,11 +111,11 @@ export function MessageList({
         }
         const own = mine(m);
         const prev = messages[i - 1];
-        const showAuthor = !prev || prev.authorType !== m.authorType || prev.authorId !== m.authorId;
+        const showAuthor = m.internal || !prev || prev.internal || prev.authorType !== m.authorType || prev.authorId !== m.authorId;
         return (
-          <div key={m.id} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""}`}>
-            {showAuthor && <div className="author muted small">{authorLabel(m)} · {formatTime(m.createdAt)}</div>}
-            {m.body && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.body}</div>}
+          <div key={m.id} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""} ${m.internal ? "note" : ""}`}>
+            {showAuthor && <div className="author muted small">{m.internal && <span className="tag note-tag">Note</span>}{authorLabel(m)} · {formatTime(m.createdAt)}</div>}
+            {m.body && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : m.body}</div>}
             <Attachments attachments={m.attachments} />
             {m.authorType === "ai" && <Sources sources={m.meta.sources} />}
             {m.seq === lastSeenSeq && <div className="seen muted small">Seen</div>}
@@ -114,7 +123,7 @@ export function MessageList({
         );
       })}
       {pending.map((p) => (
-        <div key={p.clientMsgId} className="msg own pending">
+        <div key={p.clientMsgId} className={`msg own pending ${p.internal ? "note" : ""}`}>
           {p.body && <div className="bubble">{p.body}</div>}
           <Attachments attachments={p.attachments} />
           {p.failed ? (

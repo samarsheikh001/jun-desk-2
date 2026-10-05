@@ -113,9 +113,9 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | I-02 | Assignment: manual, round-robin, capacity-based | v1 | agreed | Manual assignment shipped in M1; round-robin and capacity-based in v1.1 (D-12) | 03 |
 | I-03 | Typing indicators, read receipts, agent presence | v1 | shipped | Shipped M1: typing both ways, read receipts ("Seen"), agent presence avatars | 03 |
 | I-04 | Agent takeover / barge-in on an AI conversation | v1 | shipped | Shipped M2: agent reply takes over (internal note); "Take over" / "Hand back to AI" buttons | 03 |
-| I-05 | Internal notes and @mentions | v1 | agreed | | |
-| I-06 | Saved replies / macros | v1 | agreed | | |
-| I-07 | Tags and conversation attributes | v1 | agreed | | |
+| I-05 | Internal notes and @mentions | v1 | shipped | Shipped M7: Reply/Note switch in the composer; notes never reach the visitor or the AI and don't take over from the AI; @ suggests teammates; mentions get a live toast and a "Mentions me" filter (unread until opened) | |
+| I-06 | Saved replies / macros | v1 | shipped | Shipped M7: team-shared, managed in Settings, inserted with "/" in the composer; `{first_name}` and `{agent_name}` placeholders. Macros that also change status/tags are not built | |
+| I-07 | Tags and conversation attributes | v1 | shipped | Shipped M7: tags (added from the conversation header, inbox filter, rename/delete in Settings, never sent to visitors). Custom conversation attributes not built; contact attributes come from identity (V-05) | |
 | I-08 | Contact sidebar: attributes, past conversations, page trail, debug context | v1 | shipped | Shipped M7: sidebar shows the customer (verified details + attributes, or what an agent noted), other conversations (linked), AI actions and browser details; agents can name/email anonymous visitors, not verified ones | |
 | I-09 | Teams and routing rules | v2 | proposed | | |
 | I-10 | Business hours and auto-replies | v1 | shipped | Shipped M7: weekly hours in a time zone (DST-safe), away message with {when}; one automatic away reply per closed period for chats with the team (not while an agent replied in the last 15 min); widget header says "We're away · back Monday at 09:00". The AI keeps answering 24/7 | |

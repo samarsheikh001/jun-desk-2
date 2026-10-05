@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ConversationStatus, ConversationSummary, Message } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
-import { Composer } from "../components/Composer.tsx";
+import { fillSavedReply } from "../../shared/inbox.ts";
+import { Composer, type SavedReply } from "../components/Composer.tsx";
 import { MessageList } from "../components/MessageList.tsx";
 import { navigate } from "../lib/router.ts";
 import { DebugPanel } from "./DebugPanel.tsx";
@@ -9,8 +10,10 @@ import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/threa
 import type { Hub } from "../Shell.tsx";
 
 type StatusFilter = ConversationStatus | "all";
-type AssigneeFilter = "all" | "me" | "unassigned";
+type AssigneeFilter = "all" | "me" | "unassigned" | "mentions";
 interface Member { id: string; name: string }
+interface Tag { id: string; name: string; conversations: number }
+interface MentionToast { conversationId: string; by: string; preview: string }
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "open", label: "Open" },
@@ -32,43 +35,60 @@ const isUnread = (c: ConversationSummary) => c.lastMessageAuthor === "visitor" &
 export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceId: string; me: { id: string; name: string }; hub: Hub; conversationId: string | null }) {
   const [status, setStatus] = useState<StatusFilter>("open");
   const [assignee, setAssignee] = useState<AssigneeFilter>("all");
+  const [tagFilter, setTagFilter] = useState("");
   const [list, setList] = useState<ConversationSummary[] | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [unreadMentions, setUnreadMentions] = useState(0);
+  const [toast, setToast] = useState<MentionToast | null>(null);
 
   const matches = useCallback(
     (c: ConversationSummary) =>
       (status === "all" || c.status === status) &&
-      (assignee === "all" || (assignee === "me" ? c.assigneeId === me.id : c.assigneeId === null)),
-    [status, assignee, me.id],
+      (tagFilter === "" || c.tags.some((t) => t.toLowerCase() === tagFilter.toLowerCase())) &&
+      (assignee === "all" || assignee === "mentions" || (assignee === "me" ? c.assigneeId === me.id : c.assigneeId === null)),
+    [status, assignee, tagFilter, me.id],
   );
 
   useEffect(() => {
     let cancelled = false;
     setList(null);
-    const query = new URLSearchParams({ status, ...(assignee !== "all" ? { assignee } : {}) });
+    const query = new URLSearchParams({ status, ...(assignee !== "all" ? { assignee } : {}), ...(tagFilter ? { tag: tagFilter } : {}) });
     api<{ conversations: ConversationSummary[] }>(`/workspaces/${workspaceId}/conversations?${query}`).then((r) => !cancelled && setList(r.conversations));
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, status, assignee]);
+  }, [workspaceId, status, assignee, tagFilter]);
 
+  const loadTags = useCallback(() => api<{ tags: Tag[] }>(`/workspaces/${workspaceId}/tags`).then((r) => setTags(r.tags)), [workspaceId]);
+  const loadMentions = useCallback(() => api<{ unread: number }>(`/workspaces/${workspaceId}/mentions`).then((r) => setUnreadMentions(r.unread)), [workspaceId]);
   useEffect(() => {
     api<{ members: Member[] }>(`/workspaces/${workspaceId}/members`).then((r) => setMembers(r.members));
-  }, [workspaceId]);
+    void loadTags();
+    void loadMentions();
+  }, [workspaceId, loadTags, loadMentions]);
 
   // Live updates: upsert conversations that match the current filters, drop ones that don't.
+  // "Mentions me" can't be checked from a summary, so that view only updates what it shows.
   useEffect(
     () =>
       hub.subscribe((event) => {
+        if (event.type === "mention") {
+          if (!event.userIds.includes(me.id)) return;
+          void loadMentions();
+          if (event.conversationId !== conversationId) setToast({ conversationId: event.conversationId, by: event.by, preview: event.preview });
+          return;
+        }
         if (event.type !== "conversation") return;
         const updated = event.conversation;
         setList((current) => {
           if (!current) return current;
           const rest = current.filter((c) => c.id !== updated.id);
-          return (matches(updated) ? [updated, ...rest] : rest).sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+          const keep = matches(updated) && (assignee !== "mentions" || rest.length < current.length);
+          return (keep ? [updated, ...rest] : rest).sort((a, b) => b.lastMessageAt - a.lastMessageAt);
         });
       }),
-    [hub, matches],
+    [hub, matches, assignee, me.id, conversationId, loadMentions],
   );
 
   const unreadCount = useMemo(() => list?.filter(isUnread).length ?? 0, [list]);
@@ -78,6 +98,13 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
 
   return (
     <div className="inbox">
+      {toast && (
+        <div className="toast" role="status">
+          <span><strong>{toast.by}</strong> mentioned you: {toast.preview}</span>
+          <button className="small" onClick={() => { navigate(`/inbox/${toast.conversationId}`); setToast(null); }}>Open</button>
+          <button className="ghost small" aria-label="Dismiss" onClick={() => setToast(null)}>×</button>
+        </div>
+      )}
       <aside className="conv-list">
         <div className="tabs">
           {STATUS_TABS.map((t) => (
@@ -88,7 +115,16 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
           <option value="all">Everyone's</option>
           <option value="me">Assigned to me</option>
           <option value="unassigned">Unassigned</option>
+          <option value="mentions">Mentions me{unreadMentions > 0 ? ` (${unreadMentions} new)` : ""}</option>
         </select>
+        {tags.length > 0 && (
+          <select className="filter" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} aria-label="Tag filter">
+            <option value="">Any tag</option>
+            {tags.map((t) => (
+              <option key={t.id} value={t.name}>{t.name}</option>
+            ))}
+          </select>
+        )}
         {list === null ? (
           <p className="muted small pad">Loading…</p>
         ) : list.length === 0 ? (
@@ -110,6 +146,9 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
                     <span className="spacer" />
                     <span className="muted small">{formatTime(c.lastMessageAt)}</span>
                   </span>
+                  {c.tags.length > 0 && (
+                    <span className="conv-tags">{c.tags.map((t) => <span key={t} className="chip tag-chip">{t}</span>)}</span>
+                  )}
                   <span className="preview small">
                     {c.lastMessageAuthor === "agent" && <span className="muted">You: </span>}
                     {c.lastMessageAuthor === "ai" && <span className="muted">AI: </span>}
@@ -122,7 +161,16 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
         )}
       </aside>
       {conversationId ? (
-        <Thread key={conversationId} conversationId={conversationId} workspaceId={workspaceId} me={me} members={members} />
+        <Thread
+          key={conversationId}
+          conversationId={conversationId}
+          workspaceId={workspaceId}
+          me={me}
+          members={members}
+          tags={tags}
+          onTagsChanged={() => void loadTags()}
+          onOpened={() => void loadMentions()}
+        />
       ) : (
         <div className="thread empty muted">Select a conversation</div>
       )}
@@ -130,20 +178,43 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
   );
 }
 
-function Thread({ conversationId, workspaceId, me, members }: { conversationId: string; workspaceId: string; me: { id: string; name: string }; members: Member[] }) {
+function Thread({
+  conversationId,
+  workspaceId,
+  me,
+  members,
+  tags,
+  onTagsChanged,
+  onOpened,
+}: {
+  conversationId: string;
+  workspaceId: string;
+  me: { id: string; name: string };
+  members: Member[];
+  tags: Tag[];
+  onTagsChanged: () => void;
+  onOpened: () => void;
+}) {
   const [conversation, setConversation] = useState<ConversationSummary | null>(null);
   const [initial, setInitial] = useState<Message[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savedReplies, setSavedReplies] = useState<SavedReply[]>([]);
 
   useEffect(() => {
     api<{ conversation: ConversationSummary; messages: Message[] }>(`/conversations/${conversationId}`).then(
       (r) => {
         setConversation(r.conversation);
         setInitial(r.messages);
+        onOpened(); // opening it reads my @mentions here
       },
       (e: Error) => setError(e.message),
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
+
+  useEffect(() => {
+    api<{ savedReplies: SavedReply[] }>(`/workspaces/${workspaceId}/saved-replies`).then((r) => setSavedReplies(r.savedReplies), () => {});
+  }, [workspaceId]);
 
   const thread = useThread({
     socketUrl: initial ? `/api/conversations/${conversationId}/ws` : null,
@@ -166,6 +237,15 @@ function Thread({ conversationId, workspaceId, me, members }: { conversationId: 
   const update = async (patch: { status?: ConversationStatus; assigneeId?: string | null; handling?: "ai" | "human" }) => {
     try {
       setConversation((await api<{ conversation: ConversationSummary }>(`/conversations/${conversationId}`, { method: "PATCH", body: patch })).conversation);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const setTags = async (next: string[]) => {
+    try {
+      setConversation((await api<{ conversation: ConversationSummary }>(`/conversations/${conversationId}/tags`, { method: "PUT", body: { tags: next } })).conversation);
+      onTagsChanged();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -203,6 +283,7 @@ function Thread({ conversationId, workspaceId, me, members }: { conversationId: 
         </select>
         {conversation.status !== "resolved" && <button className="small" onClick={() => void update({ status: "resolved" })}>Resolve</button>}
       </header>
+      <TagEditor tags={conversation.tags} known={tags} onChange={(next) => void setTags(next)} />
       {conversation.handling === "ai" ? (
         <div className="ai-banner small">
           <span>🤖 The AI assistant is answering this conversation. Replying yourself takes it over.</span>
@@ -229,20 +310,72 @@ function Thread({ conversationId, workspaceId, me, members }: { conversationId: 
         typing={thread.typing}
         aiStream={thread.aiStream}
         aiThinking={thread.aiThinking}
-        onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
+        onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId, undefined, p.internal)}
         onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
+        mentionNames={members.map((m) => m.name)}
       />
       <Composer
-        placeholder="Reply… (Enter to send, Shift+Enter for a new line)"
+        placeholder={savedReplies.length ? "Reply… (/ for saved replies, Shift+Enter for a new line)" : "Reply… (Enter to send, Shift+Enter for a new line)"}
         upload={(file) => uploadFile(`/api/workspaces/${workspaceId}/files`, file)}
         onTyping={onTyping}
-        onSend={(body, attachments) => {
-          thread.setTyping(false);
-          thread.send(body, attachments);
+        notes
+        mentionables={members.filter((m) => m.id !== me.id)}
+        savedReplies={savedReplies}
+        fillReply={(body) => fillSavedReply(body, { customerName: conversation.contact.name, agentName: me.name })}
+        onSend={(body, attachments, { internal }) => {
+          if (!internal) thread.setTyping(false);
+          thread.send(body, attachments, undefined, undefined, internal);
         }}
       />
     </section>
     <DebugPanel conversationId={conversationId} workspaceId={workspaceId} contact={conversation.contact} refreshKey={visitorMessages + conversation.debugIssueCount * 1000} />
+    </div>
+  );
+}
+
+/** I-07: the conversation's tags, with an input that suggests existing ones. */
+function TagEditor({ tags, known, onChange }: { tags: string[]; known: Tag[]; onChange: (tags: string[]) => void }) {
+  const [adding, setAdding] = useState(false);
+  const [value, setValue] = useState("");
+  const add = () => {
+    const name = value.trim();
+    setValue("");
+    setAdding(false);
+    if (name && !tags.some((t) => t.toLowerCase() === name.toLowerCase())) onChange([...tags, name]);
+  };
+  return (
+    <div className="tag-bar small">
+      {tags.map((t) => (
+        <span key={t} className="chip tag-chip">
+          {t}
+          <button className="link" aria-label={`Remove tag ${t}`} onClick={() => onChange(tags.filter((x) => x !== t))}>×</button>
+        </span>
+      ))}
+      {adding ? (
+        <form onSubmit={(e) => { e.preventDefault(); add(); }}>
+          <input
+            autoFocus
+            list="known-tags"
+            value={value}
+            maxLength={40}
+            placeholder="Tag name"
+            aria-label="New tag"
+            onChange={(e) => setValue(e.target.value)}
+            onBlur={add}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setValue("");
+                setAdding(false);
+              }
+            }}
+          />
+          <datalist id="known-tags">
+            {known.filter((k) => !tags.includes(k.name)).map((k) => <option key={k.id} value={k.name} />)}
+          </datalist>
+        </form>
+      ) : (
+        <button className="link" onClick={() => setAdding(true)}>+ Tag</button>
+      )}
     </div>
   );
 }

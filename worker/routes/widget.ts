@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { SOCKET_PROTOCOL, type Attachment } from "../../shared/protocol.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
-import { loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
+import { forVisitor, loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
 import { createVisitor, findVisitor, identify } from "../lib/contacts.ts";
 import { newId, sha256 } from "../lib/crypto.ts";
 import { originAllowed } from "../lib/origins.ts";
@@ -244,7 +244,7 @@ widget.get("/widget/:key/conversations", async (c) => {
   const rows = await c.env.DB.prepare(`${SUMMARY_SELECT} WHERE c.contact_id = ? AND c.inbox_id = ? ORDER BY c.last_message_at DESC LIMIT 50`)
     .bind(contactId, inbox.inboxId)
     .all<SummaryRow>();
-  return c.json({ conversations: rows.results.map(toSummary) });
+  return c.json({ conversations: rows.results.map((r) => forVisitor(toSummary(r))) });
 });
 
 // Starts a conversation with its first message. With `inviteId` (V-07), the agent's invite
@@ -296,7 +296,8 @@ widget.post("/widget/:key/conversations", async (c) => {
   }
   // The visitor list shows who is in a chat.
   if (sessionId) c.executionCtx.waitUntil(c.env.WORKSPACE_HUB.getByName(inbox.workspaceId).linkSession(sessionId, contactId));
-  return c.json({ conversation: await loadSummary(c.env.DB, ref.conversationId), message });
+  const conversation = await loadSummary(c.env.DB, ref.conversationId);
+  return c.json({ conversation: conversation && forVisitor(conversation), message });
 });
 
 widget.get("/widget/:key/conversations/:cid", async (c) => {
@@ -304,7 +305,7 @@ widget.get("/widget/:key/conversations/:cid", async (c) => {
   const { contactId } = await visitor(c, inbox);
   const ref = await visitorConversation(c, inbox, contactId);
   const [conversation, messages] = await Promise.all([loadSummary(c.env.DB, ref.conversationId), loadMessages(c.env.DB, ref.conversationId, { includeInternal: false })]);
-  return c.json({ conversation, messages });
+  return c.json({ conversation: conversation && forVisitor(conversation), messages });
 });
 
 widget.post("/widget/:key/conversations/:cid/messages", async (c) => {
