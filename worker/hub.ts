@@ -22,9 +22,19 @@ interface VisitorAttachment {
   kind: "visitor";
   inboxId: string;
   visitor: LiveVisitor;
+  /** Epoch ms; with the last ping, how we tell a live socket from a dead one. */
+  connectedAt?: number;
 }
 
-type AgentAttachment = PresenceEntry & { kind?: "agent" };
+type AgentAttachment = PresenceEntry & { kind?: "agent"; connectedAt?: number };
+
+/**
+ * The loader and the dashboard ping every 30 s (answered automatically, even while this object
+ * hibernates). A socket with no ping for this long is gone: a tab closed without a close frame,
+ * or a connection cut by a deploy. Without this, ghosts stay "live" forever.
+ */
+const STALE_MS = 75_000;
+const SWEEP_MS = 60_000;
 
 const clip = (value: unknown, max: number): string => (typeof value === "string" ? value.slice(0, max) : "");
 
@@ -69,7 +79,8 @@ export class WorkspaceHub extends DurableObject<Env> {
         },
       };
       this.ctx.acceptWebSocket(server, ["visitor", `s:${info.sessionId}`]);
-      server.serializeAttachment(attachment);
+      server.serializeAttachment({ ...attachment, connectedAt: now } satisfies VisitorAttachment);
+      await this.#scheduleSweep();
       // Announced to agents on its first page event, which carries the page. The loader offers
       // no subprotocol; echo ours if a client offers it (clients reject a missing echo).
       const offered = (request.headers.get("sec-websocket-protocol") ?? "").split(",").map((p) => p.trim());
@@ -78,7 +89,8 @@ export class WorkspaceHub extends DurableObject<Env> {
 
     const user = JSON.parse(request.headers.get(HUB_USER_HEADER)!) as PresenceEntry;
     this.ctx.acceptWebSocket(server, ["agent"]);
-    server.serializeAttachment({ ...user, kind: "agent" } satisfies AgentAttachment);
+    server.serializeAttachment({ ...user, kind: "agent", connectedAt: Date.now() } satisfies AgentAttachment);
+    await this.#scheduleSweep();
     this.#send(server, { type: "visitors", visitors: this.#visitors() });
     this.#broadcastPresence();
     return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": SOCKET_PROTOCOL } });
@@ -133,7 +145,7 @@ export class WorkspaceHub extends DurableObject<Env> {
   async onlineAgentIds(): Promise<string[]> {
     const ids = new Set<string>();
     for (const ws of this.ctx.getWebSockets("agent")) {
-      if (ws.readyState !== WebSocket.OPEN) continue;
+      if (!this.#alive(ws)) continue;
       const a = ws.deserializeAttachment() as AgentAttachment | null;
       if (a?.userId) ids.add(a.userId);
     }
@@ -166,7 +178,7 @@ export class WorkspaceHub extends DurableObject<Env> {
 
   /** RPC (W-08): is any teammate's dashboard open? Visitors only ever get this yes/no. */
   async agentsOnline(): Promise<boolean> {
-    return this.ctx.getWebSockets("agent").some((ws) => ws.readyState === WebSocket.OPEN);
+    return this.ctx.getWebSockets("agent").some((ws) => this.#alive(ws));
   }
 
   /** RPC (V-07): deliver an agent's invite to a live visitor. False if they've left. */
@@ -232,6 +244,43 @@ export class WorkspaceHub extends DurableObject<Env> {
     }
   }
 
+  override async webSocketError(ws: WebSocket): Promise<void> {
+    await this.webSocketClose(ws);
+  }
+
+  /** Every minute while anyone is connected: drop sockets that stopped pinging. */
+  override async alarm(): Promise<void> {
+    let agentGone = false;
+    for (const ws of this.ctx.getWebSockets()) {
+      if (this.#alive(ws)) continue;
+      const a = ws.deserializeAttachment() as VisitorAttachment | AgentAttachment | null;
+      try {
+        ws.close(1001, "No ping");
+      } catch {
+        // already closing
+      }
+      if (a?.kind === "visitor") {
+        if (a.visitor.pages > 0) this.#broadcast(JSON.stringify({ type: "visitor_left", sessionId: a.visitor.sessionId } satisfies HubEvent));
+      } else {
+        agentGone = true;
+      }
+    }
+    if (agentGone) this.#broadcastPresence();
+    if (this.ctx.getWebSockets().some((ws) => this.#alive(ws))) await this.ctx.storage.setAlarm(Date.now() + SWEEP_MS);
+  }
+
+  /** Open, and pinged (or connected) within STALE_MS. Sockets from before connectedAt existed count only once they ping. */
+  #alive(ws: WebSocket): boolean {
+    if (ws.readyState !== WebSocket.OPEN) return false;
+    const pinged = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0;
+    const connected = (ws.deserializeAttachment() as { connectedAt?: number } | null)?.connectedAt ?? 0;
+    return Date.now() - Math.max(pinged, connected) < STALE_MS;
+  }
+
+  async #scheduleSweep(): Promise<void> {
+    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + SWEEP_MS);
+  }
+
   override async webSocketClose(ws: WebSocket): Promise<void> {
     const a = ws.deserializeAttachment() as VisitorAttachment | AgentAttachment | null;
     if (a?.kind === "visitor") {
@@ -242,19 +291,22 @@ export class WorkspaceHub extends DurableObject<Env> {
   }
 
   #visitors(): LiveVisitor[] {
-    const out: LiveVisitor[] = [];
+    // One row per browser session: a reconnect can briefly overlap the old socket.
+    const out = new Map<string, VisitorAttachment>();
     for (const ws of this.ctx.getWebSockets("visitor")) {
-      if (ws.readyState !== WebSocket.OPEN) continue;
+      if (!this.#alive(ws)) continue;
       const a = ws.deserializeAttachment() as VisitorAttachment | null;
-      if (a && a.visitor.pages > 0) out.push(a.visitor);
+      if (!a || a.visitor.pages === 0) continue;
+      const seen = out.get(a.visitor.sessionId);
+      if (!seen || (a.connectedAt ?? 0) > (seen.connectedAt ?? 0)) out.set(a.visitor.sessionId, a);
     }
-    return out;
+    return [...out.values()].map((a) => a.visitor);
   }
 
   #broadcastPresence(closing?: WebSocket): void {
     const online = new Map<string, PresenceEntry>();
     for (const ws of this.ctx.getWebSockets("agent")) {
-      if (ws === closing || ws.readyState !== WebSocket.OPEN) continue;
+      if (ws === closing || !this.#alive(ws)) continue;
       const user = ws.deserializeAttachment() as AgentAttachment | null;
       if (user) online.set(user.userId, { userId: user.userId, name: user.name });
     }
@@ -281,3 +333,4 @@ export class WorkspaceHub extends DurableObject<Env> {
     }
   }
 }
+

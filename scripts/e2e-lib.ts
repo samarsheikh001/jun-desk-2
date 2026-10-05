@@ -228,6 +228,10 @@ export class TestSocket {
       this.ws.addEventListener("error", () => reject(new Error(`WebSocket ${path} failed to open`)));
     });
     this.closed = new Promise((resolve) => this.ws.addEventListener("close", (e) => resolve({ code: e.code })));
+    // Like the widget and the dashboard: the hub treats a socket with no ping for 75 s as gone.
+    const ping = setInterval(() => this.ws.readyState === WebSocket.OPEN && this.ws.send("ping"), 30_000);
+    ping.unref();
+    this.ws.addEventListener("close", () => clearInterval(ping));
     this.ws.addEventListener("message", (e) => {
       if (e.data === "pong") return;
       const event = JSON.parse(String(e.data));
