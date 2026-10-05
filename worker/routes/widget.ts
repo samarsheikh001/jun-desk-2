@@ -129,9 +129,9 @@ widget.get("/widget/:key/logo", async (c) => {
 // the masked failure ("Looks like the usage chart didn't load. Want a hand?"); the generic line
 // when the AI is off, over its cap or slow. Called cross-origin from customers' sites.
 const NUDGE_CACHE_S = 24 * 60 * 60;
-// ChatGPT plan models take ~3.5–4 s for this line (2026-10-05); the loader waits, and the line
-// is cached per failure and page for a day.
-const NUDGE_TIMEOUT_MS = 6000;
+// ChatGPT plan models take ~4 s for this line and sometimes over 6 s from the edge (2026-10-05);
+// the loader waits, and the line is cached per failure and page for a day.
+const NUDGE_TIMEOUT_MS = 10_000;
 
 widget.post("/widget/:key/nudge", async (c) => {
   const cors = { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" };
