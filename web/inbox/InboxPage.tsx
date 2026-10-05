@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ConversationIssue, ConversationStatus, ConversationSummary, CsatRating, Message } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { fillSavedReply } from "../../shared/inbox.ts";
 import { contactLabel } from "../../shared/notifications.ts";
-import { Composer, type SavedReply } from "../components/Composer.tsx";
+import { Composer, type ComposerControl, type SavedReply } from "../components/Composer.tsx";
+import { useBridge, type ConversationPatch } from "../lib/bridge.ts";
+import { matchesFilter } from "../lib/commands.ts";
 import { MessageList } from "../components/MessageList.tsx";
 import { navigate } from "../lib/router.ts";
 import { DebugPanel } from "./DebugPanel.tsx";
@@ -51,6 +53,15 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
   const [unreadMentions, setUnreadMentions] = useState(0);
   const [toast, setToast] = useState<MentionToast | null>(null);
   const [trackers, setTrackers] = useState<TrackerStatus | null>(null);
+  // I-13: a quick text filter over the loaded list, and the j/k cursor.
+  const [search, setSearch] = useState("");
+  const [cursor, setCursor] = useState<string | null>(conversationId);
+  const searchInput = useRef<HTMLInputElement>(null);
+  // The open thread's update(), so `e` / `a` keep its header in sync.
+  const threadUpdate = useRef<((patch: ConversationPatch) => Promise<void>) | null>(null);
+  useEffect(() => {
+    if (conversationId) setCursor(conversationId);
+  }, [conversationId]);
 
   const matches = useCallback(
     (c: ConversationSummary) =>
@@ -105,6 +116,38 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
     [hub, matches, assignee, me.id, conversationId, loadMentions],
   );
 
+  const shown = useMemo(
+    () => (list && search.trim() ? list.filter((c) => matchesFilter(search, [contactLabel(c.contact), c.contact.email, c.lastMessagePreview, c.topic?.name, ...c.tags])) : list),
+    [list, search],
+  );
+
+  const focusRow = (id: string) => document.getElementById(`conv-${id}`)?.focus();
+  useBridge("inbox", {
+    conversations: shown ?? [],
+    move(delta) {
+      if (!shown?.length) return;
+      const at = shown.findIndex((c) => c.id === cursor);
+      const next = shown[at === -1 ? (delta === 1 ? 0 : shown.length - 1) : Math.min(shown.length - 1, Math.max(0, at + delta))]!;
+      setCursor(next.id);
+      focusRow(next.id); // focus follows the cursor, so screen readers announce it and Enter opens it
+    },
+    openCursor() {
+      const target = shown?.find((c) => c.id === cursor) ?? shown?.[0];
+      if (target) navigate(`/inbox/${target.id}`);
+    },
+    focusSearch() {
+      searchInput.current?.focus();
+      searchInput.current?.select();
+    },
+    act(command) {
+      const patch: ConversationPatch = command === "resolve" ? { status: "resolved" } : { assigneeId: me.id };
+      const target = conversationId ?? cursor;
+      if (!target) return;
+      if (target === conversationId && threadUpdate.current) void threadUpdate.current(patch);
+      else void api(`/conversations/${target}`, { method: "PATCH", body: patch }).catch(() => {});
+    },
+  });
+
   const unreadCount = useMemo(() => list?.filter(isUnread).length ?? 0, [list]);
   useEffect(() => {
     document.title = unreadCount > 0 ? `(${unreadCount}) Jun Desk` : "Jun Desk";
@@ -120,6 +163,31 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
         </div>
       )}
       <aside className="conv-list">
+        <input
+          ref={searchInput}
+          type="search"
+          className="filter conv-search"
+          placeholder="Filter conversations"
+          aria-label="Filter conversations"
+          aria-keyshortcuts="/"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              if (search) setSearch("");
+              else e.currentTarget.blur();
+            } else if (e.key === "ArrowDown" || (e.key === "Enter" && !e.nativeEvent.isComposing)) {
+              // Into the list: the first match.
+              const first = shown?.[0];
+              if (!first) return;
+              e.preventDefault();
+              setCursor(first.id);
+              if (e.key === "Enter") navigate(`/inbox/${first.id}`);
+              else focusRow(first.id);
+            }
+          }}
+        />
         <div className="tabs">
           {STATUS_TABS.map((t) => (
             <button key={t.value} className={`tab ${status === t.value ? "active" : ""}`} onClick={() => setStatus(t.value)}>{t.label}</button>
@@ -163,17 +231,22 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
           <option value="good">Rated 👍 Good</option>
           <option value="bad">Rated 👎 Bad</option>
         </select>
-        {list === null ? (
+        {list === null || shown === null ? (
           <p className="muted small pad">Loading…</p>
+        ) : shown.length === 0 && search.trim() ? (
+          <p className="muted small pad">No loaded conversations match “{search.trim()}”.</p>
         ) : list.length === 0 ? (
           <p className="muted small pad">{ratingFilter ? "No conversations with this rating." : topicFilter || tagFilter ? "No conversations match these filters." : "No conversations here. Install the widget from Settings to start receiving chats."}</p>
         ) : (
           <ul>
-            {list.map((c) => (
+            {shown.map((c) => (
               <li key={c.id}>
                 <a
+                  id={`conv-${c.id}`}
                   href={`/inbox/${c.id}`}
-                  className={`conv ${c.id === conversationId ? "selected" : ""} ${isUnread(c) ? "unread" : ""}`}
+                  aria-current={c.id === conversationId ? "page" : undefined}
+                  className={`conv ${c.id === conversationId ? "selected" : ""} ${c.id === cursor ? "cursor" : ""} ${isUnread(c) ? "unread" : ""}`}
+                  onFocus={() => setCursor(c.id)}
                   onClick={(e) => { e.preventDefault(); navigate(`/inbox/${c.id}`); }}
                 >
                   <span className="row">
@@ -211,6 +284,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
           trackers={trackers}
           onTagsChanged={() => void loadTags()}
           onOpened={() => void loadMentions()}
+          updateRef={threadUpdate}
         />
       ) : (
         <div className="thread empty muted">Select a conversation</div>
@@ -228,6 +302,7 @@ function Thread({
   trackers,
   onTagsChanged,
   onOpened,
+  updateRef,
 }: {
   conversationId: string;
   workspaceId: string;
@@ -237,6 +312,7 @@ function Thread({
   trackers: TrackerStatus | null;
   onTagsChanged: () => void;
   onOpened: () => void;
+  updateRef: { current: ((patch: ConversationPatch) => Promise<void>) | null };
 }) {
   const [conversation, setConversation] = useState<ConversationSummary | null>(null);
   const [filed, setFiled] = useState<ConversationIssue[]>([]);
@@ -245,6 +321,8 @@ function Thread({
   const [initial, setInitial] = useState<Message[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedReplies, setSavedReplies] = useState<SavedReply[]>([]);
+  const [addingTag, setAddingTag] = useState(false);
+  const composer = useRef<ComposerControl>(null);
 
   useEffect(() => {
     api<{ conversation: ConversationSummary; messages: Message[]; issues: ConversationIssue[] }>(`/conversations/${conversationId}`).then(
@@ -281,7 +359,7 @@ function Thread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latest, thread.state]);
 
-  const update = async (patch: { status?: ConversationStatus; assigneeId?: string | null; handling?: "ai" | "human" }) => {
+  const update = async (patch: ConversationPatch) => {
     try {
       setConversation((await api<{ conversation: ConversationSummary }>(`/conversations/${conversationId}`, { method: "PATCH", body: patch })).conversation);
     } catch (e) {
@@ -304,6 +382,37 @@ function Thread({
     for (const m of thread.messages) if (m.meta.issue && !all.some((i) => i.id === m.meta.issue!.id)) all.push(m.meta.issue);
     return all;
   }, [filed, thread.messages]);
+
+  const canCreateIssue = configuredProviders(trackers).length > 0;
+  const canHandBack = thread.messages.some((m) => m.authorType === "ai");
+  useEffect(() => {
+    updateRef.current = update;
+  });
+  useEffect(() => () => {
+    updateRef.current = null;
+  }, [updateRef]);
+  // I-13: what the command palette and shortcuts can do here.
+  useBridge(
+    "thread",
+    conversation
+      ? {
+          conversation,
+          members,
+          knownTags: tags.map((t) => t.name),
+          savedReplies,
+          canCreateIssue,
+          canHandBack,
+          update,
+          addTag: (name) => (conversation.tags.some((t) => t.toLowerCase() === name.toLowerCase()) ? Promise.resolve() : setTags([...conversation.tags, name])),
+          startTag: () => setAddingTag(true),
+          focusComposer: (mode) => composer.current?.focus(mode),
+          insertReply: (reply) => composer.current?.insert(fillSavedReply(reply.body, { customerName: conversation.contact.name, agentName: me.name })),
+          createIssue: () => {
+            if (canCreateIssue) setIssueOpen(true);
+          },
+        }
+      : null,
+  );
 
   if (error) return <div className="thread empty error">{error}</div>;
   if (!conversation || !initial) return <div className="thread empty muted">Loading…</div>;
@@ -352,7 +461,7 @@ function Thread({
           )}
         </span>
       </header>
-      <TagEditor tags={conversation.tags} known={tags} onChange={(next) => void setTags(next)} />
+      <TagEditor tags={conversation.tags} known={tags} onChange={(next) => void setTags(next)} adding={addingTag} setAdding={setAddingTag} />
       {issues.length > 0 && (
         <div className="issue-bar small">
           <span className="muted">Issues</span>
@@ -416,6 +525,7 @@ function Thread({
         mentionNames={members.map((m) => m.name)}
       />
       <Composer
+        control={composer}
         placeholder={savedReplies.length ? "Reply… (/ for saved replies, Shift+Enter for a new line)" : "Reply… (Enter to send, Shift+Enter for a new line)"}
         upload={(file) => uploadFile(`/api/workspaces/${workspaceId}/files`, file)}
         onTyping={onTyping}
@@ -435,8 +545,7 @@ function Thread({
 }
 
 /** I-07: the conversation's tags, with an input that suggests existing ones. */
-function TagEditor({ tags, known, onChange }: { tags: string[]; known: Tag[]; onChange: (tags: string[]) => void }) {
-  const [adding, setAdding] = useState(false);
+function TagEditor({ tags, known, onChange, adding, setAdding }: { tags: string[]; known: Tag[]; onChange: (tags: string[]) => void; adding: boolean; setAdding: (adding: boolean) => void }) {
   const [value, setValue] = useState("");
   const add = () => {
     const name = value.trim();
