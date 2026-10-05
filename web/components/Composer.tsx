@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
 import type { Attachment } from "../../shared/protocol.ts";
 import { canCaptureScreen, captureScreen } from "../lib/screenshot.ts";
 import { formatSize } from "../lib/thread.ts";
@@ -9,11 +9,20 @@ export interface SavedReply {
   body: string;
 }
 
+/** I-13: lets the inbox's shortcuts and command palette drive the composer. */
+export interface ComposerControl {
+  /** Focuses the input, switching to Reply or Note first (`notes` only). */
+  focus(mode?: "reply" | "note"): void;
+  /** Inserts text (a saved reply): replaces an empty draft, otherwise goes on a new line. */
+  insert(text: string): void;
+}
+
 type Suggestion = { kind: "mention"; id: string; label: string; start: number } | { kind: "reply"; id: string; label: string; body: string };
 
 /**
  * Message input with attachments. Enter sends, Shift+Enter adds a line. In the dashboard it
  * also writes internal notes with @mentions (I-05) and inserts saved replies with "/" (I-06).
+ * Ctrl/⌘+Enter sends too, even with suggestions open; in the dashboard Esc leaves the input (I-13).
  */
 export function Composer({
   placeholder,
@@ -26,6 +35,7 @@ export function Composer({
   savedReplies = [],
   fillReply = (body) => body,
   screenshot = false,
+  control,
 }: {
   placeholder: string;
   disabled?: boolean;
@@ -39,6 +49,7 @@ export function Composer({
   fillReply?: (body: string) => string;
   /** S-15: offer "Send a screenshot" (the widget), where the browser supports it. */
   screenshot?: boolean;
+  control?: Ref<ComposerControl>;
 }) {
   const [body, setBody] = useState("");
   const [note, setNote] = useState(false);
@@ -116,6 +127,19 @@ export function Composer({
     input.current?.focus();
   };
 
+  useImperativeHandle(control, () => ({
+    focus(mode) {
+      if (mode && notes) switchMode(mode === "note");
+      input.current?.focus();
+    },
+    insert(text) {
+      const next = body.trim() ? `${body.replace(/\s+$/, "")}\n${text}` : text;
+      pendingCaret.current = next.length;
+      change(next);
+      input.current?.focus();
+    },
+  }));
+
   const submit = async () => {
     if (disabled || uploading > 0 || (!body.trim() && attachments.length === 0)) return;
     const [text, files] = [body, attachments];
@@ -172,6 +196,12 @@ export function Composer({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return; // an IME is composing: its keys aren't ours
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      void submit();
+      return;
+    }
     if (open) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -189,9 +219,15 @@ export function Composer({
         return;
       }
     }
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void submit();
+      return;
+    }
+    // Agents: Esc leaves the input so single-key shortcuts work again (the draft stays).
+    if (e.key === "Escape" && notes) {
+      e.preventDefault();
+      input.current?.blur();
     }
   };
 

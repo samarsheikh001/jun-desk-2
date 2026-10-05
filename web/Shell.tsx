@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
 import { api, type Me } from "./api.ts";
 import { InboxPage } from "./inbox/InboxPage.tsx";
 import { AgentPage } from "./agent/AgentPage.tsx";
+import { CommandPalette, ShortcutsHelp } from "./components/CommandPalette.tsx";
+import { bridge, isControlTarget, isTypingTarget, modKey } from "./lib/bridge.ts";
+import { dispatchShortcut, INITIAL_SHORTCUT_STATE, type ShortcutCommand } from "./lib/commands.ts";
 import { KnowledgePage } from "./knowledge/KnowledgePage.tsx";
 import { deskServiceWorker, listenForNotificationClicks, notificationPermission, showInPageNotification, tabFocused } from "./lib/notifications.ts";
 import { LiveSocket } from "./lib/socket.ts";
@@ -69,6 +72,89 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     };
   }, [workspace]);
 
+  // I-13: the command palette, the "?" sheet and the keyboard shortcuts.
+  const [overlay, setOverlay] = useState<"palette" | "help" | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const shortcutState = useRef(INITIAL_SHORTCUT_STATE);
+  const openOverlay = useCallback((next: "palette" | "help") => {
+    setOverlay((current) => {
+      if (!current && document.activeElement instanceof HTMLElement) returnFocus.current = document.activeElement;
+      return next;
+    });
+  }, []);
+  const afterClose = useRef<(() => void) | null>(null);
+  /** Closes the palette or sheet; once it's gone, focus goes back and `then` runs (it may move focus on). */
+  const closeOverlay = useCallback((then?: () => void) => {
+    afterClose.current = then ?? null;
+    setOverlay(null);
+  }, []);
+  useEffect(() => {
+    if (overlay) return;
+    // After the commit: while a modal dialog is open the rest of the page is inert and can't take focus.
+    const target = returnFocus.current;
+    const then = afterClose.current;
+    returnFocus.current = null;
+    afterClose.current = null;
+    if (target?.isConnected) target.focus();
+    then?.();
+  }, [overlay]);
+  const showNotice = useCallback((text: string) => setNotice(text), []);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+  const openHelp = useCallback(() => openOverlay("help"), [openOverlay]);
+
+  useEffect(() => {
+    const run = (command: ShortcutCommand) => {
+      const { inbox, thread } = bridge;
+      switch (command) {
+        case "palette": return overlay === "palette" ? closeOverlay() : openOverlay("palette");
+        case "help": return openOverlay("help");
+        case "go-inbox": return navigate("/inbox");
+        case "go-visitors": return navigate("/visitors");
+        case "go-reports": return navigate("/reports");
+        case "go-settings": return navigate("/settings");
+        case "next": return inbox?.move(1);
+        case "previous": return inbox?.move(-1);
+        case "open": return inbox?.openCursor();
+        case "search": return inbox?.focusSearch();
+        case "resolve": return inbox?.act("resolve");
+        case "assign-me": return inbox?.act("assign-me");
+        case "reply": return thread?.focusComposer("reply");
+        case "note": return thread?.focusComposer("note");
+        case "tag": return thread?.startTag();
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented && !(e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey))) return;
+      const otherDialog = Array.from(document.querySelectorAll("dialog[open]")).some((d) => !d.classList.contains("palette"));
+      const { command, state } = dispatchShortcut(
+        {
+          key: e.key,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+          isComposing: e.isComposing || e.key === "Process" || e.keyCode === 229,
+          typing: isTypingTarget(e.target) && overlay !== "palette",
+          onControl: isControlTarget(e.target),
+        },
+        shortcutState.current,
+        { inbox: window.location.pathname.startsWith("/inbox"), modal: overlay === "palette" ? "palette" : otherDialog || overlay ? "other" : "none" },
+        Date.now(),
+      );
+      shortcutState.current = state;
+      if (!command) return;
+      e.preventDefault();
+      run(command);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [overlay, openOverlay, closeOverlay]);
+
   const hub = useMemo<Hub>(
     () => ({
       subscribe(listener) {
@@ -109,6 +195,10 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           <a href="/settings" className={section === "settings" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/settings"); }}>Settings</a>
         </nav>
         <span className="spacer" />
+        <button className="ghost small palette-open" onClick={() => openOverlay("palette")} aria-keyshortcuts="Control+K Meta+K" title="Search and commands">
+          <span className="palette-open-label">Search</span> <kbd>{modKey()} K</kbd>
+        </button>
+        <button className="ghost small shortcuts-open" onClick={openHelp} aria-label="Keyboard shortcuts" aria-keyshortcuts="Shift+?" title="Keyboard shortcuts (?)">?</button>
         {showGetStarted && section !== "welcome" && (
           <a className="get-started" href="/welcome" onClick={(e) => { e.preventDefault(); navigate("/welcome"); }}>Get started {obDone}/{STEP_ORDER.length}</a>
         )}
@@ -135,6 +225,9 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       ) : (
         <SettingsPage me={me} />
       )}
+      {overlay === "palette" && <CommandPalette workspaceId={workspace.workspaceId} meId={me.user.id} onClose={closeOverlay} onHelp={openHelp} onToast={showNotice} />}
+      {overlay === "help" && <ShortcutsHelp onClose={closeOverlay} />}
+      {notice && <div className="toast" role="status"><span>{notice}</span></div>}
     </div>
   );
 }
