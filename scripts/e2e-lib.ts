@@ -130,10 +130,31 @@ async function connectTestChatGPT(client: Client, workspaceId: string): Promise<
   const auth = new ChatGPTAuth(store);
   let creds = await store.load();
   if (!creds?.tokens) throw new Error("E2E uses your ChatGPT login: run `npm run jun -- login chatgpt` first (or set E2E_AI_PROVIDER=workers-ai).");
-  // A run takes several minutes: start with at least 30 left.
+  // A run takes several minutes: start with at least 30 left. Refresh tokens rotate and reusing
+  // one ends the session, so runs in parallel (other worktrees) take turns via a lock directory.
   if (creds.tokens.expiresAt - Date.now() < 30 * 60_000) {
-    await auth.getAccessToken({ forceRefresh: true });
-    creds = await store.load();
+    const { mkdir, rmdir, stat } = await import("node:fs/promises");
+    const lock = `${store.path}.lock`;
+    for (;;) {
+      try {
+        await mkdir(lock);
+        break;
+      } catch {
+        // A lock older than a minute was left by a crashed run.
+        const age = Date.now() - (await stat(lock).then((s) => s.mtimeMs, () => Date.now()));
+        if (age > 60_000) await rmdir(lock).catch(() => {});
+        else await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+    try {
+      creds = await store.load();
+      if (creds!.tokens!.expiresAt - Date.now() < 30 * 60_000) {
+        await auth.getAccessToken({ forceRefresh: true });
+        creds = await store.load();
+      }
+    } finally {
+      await rmdir(lock).catch(() => {});
+    }
   }
   const res = await client.call(`/workspaces/${workspaceId}/ai/chatgpt/access-token`, {
     body: { accessToken: creds!.tokens!.accessToken, expiresAt: creds!.tokens!.expiresAt, clientId: creds!.clientId },
