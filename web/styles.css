@@ -390,3 +390,59 @@ mark.mention { background: var(--mention); color: inherit; border-radius: 4px; p
 .toast > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .clip { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stack { display: grid; gap: 8px; }
+
+/* Reports (A-01) */
+:root { --bar-rest: #b9c6f6; }
+@media (prefers-color-scheme: dark) { :root { --bar-rest: #3a4677; } }
+.reports-head { flex-wrap: wrap; }
+.segmented { display: inline-flex; padding: 2px; gap: 2px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.segmented button { background: none; color: var(--muted); padding: 4px 12px; font-size: 0.85rem; border-radius: 7px; }
+.segmented button.active { background: var(--tag); color: var(--accent); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: grid; gap: 2px; min-width: 0; }
+.stat-value { font-size: 1.7rem; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.reports-note { margin: -6px 0 0; }
+.chart { display: grid; gap: 6px; margin-top: 10px; }
+.chart-caption { min-height: 1.5em; }
+.chart-plot { position: relative; height: 200px; padding-top: 20px; }
+.chart-plot svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.chart-max { position: absolute; top: 0; left: 0; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.chart-base { stroke: var(--border); stroke-width: 1; }
+.chart-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart-hit { fill: transparent; }
+.chart g.on .chart-hit { fill: var(--bg); }
+.bar-ai { fill: var(--accent); background: var(--accent); }
+.bar-rest { fill: var(--bar-rest); background: var(--bar-rest); }
+.chart-axis { position: relative; height: 1.4em; }
+.chart-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; font-size: 0.75rem; }
+.chart-axis span:first-child { transform: none; left: 0 !important; }
+.chart-axis span:last-child:not(:first-child) { transform: none; left: auto !important; right: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.reports-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.reasons, .bad-comments { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+.reason-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.meter { height: 6px; border-radius: 999px; background: var(--bg); overflow: hidden; margin-top: 4px; }
+.meter span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.bad-comments a { display: grid; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--bg); color: var(--text); text-decoration: none; }
+.bad-comments a:hover { background: var(--tag); }
+.bad-comment { overflow-wrap: anywhere; }
+.team-table { width: 100%; border-collapse: collapse; margin: 10px 0 8px; font-variant-numeric: tabular-nums; }
+.team-table th { text-align: left; font-size: 0.8rem; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.team-table td { padding: 8px; border-bottom: 1px solid var(--border); }
+.team-table th:not(:first-child), .team-table td:not(:first-child) { text-align: right; }
+@media (max-width: 560px) {
+  .team-table thead { display: none; }
+  .team-table tr { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .team-table td { border: none; padding: 0; text-align: left !important; }
+  .team-table td:first-child { grid-column: 1 / -1; }
+  .team-table td[data-label]::before { content: attr(data-label); display: block; font-size: 0.75rem; color: var(--muted); }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* Narrow screens: the navigation gets its own scrollable row. */
+@media (max-width: 700px) {
+  .topbar { flex-wrap: wrap; row-gap: 6px; }
+  .topbar nav { order: 10; flex-basis: 100%; overflow-x: auto; scrollbar-width: none; }
+  .topbar > span.muted.small { display: none; }
+}

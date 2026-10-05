@@ -22,6 +22,7 @@ npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stri
 | `shared/debug.ts` | P1 debug context: types, `redact`/`cleanUrl`/`sanitizeContext` (server-side masking; `public/widget.js` mirrors the rules in plain JS, keep them in sync), `describeEvents` for prompts |
 | `shared/hours.ts` | I-10 business hours: validate, open/closed and next opening in a time zone (DST-safe), away text. Used by the Worker (away reply, widget config), dashboard and widget |
 | `shared/inbox.ts`, `worker/routes/inbox.ts` (M7) | Inbox basics: @mention parsing, saved-reply placeholders, tag names (pure, shared); routes for saved replies, tags (`PUT /conversations/:id/tags`) and unread mentions. Notes are messages with `internal: true` from an agent |
+| `shared/metrics.ts`, `worker/routes/metrics.ts`, `web/reports/` | A-01 Reports: the route aggregates one row per conversation in SQL (first visitor/AI/agent message, handoff reason), CSAT ratings and per-teammate replies; `computeMetrics` (pure) does day buckets in the viewer's time zone, rates, medians and the definitions (see `docs/features.md` A-01) |
 | `shared/protocol.ts` | Types and constants shared by Worker, dashboard and widget (socket events, message/conversation shapes) |
 | `web/widget/`, `widget.html` | The chat UI inside the widget iframe (served at `/widget?key=`) |
 | `public/widget.js` | Embeddable loader (MIT, plain JS, readable in the repo; the build minifies it, budget 5 KB gzipped served). Debug capture, nudges, live visitor socket, identify/logout/consent API. `public/demo.html?key=` is a test page (`&consent=required` for consent mode) |
@@ -30,7 +31,7 @@ npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stri
 | `scripts/upgrade-check.ts` | T-12: `seed` an older install, upgrade the same DB, then `verify` (see the file header) |
 | `worker/routes/onboarding.ts`, `web/welcome/` | T-11 "Get started": steps computed from real state; install detected on the loader's first non-desk origin |
 | `scripts/bench-models.ts` | Latency/behaviour comparison of Workers AI chat models on five support questions, incl. a tool call (run against the e2e server after `npm run test:e2e`) |
-| `scripts/e2e-*.ts` | E2E on a separate dev server + DB (`JUN_STATE_DIR=.wrangler/e2e-state`, port 5174, see README) so your own local desk isn't wiped: `e2e-auth`, `e2e-chat`, `e2e-ai`, `e2e-debug`, `e2e-agent`, `e2e-visitors`, `e2e-polish`, `e2e-inbox` (real Workers AI; `e2e-agent`/`e2e-visitors` use httpbin.org as the customer's API; `e2e-agent` runs the `jun` CLI). Helpers in `e2e-lib.ts` |
+| `scripts/e2e-*.ts` | E2E on a separate dev server + DB (`JUN_STATE_DIR=.wrangler/e2e-state`, port 5174, see README) so your own local desk isn't wiped: `e2e-auth`, `e2e-chat`, `e2e-ai`, `e2e-debug`, `e2e-agent`, `e2e-visitors`, `e2e-polish`, `e2e-inbox`, `e2e-metrics` (real Workers AI; `e2e-agent`/`e2e-visitors` use httpbin.org as the customer's API; `e2e-agent` runs the `jun` CLI). Helpers in `e2e-lib.ts` |
 
 | Package | What |
 |---|---|

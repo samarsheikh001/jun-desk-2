@@ -5,6 +5,7 @@ import { InboxPage } from "./inbox/InboxPage.tsx";
 import { AgentPage } from "./agent/AgentPage.tsx";
 import { KnowledgePage } from "./knowledge/KnowledgePage.tsx";
 import { LiveSocket } from "./lib/socket.ts";
+import { ReportsPage } from "./reports/ReportsPage.tsx";
 import { navigate, usePath } from "./lib/router.ts";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { VisitorsPage } from "./visitors/VisitorsPage.tsx";
@@ -64,6 +65,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     : path.startsWith("/knowledge") ? "knowledge"
     : path.startsWith("/agent") ? "agent"
     : path.startsWith("/visitors") ? "visitors"
+    : path.startsWith("/reports") ? "reports"
     : path.startsWith("/welcome") ? "welcome"
     : "inbox";
   const ob = onboarding.state;
@@ -83,6 +85,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           </a>
           <a href="/knowledge" className={section === "knowledge" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/knowledge"); }}>Knowledge</a>
           <a href="/agent" className={section === "agent" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/agent"); }}>Agent</a>
+          <a href="/reports" className={section === "reports" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/reports"); }}>Reports</a>
           <a href="/settings" className={section === "settings" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/settings"); }}>Settings</a>
         </nav>
         <span className="spacer" />
@@ -105,6 +108,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <WelcomePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} onboarding={onboarding.state} reload={onboarding.reload} />
       ) : section === "visitors" ? (
         <VisitorsPage workspaceId={workspace.workspaceId} visitors={visitors} />
+      ) : section === "reports" ? (
+        <ReportsPage workspaceId={workspace.workspaceId} />
       ) : section === "agent" ? (
         <AgentPage workspaceId={workspace.workspaceId} canEdit={canEdit} />
       ) : (

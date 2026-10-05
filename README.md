@@ -11,6 +11,7 @@ What you get:
 - **Support that sees the bug.** Recent errors, failed requests and pages visited are captured in the visitor's browser, masked twice (in the browser and on the server), and shown to your agents and the AI. If something on the page breaks, the widget can offer help on its own: "Adding a team member didn't work. Want a hand?"
 - **A support agent you keep in git.** The AI's rules, procedures, tools and tests are plain files. `jun eval` replays recent real conversations against your edits before you push them, so you see which answers would change.
 - **A real-time inbox** with assignment, takeover from the AI, internal notes with @mentions, saved replies, tags, a contact sidebar, and a live list of who's on your site right now. You can start a chat with any of them.
+- **Reports** for the last 7, 30 or 90 days: conversations, how many the AI resolved on its own, handoff rate and reasons, first-response times, CSAT and replies per teammate.
 
 ## Deploy
 

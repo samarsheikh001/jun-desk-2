@@ -132,7 +132,7 @@
 
 *Demo: it feels like a real product a team can use every day.*
 
-**Status (2026-10-05): the four launch-critical items (I-08, W-04, I-10, K-04) are built and tested (unit 63, e2e 68 incl. `e2e-polish` 6). Inbox basics I-05, I-06, I-07 and offline email capture W-08 built and tested (unit 67, e2e 76 incl. `e2e-inbox` 8). CSAT W-12 built and tested (unit 69, e2e 80 incl. `e2e-inbox` 12). A-01 is not started.**
+**Status (2026-10-05): the four launch-critical items (I-08, W-04, I-10, K-04) are built and tested (unit 63, e2e 68 incl. `e2e-polish` 6). Inbox basics I-05, I-06, I-07 and offline email capture W-08 built and tested (unit 67, e2e 76 incl. `e2e-inbox` 8). CSAT W-12 built and tested (unit 69, e2e 80 incl. `e2e-inbox` 12). Core metrics A-01 built and tested (unit 80, e2e 86 incl. `e2e-metrics` 6). M7 is complete.**
 
 | ID | Feature | Size | |
 |---|---|---|---|
