@@ -3,7 +3,9 @@ import { DEFAULT_NOTIFICATION_PREFS, type NotificationPrefs } from "../../shared
 import { api, describeError } from "../api.ts";
 import { currentSubscription, deviceName, enablePush, endpointHash, notificationPermission, pushSupport, type Device } from "../lib/notifications.ts";
 import { useAction } from "../useAction.ts";
+import { Button } from "@/components/ui/button.tsx";
 
+import { Card } from "@/components/ui/card.tsx";
 const TRIGGERS: { key: keyof NotificationPrefs; label: string; hint: string }[] = [
   { key: "needsPerson", label: "A chat needs a person", hint: "Handed to the team and nobody has it yet (or round robin gave it to you)." },
   { key: "assigned", label: "A chat is assigned to you", hint: "By round robin or by a teammate." },
@@ -73,7 +75,7 @@ export function NotificationsPanel({ workspaceId }: { workspaceId: string }) {
 
   const current = devices.find((d) => d.id === thisDevice);
   return (
-    <section className="panel" id="notifications">
+    <Card className="panel" id="notifications">
       <h2>Notifications</h2>
       <p className="muted small">
         Get a notification when a chat needs you. With the desk open in a tab you're not looking at, the tab shows it; with the desk closed, your devices get a push.
@@ -91,12 +93,12 @@ export function NotificationsPanel({ workspaceId }: { workspaceId: string }) {
           <div className="row wrap">
             <span className="small"><span className="ok-text">●</span> On for this device ({deviceName(current.userAgent)})</span>
             <span className="spacer" />
-            <button className="small" disabled={busy} onClick={test}>Send a test notification</button>
-            <button className="ghost small" disabled={busy} onClick={() => remove(current)}>Turn off on this device</button>
+            <Button size="sm" disabled={busy} onClick={test}>Send a test notification</Button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => remove(current)}>Turn off on this device</Button>
           </div>
         ) : (
           <div className="row wrap">
-            <button disabled={busy} onClick={turnOn}>Turn on notifications on this device</button>
+            <Button disabled={busy} onClick={turnOn}>Turn on notifications on this device</Button>
             <span className="muted small">Your browser will ask for permission.</span>
           </div>
         )}
@@ -131,12 +133,12 @@ export function NotificationsPanel({ workspaceId }: { workspaceId: string }) {
                   added {day(d.createdAt)} · {d.lastSuccessAt ? `last delivered ${day(d.lastSuccessAt)}` : "nothing delivered yet"}
                   {d.failures > 0 && ` · ${d.failures} failed`}
                 </span>
-                <button className="ghost small" disabled={busy} onClick={() => remove(d)}>Remove</button>
+                <Button variant="outline" size="sm" disabled={busy} onClick={() => remove(d)}>Remove</Button>
               </li>
             ))}
           </ul>
         </>
       )}
-    </section>
+    </Card>
   );
 }

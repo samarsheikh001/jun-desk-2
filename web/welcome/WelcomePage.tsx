@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { api } from "../api.ts";
 import { navigate } from "../lib/router.ts";
 import { useAction } from "../useAction.ts";
+import { Card } from "@/components/ui/card.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
 
 // T-11: first-run "Get started". Each step does the one thing it needs right here, and ticks
 // itself off from the desk's real state (so doing it in Settings counts too).
@@ -28,14 +31,14 @@ export function useOnboarding(workspaceId: string) {
 
 function StepCard({ n, title, done, optional, children }: { n: number; title: string; done: boolean; optional?: boolean; children: ReactNode }) {
   return (
-    <section className={`panel step ${done ? "done" : ""}`}>
+    <Card className={`panel step ${done ? "done" : ""}`}>
       <div className="row">
         <span className="step-n">{done ? "✓" : n}</span>
         <h2>{title}</h2>
         {optional && <span className="muted small">optional</span>}
       </div>
       <div className="step-body">{children}</div>
-    </section>
+    </Card>
   );
 }
 
@@ -89,7 +92,7 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
 
   return (
     <main className="content">
-      <section className="panel">
+      <Card className="panel">
         <div className="row">
           <h2>Welcome to {workspaceName}'s desk</h2>
           <span className="spacer" />
@@ -97,7 +100,7 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
         </div>
         <p className="muted small">A few minutes to an AI that answers from your docs on your own site. Each step ticks itself off, and you can come back here any time from the top bar.</p>
         <div className="progress"><span style={{ width: `${(doneCount / STEP_ORDER.length) * 100}%` }} /></div>
-      </section>
+      </Card>
 
       <StepCard n={1} title="Create your account" done={s.account}>
         <p className="muted small">Done: you're signed in with a passkey. Keep your setup token somewhere safe; it's how you get back in if you lose every passkey.</p>
@@ -110,8 +113,8 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
           <>
             <p className="muted small">The AI only answers from what's here, with citations. Paste your help center or docs site; we read its sitemap and re-sync daily. Snippets for anything else are under Knowledge.</p>
             <form className="row" onSubmit={addSite}>
-              <input name="url" type="url" required placeholder="https://docs.yourcompany.com" aria-label="Docs URL" style={{ flex: 1 }} />
-              <button disabled={busy}>Add website</button>
+              <Input name="url" type="url" required placeholder="https://docs.yourcompany.com" aria-label="Docs URL" style={{ flex: 1 }} />
+              <Button disabled={busy}>Add website</Button>
             </form>
             <p className="muted small">Crawling takes a minute or two; this step ticks itself off when pages are indexed.</p>
           </>
@@ -124,7 +127,7 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
         ) : (
           <>
             <p className="muted small">Uses Workers AI out of the box (no API key, included with Cloudflare). You can switch to OpenAI later in Settings.</p>
-            <button disabled={busy} onClick={turnOnAi}>Turn on the AI</button>
+            <Button disabled={busy} onClick={turnOnAi}>Turn on the AI</Button>
           </>
         )}
       </StepCard>
@@ -135,7 +138,7 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
         ) : (
           <div className="row">
             <input type="color" value={color} onChange={(e) => setColor(e.target.value)} aria-label="Brand colour" />
-            <button className="ghost" disabled={busy} onClick={saveColor}>Use this colour</button>
+            <Button variant="outline" disabled={busy} onClick={saveColor}>Use this colour</Button>
             <span className="muted small">More (logo, greeting, hours) in Settings.</span>
           </div>
         )}
@@ -146,7 +149,7 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
         <div className="invite">
           <div className="row">
             <code className="small">{snippet}</code>
-            <button className="small" onClick={async () => { await navigator.clipboard?.writeText(snippet); setCopied(true); }}>{copied ? "Copied ✓" : "Copy"}</button>
+            <Button size="sm" onClick={async () => { await navigator.clipboard?.writeText(snippet); setCopied(true); }}>{copied ? "Copied ✓" : "Copy"}</Button>
           </div>
         </div>
         {s.install ? (
@@ -168,13 +171,13 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
         ) : s.team ? (
           <p className="muted small">Team invited. Manage people and roles in Settings.</p>
         ) : (
-          <button className="ghost" disabled={busy} onClick={invite}>Create an invite link</button>
+          <Button variant="outline" disabled={busy} onClick={invite}>Create an invite link</Button>
         )}
       </StepCard>
 
       {error && <p className="error">{error}</p>}
       <div className="row">
-        <button onClick={finish} disabled={busy}>{doneCount === STEP_ORDER.length ? "All set, go to the inbox" : "Hide this, go to the inbox"}</button>
+        <Button onClick={finish} disabled={busy}>{doneCount === STEP_ORDER.length ? "All set, go to the inbox" : "Hide this, go to the inbox"}</Button>
       </div>
     </main>
   );

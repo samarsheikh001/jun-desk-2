@@ -1,3 +1,6 @@
+/* The visitor widget frame's base styles (imported by web/widget/main.tsx, with widget.css).
+   The dashboard no longer uses this file: it has web/desk.css (Tailwind + shadcn/ui). Changes here
+   change what visitors see on customers' sites. */
 :root {
   --bg: #f7f7f5;
   --surface: #ffffff;

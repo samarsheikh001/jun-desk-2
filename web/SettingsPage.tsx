@@ -8,6 +8,10 @@ import { AppearancePanel, HoursPanel, type InboxSettings } from "./settings/Widg
 import { OpenersPanel } from "./settings/OpenersPanel.tsx";
 import type { OpenerRule } from "../shared/openers.ts";
 import { useAction } from "./useAction.ts";
+import { Card } from "@/components/ui/card.tsx";
+import { Button, buttonVariants } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 
 interface Passkey { id: string; name: string | null; backedUp: number; createdAt: number; lastUsedAt: number | null }
 type Role = "owner" | "admin" | "agent";
@@ -44,11 +48,11 @@ export function SettingsPage({ me }: { me: Me }) {
 
       {workspace && <NotificationsPanel workspaceId={workspace.workspaceId} />}
 
-      <section className="panel">
+      <Card className="panel">
         <div className="row">
           <h2>Your passkeys</h2>
           <span className="spacer" />
-          <button disabled={busy} onClick={() => run(async () => { await registerPasskey("/passkeys"); await loadPasskeys(); })}>Add passkey</button>
+          <Button disabled={busy} onClick={() => run(async () => { await registerPasskey("/passkeys"); await loadPasskeys(); })}>Add passkey</Button>
         </div>
         <p className="muted small">Add a passkey on a second device so you can't get locked out.</p>
         <ul className="list">
@@ -57,12 +61,12 @@ export function SettingsPage({ me }: { me: Me }) {
               <span>{p.name ?? "Passkey"} {p.backedUp ? <em className="tag">synced</em> : null}</span>
               <span className="muted small">added {date(p.createdAt)} · last used {date(p.lastUsedAt)}</span>
               {passkeys.length > 1 && (
-                <button className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`/passkeys/${encodeURIComponent(p.id)}`, { method: "DELETE" }); await loadPasskeys(); })}>Remove</button>
+                <Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api(`/passkeys/${encodeURIComponent(p.id)}`, { method: "DELETE" }); await loadPasskeys(); })}>Remove</Button>
               )}
             </li>
           ))}
         </ul>
-      </section>
+      </Card>
 
       {workspace && <TokensPanel workspaceId={workspace.workspaceId} />}
       {workspace && me.user && <TeamPanel workspaceId={workspace.workspaceId} myRole={workspace.role} myId={me.user.id} />}
@@ -103,17 +107,17 @@ function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: 
 
   const snippet = `<script src="${window.location.origin}/widget.js" data-key="${widgetKey}" async></script>`;
   return (
-    <section className="panel">
+    <Card className="panel">
       <div className="row">
         <h2>Install the chat widget</h2>
         <span className="spacer" />
-        <a className="button ghost small" href={`/demo.html?key=${widgetKey}`} target="_blank" rel="noreferrer">Open demo page</a>
+        <a data-slot="button" className={buttonVariants({ variant: "outline", size: "sm" })} href={`/demo.html?key=${widgetKey}`} target="_blank" rel="noreferrer">Open demo page</a>
       </div>
       <p className="muted small">Paste this before <code>&lt;/body&gt;</code> on your site. The loader is tiny; the chat itself loads only when a visitor opens it.</p>
       <div className="invite">
         <div className="row">
           <code>{snippet}</code>
-          <button className="small" onClick={async () => { await navigator.clipboard.writeText(snippet); setCopied(true); }}>{copied ? "Copied ✓" : "Copy"}</button>
+          <Button size="sm" onClick={async () => { await navigator.clipboard.writeText(snippet); setCopied(true); }}>{copied ? "Copied ✓" : "Copy"}</Button>
         </div>
       </div>
       <label className="check small" style={{ marginTop: 12 }}>
@@ -124,8 +128,8 @@ function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: 
       <div className="field" style={{ marginTop: 12 }}>
         <span className="small strong">Allowed websites</span>
         <div className="row">
-          <input value={domains} onChange={(e) => setDomains(e.target.value)} disabled={!canEdit} placeholder="Any website (e.g. acme.com, *.acme.com)" style={{ flex: 1 }} />
-          {canEdit && <button className="small" disabled={busy || domains === savedDomains} onClick={saveDomains}>Save</button>}
+          <Input value={domains} onChange={(e) => setDomains(e.target.value)} disabled={!canEdit} placeholder="Any website (e.g. acme.com, *.acme.com)" style={{ flex: 1 }} />
+          {canEdit && <Button size="sm" disabled={busy || domains === savedDomains} onClick={saveDomains}>Save</Button>}
         </div>
         <small className="muted">
           Your widget key is public, so anyone could copy the snippet. List your sites and the widget won't open, track visitors or use AI anywhere else. Use <code>*.acme.com</code> for subdomains. This desk ({window.location.host}) always works for testing.
@@ -136,7 +140,7 @@ function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: 
         Cookie banner? Add <code>data-consent="required"</code>: the widget then stores nothing and doesn't show the visitor on your live list until you call <code>JunDesk.consent(true)</code>.
       </p>
       {canEdit && <IdentityPanel workspaceId={workspaceId} />}
-    </section>
+    </Card>
   );
 }
 
@@ -170,18 +174,18 @@ JunDesk.identify(userToken);   // and JunDesk.logout() when they sign out`;
           <div className="invite">
             <div className="row">
               <code className="small">{shown ? secret : `${secret.slice(0, 8)}${"•".repeat(24)}`}</code>
-              <button className="ghost small" onClick={() => setShown(!shown)}>{shown ? "Hide" : "Show"}</button>
-              <button className="ghost small" onClick={() => void navigator.clipboard?.writeText(secret)}>Copy</button>
+              <Button variant="outline" size="sm" onClick={() => setShown(!shown)}>{shown ? "Hide" : "Show"}</Button>
+              <Button variant="outline" size="sm" onClick={() => void navigator.clipboard?.writeText(secret)}>Copy</Button>
             </div>
           </div>
           <pre className="code small">{example}</pre>
           <div className="row">
-            <button className="ghost small" disabled={busy} onClick={() => { if (confirm("Rotate the secret? Tokens signed with the old one stop working right away.")) run(async () => setSecret((await api<{ secret: string }>(base, { body: {} })).secret)); }}>Rotate secret</button>
-            <button className="ghost small" disabled={busy} onClick={() => { if (confirm("Turn off identity verification? Everyone becomes anonymous.")) run(async () => { await api(base, { method: "DELETE" }); setSecret(null); }); }}>Turn off</button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => { if (confirm("Rotate the secret? Tokens signed with the old one stop working right away.")) run(async () => setSecret((await api<{ secret: string }>(base, { body: {} })).secret)); }}>Rotate secret</Button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => { if (confirm("Turn off identity verification? Everyone becomes anonymous.")) run(async () => { await api(base, { method: "DELETE" }); setSecret(null); }); }}>Turn off</Button>
           </div>
         </>
       ) : (
-        <button className="small" disabled={busy} onClick={() => run(async () => { setSecret((await api<{ secret: string }>(base, { body: {} })).secret); setShown(true); })}>Create identity secret</button>
+        <Button size="sm" disabled={busy} onClick={() => run(async () => { setSecret((await api<{ secret: string }>(base, { body: {} })).secret); setShown(true); })}>Create identity secret</Button>
       )}
       {error && <p className="error small">{error}</p>}
     </div>
@@ -220,17 +224,17 @@ function TeamPanel({ workspaceId, myRole, myId }: { workspaceId: string; myRole:
   };
 
   return (
-    <section className="panel">
+    <Card className="panel">
       <div className="row">
         <h2>Team</h2>
         <span className="spacer" />
         {canInvite && (
           <>
-            <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as "agent" | "admin")} aria-label="Invite role">
-              <option value="agent">Agent</option>
-              {myRole === "owner" && <option value="admin">Admin</option>}
-            </select>
-            <button disabled={busy} onClick={createInvite}>Create invite link</button>
+            <NativeSelect value={inviteRole} onChange={(e) => setInviteRole(e.target.value as "agent" | "admin")} aria-label="Invite role">
+              <NativeSelectOption value="agent">Agent</NativeSelectOption>
+              {myRole === "owner" && <NativeSelectOption value="admin">Admin</NativeSelectOption>}
+            </NativeSelect>
+            <Button disabled={busy} onClick={createInvite}>Create invite link</Button>
           </>
         )}
       </div>
@@ -244,7 +248,7 @@ function TeamPanel({ workspaceId, myRole, myId }: { workspaceId: string; myRole:
           <span className="small">Send this link to the person you're inviting. It's shown only once.</span>
           <div className="row">
             <code>{inviteUrl}</code>
-            <button className="small" onClick={copy}>{copied ? "Copied ✓" : "Copy"}</button>
+            <Button size="sm" onClick={copy}>{copied ? "Copied ✓" : "Copy"}</Button>
           </div>
         </div>
       )}
@@ -259,25 +263,18 @@ function TeamPanel({ workspaceId, myRole, myId }: { workspaceId: string; myRole:
               <span className="muted small">{m.email}</span>
               {manageable ? (
                 <>
-                  <select
+                  <NativeSelect
                     value={m.role}
                     disabled={busy}
                     aria-label={`Role for ${m.name}`}
                     onChange={(e) => run(async () => { await api(`${base}/members/${m.id}`, { method: "PATCH", body: { role: e.target.value } }); await load(); })}
                   >
-                    <option value="agent">agent</option>
-                    {myRole === "owner" && <option value="admin">admin</option>}
-                  </select>
-                  <button
-                    className="ghost small"
-                    disabled={busy}
-                    onClick={() => {
-                      if (!confirm(`Remove ${m.name}? They'll be signed out and lose access.`)) return;
-                      run(async () => { await api(`${base}/members/${m.id}`, { method: "DELETE" }); await load(); });
-                    }}
-                  >
+                    <NativeSelectOption value="agent">agent</NativeSelectOption>
+                    {myRole === "owner" && <NativeSelectOption value="admin">admin</NativeSelectOption>}
+                  </NativeSelect>
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => { if (!confirm(`Remove ${m.name}? They'll be signed out and lose access.`)) return; run(async () => { await api(`${base}/members/${m.id}`, { method: "DELETE" }); await load(); }); }}>
                     Remove
-                  </button>
+                  </Button>
                 </>
               ) : (
                 <em className="tag">{m.role}</em>
@@ -295,13 +292,13 @@ function TeamPanel({ workspaceId, myRole, myId }: { workspaceId: string; myRole:
               <li key={i.id}>
                 <span>{i.role === "admin" ? "Admin" : "Agent"} invite</span>
                 <span className="muted small">by {i.createdBy} · expires {date(i.expiresAt)}</span>
-                <button className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`${base}/invites/${encodeURIComponent(i.id)}`, { method: "DELETE" }); await load(); })}>Revoke</button>
+                <Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api(`${base}/invites/${encodeURIComponent(i.id)}`, { method: "DELETE" }); await load(); })}>Revoke</Button>
               </li>
             ))}
           </ul>
         </>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -335,7 +332,7 @@ function TokensPanel({ workspaceId }: { workspaceId: string }) {
   };
 
   return (
-    <section className="panel">
+    <Card className="panel">
       <h2>API tokens</h2>
       <p className="muted small">
         For the <code>jun</code> CLI: keep the agent in git, run evals and push changes (<code>npm run jun -- login {window.location.origin}</code> in your Jun Desk checkout). A token acts as you, for this workspace's agent config only.
@@ -344,12 +341,12 @@ function TokensPanel({ workspaceId }: { workspaceId: string }) {
         <div className="invite">
           <span className="small strong">Copy it now: it won't be shown again.</span>
           <code className="small">{created}</code>
-          <button className="ghost small" onClick={() => { void navigator.clipboard?.writeText(created); }}>Copy</button>
+          <Button variant="outline" size="sm" onClick={() => { void navigator.clipboard?.writeText(created); }}>Copy</Button>
         </div>
       )}
       <form className="row" onSubmit={create} style={{ marginTop: 12 }}>
-        <input name="name" placeholder="Token name, e.g. laptop or GitHub Actions" required maxLength={80} style={{ flex: 1 }} />
-        <button disabled={busy}>Create token</button>
+        <Input name="name" placeholder="Token name, e.g. laptop or GitHub Actions" required maxLength={80} style={{ flex: 1 }} />
+        <Button disabled={busy}>Create token</Button>
       </form>
       {error && <p className="error small">{error}</p>}
       {tokens.length > 0 && (
@@ -359,12 +356,12 @@ function TokensPanel({ workspaceId }: { workspaceId: string }) {
               <span className="strong">{t.name}</span>
               <span className="muted small">created {new Date(t.createdAt).toLocaleDateString()} · {t.lastUsedAt ? `last used ${new Date(t.lastUsedAt).toLocaleDateString()}` : "never used"}</span>
               <span className="spacer" />
-              <button className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); })}>Revoke</button>
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); })}>Revoke</Button>
             </li>
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   );
 }
 

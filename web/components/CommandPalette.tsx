@@ -5,6 +5,7 @@ import { api } from "../api.ts";
 import { bridge, modKey, type ThreadBridge } from "../lib/bridge.ts";
 import { rankScored, SHORTCUT_HELP } from "../lib/commands.ts";
 import { navigate } from "../lib/router.ts";
+import { Button } from "@/components/ui/button.tsx";
 
 interface Item {
   id: string;
@@ -354,7 +355,7 @@ export function ShortcutsHelp({ onClose }: { onClose: () => void }) {
       <div className="shortcuts-head">
         <h2 id="shortcuts-title">Keyboard shortcuts</h2>
         <span className="spacer" />
-        <button ref={close} className="ghost small" onClick={() => onClose()} aria-label="Close">Esc</button>
+        <Button variant="outline" size="sm" ref={close} onClick={() => onClose()} aria-label="Close">Esc</Button>
       </div>
       <div className="shortcuts-body">
         {SHORTCUT_HELP.map((g) => (

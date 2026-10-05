@@ -13,6 +13,10 @@ import { configuredProviders, IssueDialog, type FiledIssue } from "./IssueDialog
 import type { TrackerStatus } from "../settings/IssueTrackersPanel.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
 import type { Hub } from "../Shell.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 
 type StatusFilter = ConversationStatus | "all";
 type AssigneeFilter = "all" | "me" | "unassigned" | "mentions";
@@ -158,15 +162,16 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
       {toast && (
         <div className="toast" role="status">
           <span><strong>{toast.by}</strong> mentioned you: {toast.preview}</span>
-          <button className="small" onClick={() => { navigate(`/inbox/${toast.conversationId}`); setToast(null); }}>Open</button>
-          <button className="ghost small" aria-label="Dismiss" onClick={() => setToast(null)}>×</button>
+          <Button size="sm" onClick={() => { navigate(`/inbox/${toast.conversationId}`); setToast(null); }}>Open</Button>
+          <Button variant="outline" size="sm" aria-label="Dismiss" onClick={() => setToast(null)}>×</Button>
         </div>
       )}
       <aside className="conv-list">
-        <input
+        <div className="conv-filters">
+        <Input
           ref={searchInput}
           type="search"
-          className="filter conv-search"
+          className="conv-search"
           placeholder="Filter conversations"
           aria-label="Filter conversations"
           aria-keyshortcuts="/"
@@ -188,36 +193,38 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
             }
           }}
         />
-        <div className="tabs">
-          {STATUS_TABS.map((t) => (
-            <button key={t.value} className={`tab ${status === t.value ? "active" : ""}`} onClick={() => setStatus(t.value)}>{t.label}</button>
-          ))}
-        </div>
-        <select className="filter" value={assignee} onChange={(e) => setAssignee(e.target.value as AssigneeFilter)} aria-label="Assignee filter">
-          <option value="all">Everyone's</option>
-          <option value="me">Assigned to me</option>
-          <option value="unassigned">Unassigned</option>
-          <option value="mentions">Mentions me{unreadMentions > 0 ? ` (${unreadMentions} new)` : ""}</option>
-        </select>
-        {tags.length > 0 && (
-          <select className="filter" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} aria-label="Tag filter">
-            <option value="">Any tag</option>
-            {tags.map((t) => (
-              <option key={t.id} value={t.name}>{t.name}</option>
+        <Tabs value={status} onValueChange={(value) => setStatus(value as StatusFilter)}>
+          <TabsList>
+            {STATUS_TABS.map((t) => (
+              <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
             ))}
-          </select>
+          </TabsList>
+        </Tabs>
+        <NativeSelect className="w-full" value={assignee} onChange={(e) => setAssignee(e.target.value as AssigneeFilter)} aria-label="Assignee filter">
+          <NativeSelectOption value="all">Everyone's</NativeSelectOption>
+          <NativeSelectOption value="me">Assigned to me</NativeSelectOption>
+          <NativeSelectOption value="unassigned">Unassigned</NativeSelectOption>
+          <NativeSelectOption value="mentions">Mentions me{unreadMentions > 0 ? ` (${unreadMentions} new)` : ""}</NativeSelectOption>
+        </NativeSelect>
+        {tags.length > 0 && (
+          <NativeSelect className="w-full" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} aria-label="Tag filter">
+            <NativeSelectOption value="">Any tag</NativeSelectOption>
+            {tags.map((t) => (
+              <NativeSelectOption key={t.id} value={t.name}>{t.name}</NativeSelectOption>
+            ))}
+          </NativeSelect>
         )}
         {(topics.length > 0 || topicFilter) && (
-          <select className="filter" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} aria-label="Topic filter">
-            <option value="">Any topic</option>
+          <NativeSelect className="w-full" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} aria-label="Topic filter">
+            <NativeSelectOption value="">Any topic</NativeSelectOption>
             {topics.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
+              <NativeSelectOption key={t.id} value={t.id}>{t.name}</NativeSelectOption>
             ))}
-            {topicFilter && !topics.some((t) => t.id === topicFilter) && <option value={topicFilter}>Topic not found</option>}
-          </select>
+            {topicFilter && !topics.some((t) => t.id === topicFilter) && <NativeSelectOption value={topicFilter}>Topic not found</NativeSelectOption>}
+          </NativeSelect>
         )}
-        <select
-          className="filter"
+        <NativeSelect
+          className="w-full"
           value={ratingFilter}
           onChange={(e) => {
             const next = e.target.value as RatingFilter;
@@ -227,10 +234,11 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
           }}
           aria-label="Rating filter"
         >
-          <option value="">Any rating</option>
-          <option value="good">Rated 👍 Good</option>
-          <option value="bad">Rated 👎 Bad</option>
-        </select>
+          <NativeSelectOption value="">Any rating</NativeSelectOption>
+          <NativeSelectOption value="good">Rated 👍 Good</NativeSelectOption>
+          <NativeSelectOption value="bad">Rated 👎 Bad</NativeSelectOption>
+        </NativeSelect>
+        </div>
         {list === null || shown === null ? (
           <p className="muted small pad">Loading…</p>
         ) : shown.length === 0 && search.trim() ? (
@@ -434,28 +442,23 @@ function Thread({
           </div>
         </div>
         <span className="spacer" />
-        <select value={conversation.assigneeId ?? ""} onChange={(e) => void update({ assigneeId: e.target.value || null })} aria-label="Assignee">
-          <option value="">Unassigned</option>
+        <NativeSelect size="sm" value={conversation.assigneeId ?? ""} onChange={(e) => void update({ assigneeId: e.target.value || null })} aria-label="Assignee">
+          <NativeSelectOption value="">Unassigned</NativeSelectOption>
           {members.map((m) => (
-            <option key={m.id} value={m.id}>{m.id === me.id ? `${m.name} (me)` : m.name}</option>
+            <NativeSelectOption key={m.id} value={m.id}>{m.id === me.id ? `${m.name} (me)` : m.name}</NativeSelectOption>
           ))}
-        </select>
-        <select value={conversation.status} onChange={(e) => void update({ status: e.target.value as ConversationStatus })} aria-label="Status">
-          <option value="open">Open</option>
-          <option value="pending">Pending</option>
-          <option value="snoozed">Snoozed</option>
-          <option value="resolved">Resolved</option>
-        </select>
-        {conversation.status !== "resolved" && <button className="small" onClick={() => void update({ status: "resolved" })}>Resolve</button>}
+        </NativeSelect>
+        <NativeSelect size="sm" value={conversation.status} onChange={(e) => void update({ status: e.target.value as ConversationStatus })} aria-label="Status">
+          <NativeSelectOption value="open">Open</NativeSelectOption>
+          <NativeSelectOption value="pending">Pending</NativeSelectOption>
+          <NativeSelectOption value="snoozed">Snoozed</NativeSelectOption>
+          <NativeSelectOption value="resolved">Resolved</NativeSelectOption>
+        </NativeSelect>
+        {conversation.status !== "resolved" && <Button size="sm" onClick={() => void update({ status: "resolved" })}>Resolve</Button>}
         <span className="issue-button">
-          <button
-            className="ghost small"
-            disabled={configuredProviders(trackers).length === 0}
-            title={configuredProviders(trackers).length ? "Draft an issue from this conversation" : "Connect GitHub or Linear in Settings first"}
-            onClick={() => setIssueOpen(true)}
-          >
+          <Button variant="outline" size="sm" disabled={configuredProviders(trackers).length === 0} title={configuredProviders(trackers).length ? "Draft an issue from this conversation" : "Connect GitHub or Linear in Settings first"} onClick={() => setIssueOpen(true)}>
             Create issue
-          </button>
+          </Button>
           {trackers && configuredProviders(trackers).length === 0 && (
             <a className="small" href="/settings#issue-trackers" onClick={(e) => { e.preventDefault(); navigate("/settings#issue-trackers"); }}>Set up</a>
           )}
@@ -491,21 +494,21 @@ function Thread({
             Created <a href={created.issue.url} target="_blank" rel="noreferrer">{created.issue.key}</a>
             {created.notice && <span className="error"> · {created.notice}</span>}
           </span>
-          <button className="ghost small" aria-label="Dismiss" onClick={() => setCreated(null)}>×</button>
+          <Button variant="outline" size="sm" aria-label="Dismiss" onClick={() => setCreated(null)}>×</Button>
         </div>
       )}
       {conversation.handling === "ai" ? (
         <div className="ai-banner small">
           <span>🤖 The AI assistant is answering this conversation. Replying yourself takes it over.</span>
           <span className="spacer" />
-          <button className="ghost small" onClick={() => void update({ handling: "human" })}>Take over</button>
+          <Button variant="outline" size="sm" onClick={() => void update({ handling: "human" })}>Take over</Button>
         </div>
       ) : (
         thread.messages.some((m) => m.authorType === "ai") && (
           <div className="ai-banner small muted">
             <span>A teammate is handling this conversation.</span>
             <span className="spacer" />
-            <button className="ghost small" onClick={() => void update({ handling: "ai" })}>Hand back to AI</button>
+            <Button variant="outline" size="sm" onClick={() => void update({ handling: "ai" })}>Hand back to AI</Button>
           </div>
         )
       )}
@@ -558,12 +561,12 @@ function TagEditor({ tags, known, onChange, adding, setAdding }: { tags: string[
       {tags.map((t) => (
         <span key={t} className="chip tag-chip">
           {t}
-          <button className="link" aria-label={`Remove tag ${t}`} onClick={() => onChange(tags.filter((x) => x !== t))}>×</button>
+          <Button variant="link" size="xs" aria-label={`Remove tag ${t}`} onClick={() => onChange(tags.filter((x) => x !== t))}>×</Button>
         </span>
       ))}
       {adding ? (
         <form onSubmit={(e) => { e.preventDefault(); add(); }}>
-          <input
+          <Input
             autoFocus
             list="known-tags"
             value={value}
@@ -584,7 +587,7 @@ function TagEditor({ tags, known, onChange, adding, setAdding }: { tags: string[
           </datalist>
         </form>
       ) : (
-        <button className="link" onClick={() => setAdding(true)}>+ Tag</button>
+        <Button variant="link" onClick={() => setAdding(true)}>+ Tag</Button>
       )}
     </div>
   );

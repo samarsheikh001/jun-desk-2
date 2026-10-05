@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
+import { Card } from "@/components/ui/card.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { Textarea } from "@/components/ui/textarea.tsx";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 
 interface SavedReplyRow { id: string; title: string; body: string }
 interface TagRow { id: string; name: string; conversations: number }
@@ -30,11 +35,11 @@ export function SavedRepliesPanel({ workspaceId }: { workspaceId: string }) {
 
   const current = editing && editing !== "new" ? replies.find((r) => r.id === editing) : undefined;
   return (
-    <section className="panel">
+    <Card className="panel">
       <div className="row">
         <h2>Saved replies</h2>
         <span className="spacer" />
-        {editing === null && <button className="ghost small" onClick={() => setEditing("new")}>New saved reply</button>}
+        {editing === null && <Button variant="outline" size="sm" onClick={() => setEditing("new")}>New saved reply</Button>}
       </div>
       <p className="muted small">
         Answers your team sends often. Type <code>/</code> in the reply box to search them. <code>{"{first_name}"}</code> becomes the customer's first name and{" "}
@@ -42,11 +47,11 @@ export function SavedRepliesPanel({ workspaceId }: { workspaceId: string }) {
       </p>
       {editing !== null && (
         <form className="stack" onSubmit={save} key={editing}>
-          <input name="title" required maxLength={80} placeholder="Title, e.g. Refund policy" aria-label="Saved reply title" defaultValue={current?.title ?? ""} />
-          <textarea name="body" required maxLength={5000} rows={4} placeholder="Hi {first_name}, …" aria-label="Saved reply text" defaultValue={current?.body ?? ""} />
+          <Input name="title" required maxLength={80} placeholder="Title, e.g. Refund policy" aria-label="Saved reply title" defaultValue={current?.title ?? ""} />
+          <Textarea name="body" required maxLength={5000} rows={4} placeholder="Hi {first_name}, …" aria-label="Saved reply text" defaultValue={current?.body ?? ""} />
           <div className="row">
-            <button disabled={busy}>Save</button>
-            <button type="button" className="ghost" onClick={() => setEditing(null)}>Cancel</button>
+            <Button disabled={busy}>Save</Button>
+            <Button variant="outline" type="button" onClick={() => setEditing(null)}>Cancel</Button>
           </div>
         </form>
       )}
@@ -58,13 +63,13 @@ export function SavedRepliesPanel({ workspaceId }: { workspaceId: string }) {
               <span className="strong">{r.title}</span>
               <span className="muted small clip">{r.body}</span>
               <span className="spacer" />
-              <button className="ghost small" onClick={() => setEditing(r.id)}>Edit</button>
-              <button className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`${base}/${r.id}`, { method: "DELETE" }); await load(); })}>Delete</button>
+              <Button variant="outline" size="sm" onClick={() => setEditing(r.id)}>Edit</Button>
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api(`${base}/${r.id}`, { method: "DELETE" }); await load(); })}>Delete</Button>
             </li>
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -79,7 +84,7 @@ export function TagsPanel({ workspaceId, canEdit }: { workspaceId: string; canEd
   }, [load]);
 
   return (
-    <section className="panel">
+    <Card className="panel">
       <h2>Tags</h2>
       <p className="muted small">Add tags from a conversation's header ("+ Tag") and filter the inbox by them. Visitors never see tags.</p>
       {error && <p className="error small">{error}</p>}
@@ -94,24 +99,17 @@ export function TagsPanel({ workspaceId, canEdit }: { workspaceId: string; canEd
               <span className="spacer" />
               {canEdit && (
                 <>
-                  <button
-                    className="ghost small"
-                    disabled={busy}
-                    onClick={() => {
-                      const name = window.prompt("Rename tag", t.name);
-                      if (name && name !== t.name) run(async () => { await api(`${base}/${t.id}`, { method: "PATCH", body: { name } }); await load(); });
-                    }}
-                  >
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => { const name = window.prompt("Rename tag", t.name); if (name && name !== t.name) run(async () => { await api(`${base}/${t.id}`, { method: "PATCH", body: { name } }); await load(); }); }}>
                     Rename
-                  </button>
-                  <button className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); })}>Delete</button>
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); })}>Delete</Button>
                 </>
               )}
             </li>
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -128,7 +126,7 @@ export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; can
   const [merging, setMerging] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const { busy, error, run } = useAction();
-  const ref = useRef<HTMLElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
   const load = useCallback(async () => {
     const r = await api<{ topics: TopicRow[]; max: number }>(base);
     setTopics(r.topics);
@@ -159,11 +157,11 @@ export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; can
     });
 
   return (
-    <section className="panel" id="topics" ref={ref}>
+    <Card className="panel" id="topics" ref={ref}>
       <div className="row">
         <h2>Topics</h2>
         <span className="spacer" />
-        {canEdit && <button className="ghost small" disabled={busy} onClick={labelNow}>{busy ? "Working…" : "Label now"}</button>}
+        {canEdit && <Button variant="outline" size="sm" disabled={busy} onClick={labelNow}>{busy ? "Working…" : "Label now"}</Button>}
       </div>
       <p className="muted small">
         The AI gives each chat a short topic once it's resolved or quiet for 10 minutes, reusing these when one fits (up to {max}). See them in Reports and filter the inbox by them. Visitors never see topics.
@@ -181,7 +179,7 @@ export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; can
               </span>
               {canEdit && merging === t.id ? (
                 <span className="topic-actions">
-                  <select
+                  <NativeSelect
                     aria-label={`Merge ${t.name} into`}
                     defaultValue=""
                     disabled={busy}
@@ -190,42 +188,27 @@ export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; can
                       if (into) run(async () => { await api(`${base}/${t.id}/merge`, { body: { into } }); setMerging(null); await load(); });
                     }}
                   >
-                    <option value="" disabled>Merge into…</option>
-                    {topics.filter((o) => o.id !== t.id).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                  </select>
-                  <button className="ghost small" onClick={() => setMerging(null)}>Cancel</button>
+                    <NativeSelectOption value="" disabled>Merge into…</NativeSelectOption>
+                    {topics.filter((o) => o.id !== t.id).map((o) => <NativeSelectOption key={o.id} value={o.id}>{o.name}</NativeSelectOption>)}
+                  </NativeSelect>
+                  <Button variant="outline" size="sm" onClick={() => setMerging(null)}>Cancel</Button>
                 </span>
               ) : canEdit && (
                 <span className="topic-actions">
-                  <button
-                    className="ghost small"
-                    disabled={busy}
-                    onClick={() => {
-                      const name = window.prompt("Rename topic", t.name);
-                      if (name && name !== t.name) run(async () => { await api(`${base}/${t.id}`, { method: "PATCH", body: { name } }); await load(); });
-                    }}
-                  >
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => { const name = window.prompt("Rename topic", t.name); if (name && name !== t.name) run(async () => { await api(`${base}/${t.id}`, { method: "PATCH", body: { name } }); await load(); }); }}>
                     Rename
-                  </button>
-                  {topics.length > 1 && <button className="ghost small" disabled={busy} onClick={() => setMerging(t.id)}>Merge</button>}
-                  <button
-                    className="ghost small"
-                    disabled={busy}
-                    onClick={() => {
-                      if (window.confirm(`Delete "${t.name}"? Its ${t.conversations} conversation${t.conversations === 1 ? "" : "s"} will be labelled again later.`)) {
-                        run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); });
-                      }
-                    }}
-                  >
+                  </Button>
+                  {topics.length > 1 && <Button variant="outline" size="sm" disabled={busy} onClick={() => setMerging(t.id)}>Merge</Button>}
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => { if (window.confirm(`Delete "${t.name}"? Its ${t.conversations} conversation${t.conversations === 1 ? "" : "s"} will be labelled again later.`)) { run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); }); } }}>
                     Delete
-                  </button>
+                  </Button>
                 </span>
               )}
             </li>
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -261,7 +244,7 @@ export function AssignmentPanel({ workspaceId, canEdit }: { workspaceId: string;
   };
 
   return (
-    <section className="panel" id="assignment">
+    <Card className="panel" id="assignment">
       <h2>Assignment</h2>
       <p className="muted small">When the AI hands a chat to the team, or a new chat comes in while the AI is off.</p>
       <form onSubmit={save} className="stack">
@@ -274,18 +257,18 @@ export function AssignmentPanel({ workspaceId, canEdit }: { workspaceId: string;
         {mode === "round_robin" && (
           <label className="field">
             <span>Most open chats per teammate <span className="muted">(0 = no limit)</span></span>
-            <input type="number" min={0} max={100} step={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} disabled={!canEdit} />
+            <Input type="number" min={0} max={100} step={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} disabled={!canEdit} />
           </label>
         )}
         {mode === "round_robin" && <p className="muted small">If nobody's online or everyone is at the limit, the chat stays in Unassigned. Assigning someone by hand always wins.</p>}
         {error && <p className="error small">{error}</p>}
         {canEdit && (
           <div className="row">
-            <button disabled={busy || !changed}>Save</button>
+            <Button disabled={busy || !changed}>Save</Button>
             {done && <span className="ok-text small">Saved</span>}
           </div>
         )}
       </form>
-    </section>
+    </Card>
   );
 }

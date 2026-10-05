@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { DEFAULT_AWAY_MESSAGE, describeOpening, isOpen, nextOpening, WEEKDAYS, type BusinessHours, type DayHours, type Weekday } from "../../shared/hours.ts";
 import { api, ApiError } from "../api.ts";
 import { useAction } from "../useAction.ts";
+import { Card } from "@/components/ui/card.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { Textarea } from "@/components/ui/textarea.tsx";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 
 // W-04 widget appearance and I-10 business hours (Settings).
 
@@ -69,29 +74,29 @@ export function AppearancePanel({ workspaceId, widgetKey, workspaceName, setting
   const logo = settings.logoKey ? `/api/widget/${widgetKey}/logo?v=${settings.logoKey}` : null;
 
   return (
-    <section className="panel">
+    <Card className="panel">
       <h2>Widget appearance</h2>
       <p className="muted small">Changes show on your site within a minute; no need to update the snippet.</p>
       <div className="appearance">
         <form onSubmit={save} className="ai-form">
           <label className="field">
             <span>Name shown in the chat</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={workspaceName} maxLength={80} disabled={!canEdit} />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={workspaceName} maxLength={80} disabled={!canEdit} />
           </label>
           <label className="field">
             <span>Greeting</span>
-            <input value={greeting} onChange={(e) => setGreeting(e.target.value)} placeholder="Hi! How can we help?" maxLength={200} disabled={!canEdit} />
+            <Input value={greeting} onChange={(e) => setGreeting(e.target.value)} placeholder="Hi! How can we help?" maxLength={200} disabled={!canEdit} />
           </label>
           <label className="field">
             <span>Reply time</span>
-            <input value={replyTime} onChange={(e) => setReplyTime(e.target.value)} placeholder="We usually reply in a few minutes" maxLength={80} disabled={!canEdit} />
+            <Input value={replyTime} onChange={(e) => setReplyTime(e.target.value)} placeholder="We usually reply in a few minutes" maxLength={80} disabled={!canEdit} />
           </label>
           <div className="row">
             <label className="field">
               <span>Colour</span>
               <span className="row">
                 <input type="color" value={color} onChange={(e) => setColor(e.target.value)} disabled={!canEdit} aria-label="Brand colour" />
-                <input value={color} onChange={(e) => setColor(e.target.value)} pattern="#[0-9a-fA-F]{6}" style={{ width: 100 }} disabled={!canEdit} aria-label="Brand colour (hex)" />
+                <Input value={color} onChange={(e) => setColor(e.target.value)} pattern="#[0-9a-fA-F]{6}" style={{ width: 100 }} disabled={!canEdit} aria-label="Brand colour (hex)" />
               </span>
             </label>
             <fieldset className="field" disabled={!canEdit}>
@@ -107,7 +112,7 @@ export function AppearancePanel({ workspaceId, widgetKey, workspaceName, setting
             <span className="row">
               {logo && <img src={logo} alt="Current logo" className="logo-thumb" />}
               {canEdit && <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLogo(f); e.target.value = ""; }} aria-label="Upload logo" />}
-              {canEdit && logo && <button type="button" className="ghost small" disabled={busy} onClick={() => run(async () => onSaved((await api<{ settings: InboxSettings }>(`/workspaces/${workspaceId}/inbox/logo`, { method: "DELETE" })).settings))}>Remove</button>}
+              {canEdit && logo && <Button variant="outline" size="sm" type="button" disabled={busy} onClick={() => run(async () => onSaved((await api<{ settings: InboxSettings }>(`/workspaces/${workspaceId}/inbox/logo`, { method: "DELETE" })).settings))}>Remove</Button>}
             </span>
           </div>
           <label className="check small">
@@ -115,7 +120,7 @@ export function AppearancePanel({ workspaceId, widgetKey, workspaceName, setting
             Ask "How did we do?" when a conversation is resolved
           </label>
           {error && <p className="error small">{error}</p>}
-          {canEdit && <div className="row"><button disabled={busy}>Save</button>{saved && <span className="muted small">Saved ✓</span>}</div>}
+          {canEdit && <div className="row"><Button disabled={busy}>Save</Button>{saved && <span className="muted small">Saved ✓</span>}</div>}
         </form>
         <div className={`wpreview ${position}`} aria-label="Preview">
           <div className="wpreview-frame">
@@ -134,7 +139,7 @@ export function AppearancePanel({ workspaceId, widgetKey, workspaceName, setting
           <div className="wpreview-btn" style={{ background: color, color: textOn }}>💬</div>
         </div>
       </div>
-    </section>
+    </Card>
   );
 }
 
@@ -185,7 +190,7 @@ export function HoursPanel({ workspaceId, settings, canEdit, onSaved }: { worksp
   };
 
   return (
-    <section className="panel">
+    <Card className="panel">
       <div className="row">
         <h2>Business hours</h2>
         <span className="spacer" />
@@ -196,9 +201,9 @@ export function HoursPanel({ workspaceId, settings, canEdit, onSaved }: { worksp
         <label className="check"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} disabled={!canEdit} /> Use business hours</label>
         <label className="field">
           <span>Time zone</span>
-          <select value={timezone} onChange={(e) => setTimezone(e.target.value)} disabled={!canEdit}>
-            {zones().map((z) => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}
-          </select>
+          <NativeSelect value={timezone} onChange={(e) => setTimezone(e.target.value)} disabled={!canEdit}>
+            {zones().map((z) => <NativeSelectOption key={z} value={z}>{z.replace(/_/g, " ")}</NativeSelectOption>)}
+          </NativeSelect>
         </label>
         <div className="hours-grid">
           {ALL_DAYS.map((d) => {
@@ -210,9 +215,9 @@ export function HoursPanel({ workspaceId, settings, canEdit, onSaved }: { worksp
                 </label>
                 {v ? (
                   <>
-                    <input type="time" value={v.start} disabled={!canEdit} onChange={(e) => setDays({ ...days, [d]: { ...v, start: e.target.value } })} aria-label={`${WEEKDAYS[d]} opens`} />
+                    <Input type="time" value={v.start} disabled={!canEdit} onChange={(e) => setDays({ ...days, [d]: { ...v, start: e.target.value } })} aria-label={`${WEEKDAYS[d]} opens`} />
                     <span className="muted">to</span>
-                    <input type="time" value={v.end === "24:00" ? "23:59" : v.end} disabled={!canEdit} onChange={(e) => setDays({ ...days, [d]: { ...v, end: e.target.value === "23:59" ? "24:00" : e.target.value } })} aria-label={`${WEEKDAYS[d]} closes`} />
+                    <Input type="time" value={v.end === "24:00" ? "23:59" : v.end} disabled={!canEdit} onChange={(e) => setDays({ ...days, [d]: { ...v, end: e.target.value === "23:59" ? "24:00" : e.target.value } })} aria-label={`${WEEKDAYS[d]} closes`} />
                   </>
                 ) : (
                   <span className="muted small">Closed</span>
@@ -223,11 +228,11 @@ export function HoursPanel({ workspaceId, settings, canEdit, onSaved }: { worksp
         </div>
         <label className="field">
           <span>Away message <span className="muted">({"{when}"} becomes e.g. "on Monday at 09:00 (London time)")</span></span>
-          <textarea rows={2} value={away} onChange={(e) => setAway(e.target.value)} maxLength={500} disabled={!canEdit} />
+          <Textarea rows={2} value={away} onChange={(e) => setAway(e.target.value)} maxLength={500} disabled={!canEdit} />
         </label>
         {error && <p className="error small">{error}</p>}
-        {canEdit && <div className="row"><button disabled={busy}>Save</button>{saved && <span className="muted small">Saved ✓</span>}</div>}
+        {canEdit && <div className="row"><Button disabled={busy}>Save</Button>{saved && <span className="muted small">Saved ✓</span>}</div>}
       </form>
-    </section>
+    </Card>
   );
 }

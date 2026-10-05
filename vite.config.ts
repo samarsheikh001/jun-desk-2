@@ -1,7 +1,8 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { minifySync } from "rolldown/utils";
 import { defineConfig, type Plugin } from "vite";
 
@@ -31,11 +32,15 @@ function minifyLoader(): Plugin {
 export default defineConfig({
   // JUN_STATE_DIR gives a separate local database (used by the e2e tests so they don't
   // touch your own local desk). Pair with `wrangler ... --persist-to` on the same path.
-  plugins: [react(), minifyLoader(), cloudflare(process.env.JUN_STATE_DIR ? { persistState: { path: process.env.JUN_STATE_DIR } } : {})],
+  // Tailwind (shadcn/ui) only processes CSS that imports it: web/desk.css, the dashboard's sheet.
+  // The widget frame keeps its own plain CSS (web/styles.css + web/widget/widget.css).
+  plugins: [react(), tailwindcss(), minifyLoader(), cloudflare(process.env.JUN_STATE_DIR ? { persistState: { path: process.env.JUN_STATE_DIR } } : {})],
   // Listen on 127.0.0.1: dev-only "Sign in with ChatGPT" must return to a 127.0.0.1
   // loopback URL (OpenAI forbids substituting localhost), and on Windows Vite would
   // otherwise bind IPv6 only. http://localhost:5173 still works in browsers.
   server: { host: "127.0.0.1" },
+  // shadcn/ui imports: "@/components/ui/…", "@/lib/utils.ts".
+  resolve: { alias: { "@": resolve(import.meta.dirname, "web") } },
   // Only the browser build has two pages; the Worker build keeps its own entry.
   environments: {
     client: {

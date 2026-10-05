@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState, type FormEvent, type InputHTMLAttribu
 import { api, describeError, registerPasskey, signInWithPasskey, type Me } from "./api.ts";
 import { Shell } from "./Shell.tsx";
 import { useAction } from "./useAction.ts";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { Card as UiCard } from "@/components/ui/card.tsx";
+import { DeskIcon } from "./components/DeskIcon.tsx";
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -32,12 +36,12 @@ export function App() {
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
     <main className="center">
-      <div className="card">
-        <div className="brand">Jun Desk</div>
+      <UiCard className="auth-card w-full max-w-[416px] gap-0 p-6">
+        <div className="brand"><DeskIcon /><span>Jun Desk</span></div>
         <h1>{title}</h1>
         {subtitle && <p className="muted">{subtitle}</p>}
         {children}
-      </div>
+      </UiCard>
     </main>
   );
 }
@@ -46,7 +50,7 @@ function Field({ label, hint, ...props }: { label: string; hint?: string } & Inp
   return (
     <label className="field">
       <span>{label}</span>
-      <input {...props} />
+      <Input {...props} />
       {hint && <small className="muted">{hint}</small>}
     </label>
   );
@@ -72,7 +76,7 @@ function SetupPage({ onDone }: { onDone: () => void }) {
         <Field label="Your name" name="name" required autoComplete="name" />
         <Field label="Email" name="email" type="email" required autoComplete="email" />
         {error && <p className="error">{error}</p>}
-        <button disabled={busy}>{busy ? "Waiting for passkey…" : "Create passkey and finish setup"}</button>
+        <Button disabled={busy}>{busy ? "Waiting for passkey…" : "Create passkey and finish setup"}</Button>
       </form>
     </Card>
   );
@@ -83,9 +87,9 @@ function LoginPage({ onDone }: { onDone: () => void }) {
   return (
     <Card title="Sign in" subtitle="Use the passkey you created for this desk.">
       {error && <p className="error">{error}</p>}
-      <button disabled={busy} onClick={() => run(async () => { await signInWithPasskey(); onDone(); })}>
+      <Button disabled={busy} onClick={() => run(async () => { await signInWithPasskey(); onDone(); })}>
         {busy ? "Waiting for passkey…" : "Sign in with passkey"}
-      </button>
+      </Button>
       <p className="muted small">New here? Ask your workspace admin for an invite link. Each person creates their own passkey.</p>
       <p className="muted small">Owner lost access to every passkey? <a href="/recover">Recover with the setup token</a></p>
     </Card>
@@ -107,7 +111,7 @@ function RecoverPage({ onDone }: { onDone: () => void }) {
       <form onSubmit={submit}>
         <Field label="Setup token" name="token" type="password" required autoComplete="off" />
         {error && <p className="error">{error}</p>}
-        <button disabled={busy}>{busy ? "Waiting for passkey…" : "Add a new passkey"}</button>
+        <Button disabled={busy}>{busy ? "Waiting for passkey…" : "Add a new passkey"}</Button>
       </form>
       <p className="muted small"><a href="/">Back to sign in</a></p>
     </Card>
@@ -138,7 +142,7 @@ function InvitePage({ token, onDone }: { token: string; onDone: () => void }) {
         <Field label="Your name" name="name" required autoComplete="name" />
         <Field label="Email" name="email" type="email" required autoComplete="email" />
         {error && <p className="error">{error}</p>}
-        <button disabled={busy}>{busy ? "Waiting for passkey…" : "Create passkey and join"}</button>
+        <Button disabled={busy}>{busy ? "Waiting for passkey…" : "Create passkey and join"}</Button>
       </form>
     </Card>
   );

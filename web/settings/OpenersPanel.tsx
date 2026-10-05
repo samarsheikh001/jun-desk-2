@@ -2,6 +2,9 @@ import { useState } from "react";
 import { MAX_DELAY_S, MAX_OPENER_HINT, MAX_OPENER_TEXT, MAX_OPENERS, MIN_DELAY_S, patternError, type OpenerRule } from "../../shared/openers.ts";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 
 // P-01 page openers (owners/admins): "after 20 s on /pricing, offer a chat". Mounted once the
 // inbox settings have loaded; `initial` only seeds the form.
@@ -53,38 +56,38 @@ export function OpenersPanel({ workspaceId, proactive, initial }: { workspaceId:
             <div className="row opener-when">
               <label className="field">
                 <span className="small">Page</span>
-                <input value={d.path} onChange={(e) => change(i, { path: e.target.value })} placeholder="/pricing" aria-invalid={Boolean(pathProblem)} />
+                <Input value={d.path} onChange={(e) => change(i, { path: e.target.value })} placeholder="/pricing" aria-invalid={Boolean(pathProblem)} />
               </label>
               <label className="field opener-delay">
                 <span className="small">After (seconds)</span>
-                <input type="number" min={MIN_DELAY_S} max={MAX_DELAY_S} value={d.delay} onChange={(e) => change(i, { delay: e.target.value })} />
+                <Input type="number" min={MIN_DELAY_S} max={MAX_DELAY_S} value={d.delay} onChange={(e) => change(i, { delay: e.target.value })} />
               </label>
               <label className="field">
                 <span className="small">Message</span>
-                <select value={d.ai ? "ai" : "text"} onChange={(e) => change(i, { ai: e.target.value === "ai" })}>
-                  <option value="text">Fixed text</option>
-                  <option value="ai">Let the AI write it</option>
-                </select>
+                <NativeSelect value={d.ai ? "ai" : "text"} onChange={(e) => change(i, { ai: e.target.value === "ai" })}>
+                  <NativeSelectOption value="text">Fixed text</NativeSelectOption>
+                  <NativeSelectOption value="ai">Let the AI write it</NativeSelectOption>
+                </NativeSelect>
               </label>
-              <button className="ghost small" disabled={busy} onClick={() => setDrafts((list) => list.filter((_, j) => j !== i))} aria-label={`Remove opener ${i + 1}`}>Remove</button>
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => setDrafts((list) => list.filter((_, j) => j !== i))} aria-label={`Remove opener ${i + 1}`}>Remove</Button>
             </div>
             {pathProblem && <small className="error">{pathProblem}</small>}
             {d.ai ? (
-              <input value={d.hint} maxLength={MAX_OPENER_HINT} onChange={(e) => change(i, { hint: e.target.value })} placeholder="Optional: what to offer, e.g. help choosing between Team and Business" />
+              <Input value={d.hint} maxLength={MAX_OPENER_HINT} onChange={(e) => change(i, { hint: e.target.value })} placeholder="Optional: what to offer, e.g. help choosing between Team and Business" />
             ) : (
-              <input value={d.text} maxLength={MAX_OPENER_TEXT} onChange={(e) => change(i, { text: e.target.value })} placeholder="Comparing plans? Happy to help you pick one." />
+              <Input value={d.text} maxLength={MAX_OPENER_TEXT} onChange={(e) => change(i, { text: e.target.value })} placeholder="Comparing plans? Happy to help you pick one." />
             )}
             {d.ai && <small className="muted">The AI writes one friendly line from the page's title and your hint (the same line for everyone on that page; a generic line if the AI is off).</small>}
           </div>
         );
       })}
       <div className="row">
-        <button className="ghost small" disabled={busy || drafts.length >= MAX_OPENERS} onClick={() => setDrafts((list) => [...list, { path: "", delay: "30", ai: false, text: "", hint: "" }])}>
+        <Button variant="outline" size="sm" disabled={busy || drafts.length>= MAX_OPENERS} onClick={() => setDrafts((list) => [...list, { path: "", delay: "30", ai: false, text: "", hint: "" }])}>
           Add opener
-        </button>
+        </Button>
         <span className="spacer" />
         {done && <span className="muted small">Saved ✓</span>}
-        <button className="small" disabled={busy || !dirty} onClick={save}>Save openers</button>
+        <Button size="sm" disabled={busy || !dirty} onClick={save}>Save openers</Button>
       </div>
       {error && <p className="error small">{error}</p>}
     </div>

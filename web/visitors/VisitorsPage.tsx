@@ -2,6 +2,10 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { LiveVisitor } from "../../shared/protocol.ts";
 import { api, describeError } from "../api.ts";
 import { describeBrowser } from "../../shared/debug.ts";
+import { Card } from "@/components/ui/card.tsx";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
 
 // V-01 live visitors and V-07 agent-started chats. The list itself comes from the workspace
 // hub socket (Shell keeps it), so it updates as people browse.
@@ -51,9 +55,9 @@ function InviteForm({ workspaceId, visitor, onDone }: { workspaceId: string; vis
   };
   return (
     <form className="visitor-invite" onSubmit={submit}>
-      <input name="body" autoFocus maxLength={1000} defaultValue={`Hi${name ? ` ${name}` : ""}! Can I help you with anything${visitor.page.title ? ` on ${visitor.page.title}` : ""}?`} />
-      <button disabled={busy}>Send</button>
-      <button type="button" className="ghost" onClick={() => onDone(false)}>Cancel</button>
+      <Input name="body" autoFocus maxLength={1000} defaultValue={`Hi${name ? ` ${name}` : ""}! Can I help you with anything${visitor.page.title ? ` on ${visitor.page.title}` : ""}?`} />
+      <Button disabled={busy}>Send</Button>
+      <Button variant="outline" type="button" onClick={() => onDone(false)}>Cancel</Button>
       {error && <span className="error small">{error}</span>}
     </form>
   );
@@ -72,7 +76,7 @@ export function VisitorsPage({ workspaceId, visitors }: { workspaceId: string; v
 
   return (
     <div className="content wide">
-      <section className="panel">
+      <Card className="panel">
         <div className="row">
           <h2>Visitors on your site</h2>
           <span className="tag">{visitors.length} live</span>
@@ -81,20 +85,20 @@ export function VisitorsPage({ workspaceId, visitors }: { workspaceId: string; v
         {sorted.length === 0 ? (
           <p className="muted">Nobody right now. Open your site (or the demo page from Settings) in another tab to see yourself here.</p>
         ) : (
-          <table className="visitors">
-            <thead>
-              <tr>
-                <th>Visitor</th>
-                <th>Page</th>
-                <th>From</th>
-                <th>On site</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="visitors">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Visitor</TableHead>
+                <TableHead>Page</TableHead>
+                <TableHead>From</TableHead>
+                <TableHead>On site</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {sorted.map((v) => (
-                <tr key={v.sessionId}>
-                  <td>
+                <TableRow key={v.sessionId}>
+                  <TableCell>
                     <div className="strong">
                       {v.contact?.name ?? v.contact?.email ?? sessionLabel(v.sessionId)}
                       {v.contact?.verified && <span className="verified" title="Identity verified by your site">✓</span>}
@@ -103,29 +107,29 @@ export function VisitorsPage({ workspaceId, visitors }: { workspaceId: string; v
                       {v.contact?.name && v.contact.email ? `${v.contact.email} · ` : ""}
                       {flag(v.country)} {[v.city, v.country].filter(Boolean).join(", ") || "Unknown location"} · {describeBrowser(v.userAgent)}
                     </div>
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     <div>{v.page.title || "Untitled page"}</div>
                     <div className="muted small"><code>{pathOf(v.page.url)}</code></div>
-                  </td>
-                  <td className="small">{v.referrer ? <code>{pathOf(v.referrer)}</code> : <span className="muted">Direct</span>}</td>
-                  <td className="small">
+                  </TableCell>
+                  <TableCell className="small">{v.referrer ? <code>{pathOf(v.referrer)}</code> : <span className="muted">Direct</span>}</TableCell>
+                  <TableCell className="small">
                     {duration(now - v.startedAt)}
                     <div className="muted">{v.pages} page{v.pages === 1 ? "" : "s"}</div>
-                  </td>
-                  <td className="visitor-action">
+                  </TableCell>
+                  <TableCell className="visitor-action">
                     {v.inChat ? (
                       <span className="tag">In a chat</span>
                     ) : invited.has(v.sessionId) ? (
                       <span className="muted small">Invite sent</span>
                     ) : inviting === v.sessionId ? null : (
-                      <button className="ghost small" onClick={() => setInviting(v.sessionId)}>Start chat</button>
+                      <Button variant="outline" size="sm" onClick={() => setInviting(v.sessionId)}>Start chat</Button>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
         {inviting && sorted.some((v) => v.sessionId === inviting) && (
           <InviteForm
@@ -137,7 +141,7 @@ export function VisitorsPage({ workspaceId, visitors }: { workspaceId: string; v
             }}
           />
         )}
-      </section>
+      </Card>
     </div>
   );
 }

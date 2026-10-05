@@ -2,6 +2,9 @@ import { useEffect, useState, type MouseEvent } from "react";
 import { formatDuration, MAX_METRIC_CONVERSATIONS, METRIC_PERIODS, type DayPoint, type MetricPeriod, type MetricsReport } from "../../shared/metrics.ts";
 import { api, describeError } from "../api.ts";
 import { navigate } from "../lib/router.ts";
+import { Button } from "@/components/ui/button.tsx";
+import { Card } from "@/components/ui/card.tsx";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.tsx";
 
 // A-01: core metrics. Days are calendar days in the browser's time zone; the Worker
 // aggregates and shared/metrics.ts defines every number (see docs/features.md A-01, A-06).
@@ -21,11 +24,11 @@ const dayLabel = (key: string, weekday = false) =>
 
 function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <div className="stat">
+    <Card className="stat">
       <div className="muted small">{label}</div>
       <div className="stat-value">{value}</div>
       <div className="muted small">{detail}</div>
-    </div>
+    </Card>
   );
 }
 
@@ -37,13 +40,13 @@ const goTo = (path: string) => (e: MouseEvent) => {
 /** Stands in for "AI resolved" and "Handed off" while AI replies are off: nothing's wrong. */
 function AiOffStat() {
   return (
-    <div className="stat">
+    <Card className="stat">
       <div className="muted small">AI assistant</div>
       <div className="stat-value stat-off">Off</div>
       <div className="muted small">
         Your team answers every chat. <a href="/settings#ai-assistant" onClick={goTo("/settings#ai-assistant")}>Turn it on</a>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -75,7 +78,7 @@ function StartPages({ pages }: { pages: MetricsReport["pages"] }) {
   };
   const rest = pages.withPage - pages.top.reduce((s, p) => s + p.count, 0);
   return (
-    <section className="panel">
+    <Card className="panel">
       <div className="row panel-head">
         <h2>Pages where chats start</h2>
         <span className="spacer" />
@@ -104,7 +107,7 @@ function StartPages({ pages }: { pages: MetricsReport["pages"] }) {
           </p>
         </>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -116,7 +119,7 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
   const top = topics.list.slice(0, MAX_TOPICS_SHOWN);
   const rest = topics.list.length - top.length;
   return (
-    <section className="panel">
+    <Card className="panel">
       <div className="row panel-head">
         <h2>Top topics</h2>
         <span className="spacer" />
@@ -157,7 +160,7 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
           </p>
         </>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -245,7 +248,7 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
         <span className="spacer" />
         <div className="segmented" role="group" aria-label="Period">
           {METRIC_PERIODS.map((p) => (
-            <button key={p} className={p === days ? "active" : ""} aria-pressed={p === days} onClick={() => setDays(p)}>{p} days</button>
+            <Button key={p} variant="ghost" size="sm" className={p === days ? "active" : ""} aria-pressed={p === days} onClick={() => setDays(p)}>{p} days</Button>
           ))}
         </div>
       </div>
@@ -253,9 +256,9 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
       {!r ? (
         !error && <p className="muted">Loading…</p>
       ) : empty ? (
-        <section className="panel">
+        <Card className="panel">
           <p className="muted">No conversations in the last {days} days. Numbers show up here once visitors start chatting.</p>
-        </section>
+        </Card>
       ) : (
         <>
           {r.truncated && <p className="muted small">Based on the newest {MAX_METRIC_CONVERSATIONS.toLocaleString()} conversations in this period.</p>}
@@ -284,17 +287,17 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
               ` ${r.ai.passedWhileOff} chat${r.ai.passedWhileOff === 1 ? "" : "s"} reached the AI while it was off and went to the team; ${r.ai.passedWhileOff === 1 ? "it isn't" : "they aren't"} counted as handoffs.`}
           </p>
 
-          <section className="panel">
+          <Card className="panel">
             <h2>Conversations per day</h2>
             <DayChart series={r.conversations.series} showAi={!r.ai.off} />
-          </section>
+          </Card>
 
           <TopTopics topics={r.topics} showAi={!r.ai.off} aiEnabled={r.ai.enabled} />
 
           <StartPages pages={r.pages} />
 
           <div className="reports-grid">
-            {!r.ai.off && <section className="panel">
+            {!r.ai.off && <Card className="panel">
               <h2>Top handoff reasons</h2>
               {r.ai.reasons.length === 0 ? (
                 <p className="muted small">No handoffs in this period.</p>
@@ -311,8 +314,8 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
                   ))}
                 </ul>
               )}
-            </section>}
-            <section className="panel">
+            </Card>}
+            <Card className="panel">
               <h2>Recent 👎 comments</h2>
               {r.csat.badComments.length === 0 ? (
                 <p className="muted small">No comments on bad ratings in this period.</p>
@@ -328,33 +331,33 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
                   ))}
                 </ul>
               )}
-            </section>
+            </Card>
           </div>
 
-          <section className="panel">
+          <Card className="panel">
             <h2>Team</h2>
-            <table className="team-table">
-              <thead>
-                <tr>
-                  <th>Teammate</th>
-                  <th>Replies</th>
-                  <th>Conversations</th>
-                  <th>First response</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="team-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Teammate</TableHead>
+                  <TableHead>Replies</TableHead>
+                  <TableHead>Conversations</TableHead>
+                  <TableHead>First response</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {r.teammates.map((t) => (
-                  <tr key={t.userId}>
-                    <td className="strong">{t.name}</td>
-                    <td data-label="Replies">{t.replies}</td>
-                    <td data-label="Conversations">{t.conversations}</td>
-                    <td data-label="First response">{duration(t.firstResponse.median)}</td>
-                  </tr>
+                  <TableRow key={t.userId}>
+                    <TableCell className="strong">{t.name}</TableCell>
+                    <TableCell data-label="Replies">{t.replies}</TableCell>
+                    <TableCell data-label="Conversations">{t.conversations}</TableCell>
+                    <TableCell data-label="First response">{duration(t.firstResponse.median)}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
             <p className="muted small">Replies the teammate sent in this period (not notes), the conversations they replied in, and their median first response when they answered first.</p>
-          </section>
+          </Card>
         </>
       )}
     </div>

@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { api } from "./api.ts";
 import { navigate } from "./lib/router.ts";
 import { useAction } from "./useAction.ts";
+import { Card } from "@/components/ui/card.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 
 type ProviderId = "openai" | "workers-ai" | "chatgpt";
 type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge";
@@ -58,7 +62,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
     if (new URLSearchParams(window.location.search).get("chatgpt") === "connected") window.history.replaceState(null, "", "/settings");
   }, [load]);
   // Linked from Reports' "AI is off" card.
-  const panel = useRef<HTMLElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (state && window.location.hash === "#ai-assistant") panel.current?.scrollIntoView({ block: "start" });
   }, [state !== null]);
@@ -89,7 +93,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
   const providers: ProviderId[] = ["workers-ai", "openai", ...(state.devChatgpt.available || state.settings.provider === "chatgpt" ? (["chatgpt"] as const) : [])];
 
   return (
-    <section className="panel" id="ai-assistant" ref={panel}>
+    <Card className="panel" id="ai-assistant" ref={panel}>
       <div className="row">
         <h2>AI assistant</h2>
         <span className="spacer" />
@@ -104,11 +108,11 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
         </label>
         <label className="field">
           <span>Model provider</span>
-          <select value={provider} onChange={(e) => setProvider(e.target.value as ProviderId)} disabled={!canEdit}>
+          <NativeSelect value={provider} onChange={(e) => setProvider(e.target.value as ProviderId)} disabled={!canEdit}>
             {providers.map((p) => (
-              <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+              <NativeSelectOption key={p} value={p}>{PROVIDER_LABELS[p]}</NativeSelectOption>
             ))}
-          </select>
+          </NativeSelect>
         </label>
         {provider === "openai" && !state.openaiKeyConfigured && (
           <p className="small error">Set the <code>OPENAI_API_KEY</code> Worker secret (<code>npx wrangler secret put OPENAI_API_KEY</code>) to use OpenAI.</p>
@@ -121,34 +125,19 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
               <span>Not connected.</span>
             )}{" "}
             {canEdit && state.devChatgpt.available && (
-              <button type="button" className="ghost small" disabled={busy} onClick={() => run(async () => {
-                const { url, paste } = await api<{ url: string; paste: boolean }>(`${base}/chatgpt/start`, { body: {} });
-                if (!paste) {
-                  window.location.href = url;
-                  return;
-                }
-                window.open(url, "_blank", "noopener");
-                setPasting(true);
-              })}>
+              <Button variant="outline" size="sm" type="button" disabled={busy} onClick={() => run(async () => { const { url, paste } = await api<{ url: string; paste: boolean }>(`${base}/chatgpt/start`, { body: {} }); if (!paste) { window.location.href = url; return; } window.open(url, "_blank", "noopener"); setPasting(true); })}>
                 {state.devChatgpt.connected ? "Reconnect" : "Sign in with ChatGPT"}
-              </button>
+              </Button>
             )}
             {canEdit && state.devChatgpt.connected && (
-              <button type="button" className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`${base}/chatgpt`, { method: "DELETE" }); await load(); })}>Disconnect</button>
+              <Button variant="outline" size="sm" type="button" disabled={busy} onClick={() => run(async () => { await api(`${base}/chatgpt`, { method: "DELETE" }); await load(); })}>Disconnect</Button>
             )}
             {pasting && (
               <div className="stack chatgpt-paste">
                 <span>After you approve in the new tab, it ends on a page that doesn't load (<code>http://127.0.0.1:1455/auth/callback?…</code>). Copy that page's address and paste it here.</span>
                 <div className="row">
-                  <input name="callbackUrl" placeholder="http://127.0.0.1:1455/auth/callback?code=…" aria-label="Sign-in return address" autoComplete="off" />
-                  <button type="button" className="small" disabled={busy} onClick={(e) => {
-                    const input = e.currentTarget.parentElement?.querySelector("input");
-                    run(async () => {
-                      await api(`${base}/chatgpt/finish`, { body: { callbackUrl: input?.value ?? "" } });
-                      setPasting(false);
-                      await load();
-                    });
-                  }}>Finish</button>
+                  <Input name="callbackUrl" placeholder="http://127.0.0.1:1455/auth/callback?code=…" aria-label="Sign-in return address" autoComplete="off" />
+                  <Button size="sm" type="button" disabled={busy} onClick={(e) => { const input = e.currentTarget.parentElement?.querySelector("input"); run(async () => { await api(`${base}/chatgpt/finish`, { body: { callbackUrl: input?.value ?? "" } }); setPasting(false); await load(); }); }}>Finish</Button>
                 </div>
               </div>
             )}
@@ -157,7 +146,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
         )}
         <label className="field">
           <span>Model <span className="muted">(optional)</span></span>
-          <input name="model" value={model} onChange={(e) => setModel(e.target.value)} placeholder={state.defaults[provider]} disabled={!canEdit} />
+          <Input name="model" value={model} onChange={(e) => setModel(e.target.value)} placeholder={state.defaults[provider]} disabled={!canEdit} />
         </label>
         <details className="job-models" open={overrides > 0}>
           <summary className="small">Advanced: model per task{overrides > 0 ? ` (${overrides} set)` : ""}</summary>
@@ -168,9 +157,9 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
             </p>
             {canEdit && provider === "chatgpt" && (
               <div className="row">
-                <button type="button" className="ghost small" onClick={() => setModels(Object.fromEntries(FAST_JOBS.map((job) => [job, CHATGPT_FAST_MODEL])))}>
+                <Button variant="outline" size="sm" type="button" onClick={() => setModels(Object.fromEntries(FAST_JOBS.map((job) => [job, CHATGPT_FAST_MODEL])))}>
                   Suggested for ChatGPT
-                </button>
+                </Button>
                 <span className="muted small">{CHATGPT_FAST_MODEL} for the fast jobs; the rest stay on the model above.</span>
               </div>
             )}
@@ -178,7 +167,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
               {JOBS.map(({ job, label, hint }) => (
                 <label className="field" key={job}>
                   <span>{label}</span>
-                  <input
+                  <Input
                     name={`model-${job}`}
                     value={models[job] ?? ""}
                     onChange={(e) => setModels((m) => ({ ...m, [job]: e.target.value }))}
@@ -199,12 +188,12 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
         </p>
         <label className="field">
           <span>Monthly reply cap</span>
-          <input name="cap" type="number" min={0} defaultValue={state.settings.monthlyReplyCap} disabled={!canEdit} />
+          <Input name="cap" type="number" min={0} defaultValue={state.settings.monthlyReplyCap} disabled={!canEdit} />
           <small className="muted">When reached, chats go straight to your team. The assistant never just goes silent.</small>
         </label>
         {error && <p className="error">{error}</p>}
-        {canEdit && <div className="row"><button disabled={busy}>Save</button>{saved && <span className="muted small">Saved ✓</span>}</div>}
+        {canEdit && <div className="row"><Button disabled={busy}>Save</Button>{saved && <span className="muted small">Saved ✓</span>}</div>}
       </form>
-    </section>
+    </Card>
   );
 }

@@ -4,6 +4,9 @@ import type { ConversationIssue, IssueProvider } from "../../shared/protocol.ts"
 import { api, describeError } from "../api.ts";
 import { formatSize } from "../lib/thread.ts";
 import type { TrackerStatus } from "../settings/IssueTrackersPanel.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { Textarea } from "@/components/ui/textarea.tsx";
 
 interface Draft {
   title: string;
@@ -134,9 +137,9 @@ export function IssueDialog({ conversationId, trackers, onClose, onCreated }: { 
           {available.length > 1 ? (
             <span className="segmented" role="radiogroup" aria-label="Where to file it">
               {available.map((p) => (
-                <button key={p} type="button" role="radio" aria-checked={provider === p} className={provider === p ? "active" : ""} disabled={busy} onClick={() => pick(p)}>
+                <Button key={p} variant="ghost" size="sm" type="button" role="radio" aria-checked={provider === p} className={provider === p ? "active" : ""} disabled={busy} onClick={() => pick(p)}>
                   {NAMES[p]}
-                </button>
+                </Button>
               ))}
             </span>
           ) : (
@@ -159,16 +162,16 @@ export function IssueDialog({ conversationId, trackers, onClose, onCreated }: { 
             </p>
             <label className="field">
               <span>Title</span>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={ISSUE_TITLE_MAX} required autoFocus />
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={ISSUE_TITLE_MAX} required autoFocus />
             </label>
             <label className="field">
               <span>Description <span className="muted small">(Markdown)</span></span>
-              <textarea className="issue-body" value={body} onChange={(e) => setBody(e.target.value)} maxLength={ISSUE_BODY_MAX} spellCheck={false} />
+              <Textarea className="issue-body" value={body} onChange={(e) => setBody(e.target.value)} maxLength={ISSUE_BODY_MAX} spellCheck={false} />
             </label>
             {provider === "github" && (
               <label className="field">
                 <span>Labels <span className="muted small">(comma-separated; GitHub only applies labels that exist)</span></span>
-                <input value={labels} onChange={(e) => setLabels(e.target.value)} placeholder="bug, billing" />
+                <Input value={labels} onChange={(e) => setLabels(e.target.value)} placeholder="bug, billing" />
               </label>
             )}
             {images && images.images.length > 0 && (
@@ -194,8 +197,8 @@ export function IssueDialog({ conversationId, trackers, onClose, onCreated }: { 
         <div className="row issue-actions">
           <span className="muted small">Visitors never see this.</span>
           <span className="spacer" />
-          <button type="button" className="ghost" disabled={busy} onClick={() => dialog.current?.close()}>Cancel</button>
-          <button disabled={!draft || busy || !title.trim()}>{busy ? "Creating…" : `Create in ${NAMES[provider]}`}</button>
+          <Button variant="outline" type="button" disabled={busy} onClick={() => dialog.current?.close()}>Cancel</Button>
+          <Button disabled={!draft || busy || !title.trim()}>{busy ? "Creating…" : `Create in ${NAMES[provider]}`}</Button>
         </div>
       </form>
     </dialog>

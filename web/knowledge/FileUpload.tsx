@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent } from "react";
 import { KB_FILE_EXTENSIONS, MAX_KB_FILE_BYTES } from "../../shared/protocol.ts";
 import { formatSize } from "../lib/thread.ts";
+import { Button } from "@/components/ui/button.tsx";
 
 // K-02: drag-and-drop or pick files; each uploads on its own with progress and its own error.
 
@@ -94,7 +95,7 @@ export function FileUpload({ base, onUploaded }: { base: string; onUploaded: () 
       >
         <span className="small">
           <strong>Upload files</strong>: drop PDF, DOCX, Markdown or text files here, or{" "}
-          <button type="button" className="link" onClick={() => input.current?.click()}>choose files</button>
+          <Button variant="link" type="button" onClick={() => input.current?.click()}>choose files</Button>
         </span>
         <span className="muted small">Up to {MAX_KB_FILE_BYTES / 1024 / 1024} MB each.</span>
         <input
@@ -119,9 +120,9 @@ export function FileUpload({ base, onUploaded }: { base: string; onUploaded: () 
               {i.state === "uploading" && <progress max={1} value={i.progress} aria-label={`Uploading ${i.name}`} />}
               {i.state === "done" && <span className="muted">Uploaded ✓</span>}
               {i.state !== "uploading" && (
-                <button type="button" className="link muted" aria-label={`Dismiss ${i.name}`} onClick={() => setItems((list) => list.filter((x) => x.key !== i.key))}>
+                <Button variant="link" type="button" className="muted" aria-label={`Dismiss ${i.name}`} onClick={() => setItems((list) => list.filter((x) => x.key !== i.key))}>
                   ✕
-                </button>
+                </Button>
               )}
               {i.state === "error" && <span className="error">{i.error}</span>}
             </li>

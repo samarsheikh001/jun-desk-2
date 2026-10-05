@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
+import { Card } from "@/components/ui/card.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 
 export interface LinearTeam {
   id: string;
@@ -26,7 +30,7 @@ interface TestResult {
 /** S-08: where "Create issue" files issues (GitHub, Linear, or both). */
 export function IssueTrackersPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const [status, setStatus] = useState<TrackerStatus | null>(null);
-  const ref = useRef<HTMLElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     api<TrackerStatus>(`/workspaces/${workspaceId}/trackers`).then(setStatus, () => {});
   }, [workspaceId]);
@@ -37,7 +41,7 @@ export function IssueTrackersPanel({ workspaceId, canEdit }: { workspaceId: stri
   if (!status) return null;
 
   return (
-    <section className="panel trackers-panel" id="issue-trackers" ref={ref}>
+    <Card className="panel trackers-panel" id="issue-trackers" ref={ref}>
       <h2>Issue trackers</h2>
       <p className="muted small">
         Agents can turn a conversation into a GitHub or Linear issue: the AI drafts the title, steps to reproduce, failing requests and browser details, the agent edits
@@ -47,7 +51,7 @@ export function IssueTrackersPanel({ workspaceId, canEdit }: { workspaceId: stri
       <GitHubSection workspaceId={workspaceId} status={status} canEdit={canEdit} onChange={setStatus} />
       <LinearSection workspaceId={workspaceId} status={status} canEdit={canEdit} onChange={setStatus} />
       {!canEdit && <p className="muted small">An owner or admin can change these.</p>}
-    </section>
+    </Card>
   );
 }
 
@@ -82,9 +86,9 @@ function CredentialField({ label, placeholder, path, field, source, onSaved }: {
     <div className="field">
       <span className="small strong">{label}</span>
       <div className="row tracker-row">
-        <input type="password" value={value} onChange={(e) => setValue(e.target.value)} placeholder={source ? "Paste a new one to replace it" : placeholder} aria-label={label} autoComplete="off" spellCheck={false} />
-        <button className="small" disabled={busy || !value.trim()} onClick={() => put(value)}>Save</button>
-        {source === "settings" && <button className="ghost small" disabled={busy} onClick={() => put(null)}>Remove</button>}
+        <Input type="password" value={value} onChange={(e) => setValue(e.target.value)} placeholder={source ? "Paste a new one to replace it" : placeholder} aria-label={label} autoComplete="off" spellCheck={false} />
+        <Button size="sm" disabled={busy || !value.trim()} onClick={() => put(value)}>Save</Button>
+        {source === "settings" && <Button variant="outline" size="sm" disabled={busy} onClick={() => put(null)}>Remove</Button>}
       </div>
       {error && <p className="error small">{error}</p>}
     </div>
@@ -131,9 +135,9 @@ function GitHubSection({ workspaceId, status, canEdit, onChange }: SectionProps)
           <div className="field">
             <span className="small strong">Repository</span>
             <div className="row tracker-row">
-              <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/name, e.g. acme/web-app" aria-label="GitHub repository" spellCheck={false} />
-              <button className="small" disabled={busy || repo.trim() === (github.repo ?? "")} onClick={save}>Save</button>
-              <button className="ghost small" disabled={busy || !github.repo} onClick={() => run(async () => setTest(await api<TestResult>(`${base}/test`, { body: {} })))}>Test connection</button>
+              <Input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/name, e.g. acme/web-app" aria-label="GitHub repository" spellCheck={false} />
+              <Button size="sm" disabled={busy || repo.trim() === (github.repo ?? "")} onClick={save}>Save</Button>
+              <Button variant="outline" size="sm" disabled={busy || !github.repo} onClick={() => run(async () => setTest(await api<TestResult>(`${base}/test`, { body: {} })))}>Test connection</Button>
             </div>
           </div>
           {test && <p className={`small ${test.ok ? "ok-text" : "error"}`} role="status">{test.ok ? "✓ " : ""}{test.message}</p>}
@@ -198,13 +202,13 @@ function LinearSection({ workspaceId, status, canEdit, onChange }: SectionProps)
           <div className="field">
             <span className="small strong">Team</span>
             <div className="row tracker-row">
-              <select value={linear.team?.id ?? ""} disabled={busy || options.length === 0} onChange={(e) => choose(e.target.value)} aria-label="Linear team">
-                <option value="">{options.length ? "No team (Linear off)" : "Test connection to load teams"}</option>
+              <NativeSelect value={linear.team?.id ?? ""} disabled={busy || options.length === 0} onChange={(e) => choose(e.target.value)} aria-label="Linear team">
+                <NativeSelectOption value="">{options.length ? "No team (Linear off)" : "Test connection to load teams"}</NativeSelectOption>
                 {options.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name} ({t.key})</option>
+                  <NativeSelectOption key={t.id} value={t.id}>{t.name} ({t.key})</NativeSelectOption>
                 ))}
-              </select>
-              <button className="ghost small" disabled={busy || !linear.keySet} onClick={testConnection}>Test connection</button>
+              </NativeSelect>
+              <Button variant="outline" size="sm" disabled={busy || !linear.keySet} onClick={testConnection}>Test connection</Button>
             </div>
           </div>
           {test && <p className={`small ${test.ok ? "ok-text" : "error"}`} role="status">{test.ok ? "✓ " : ""}{test.message}</p>}

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "r
 import { api, ApiError } from "../api.ts";
 import { navigate } from "../lib/router.ts";
 import { useAction } from "../useAction.ts";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { Textarea } from "@/components/ui/textarea.tsx";
 
 // Support agent as code (AI-18): the dashboard edits the same files as `jun pull` / `jun push`.
 
@@ -167,27 +170,27 @@ export function AgentPage({ workspaceId, canEdit }: { workspaceId: string; canEd
             <div className="agent-group-head">
               <span className="muted small strong">{g.name}</span>
               {canEdit && g.name !== "Agent" && (
-                <button className="ghost small" title={`New ${g.name === "Procedures" ? "procedure" : g.name === "Tools" ? "tool" : "eval file"}`} onClick={() => { setAdding(g.name === "Procedures" ? "skill" : g.name === "Tools" ? "tool" : "eval"); setNewName(""); }}>
+                <Button variant="outline" size="sm" title={`New ${g.name === "Procedures" ? "procedure" : g.name === "Tools" ? "tool" : "eval file"}`} onClick={() => { setAdding(g.name === "Procedures" ? "skill" : g.name === "Tools" ? "tool" : "eval"); setNewName(""); }}>
                   +
-                </button>
+                </Button>
               )}
             </div>
             {g.paths.map((p) => (
-              <button key={p} className={`agent-file ${p === selected ? "active" : ""}`} onClick={() => setSelected(p)}>
+              <Button key={p} variant="ghost" size="sm" className={`agent-file ${p === selected ? "active" : ""}`} onClick={() => setSelected(p)}>
                 <span>{label(p)}</span>
                 {issuesFor(p).length > 0 && <span className="issue-count">●</span>}
                 {draft[p] !== state.files[p] && <span className="muted small">edited</span>}
-              </button>
+              </Button>
             ))}
             {g.paths.length === 0 && <div className="muted small agent-empty">None yet</div>}
           </div>
         ))}
         {adding && (
           <form className="agent-add" onSubmit={(e) => { e.preventDefault(); addFile(); }}>
-            <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={adding === "skill" ? "e.g. change-plan" : adding === "tool" ? "e.g. lookup_order" : "e.g. billing"} />
+            <Input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={adding === "skill" ? "e.g. change-plan" : adding === "tool" ? "e.g. lookup_order" : "e.g. billing"} />
             <div className="row">
-              <button className="small">Add</button>
-              <button type="button" className="ghost small" onClick={() => setAdding(null)}>Cancel</button>
+              <Button size="sm">Add</Button>
+              <Button variant="outline" size="sm" type="button" onClick={() => setAdding(null)}>Cancel</Button>
             </div>
           </form>
         )}
@@ -202,14 +205,14 @@ export function AgentPage({ workspaceId, canEdit }: { workspaceId: string; canEd
         <div className="agent-head">
           <code className="strong">{selected}</code>
           {canEdit && selected !== "AGENTS.md" && (
-            <button className="ghost small" onClick={() => { const next = { ...draft }; delete next[selected]; setDraft(next); setSelected("AGENTS.md"); }}>Delete file</button>
+            <Button variant="outline" size="sm" onClick={() => { const next = { ...draft }; delete next[selected]; setDraft(next); setSelected("AGENTS.md"); }}>Delete file</Button>
           )}
           <span className="spacer" />
           <span className="muted small">
             {live ? `Live: version ${live.version} · ${live.source === "cli" ? "pushed" : "saved"} by ${live.createdBy ?? "someone"} ${ago(live.createdAt)}` : "Live: built-in default (not saved yet)"}
           </span>
         </div>
-        <textarea
+        <Textarea
           className="agent-text"
           spellCheck={selected.endsWith(".md")}
           value={draft[selected] ?? ""}
@@ -229,17 +232,17 @@ export function AgentPage({ workspaceId, canEdit }: { workspaceId: string; canEd
         )}
         {canEdit && (
           <div className="agent-save">
-            <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="What changed? (shown in history)" maxLength={500} />
-            <button disabled={busy || !dirty || issues.length > 0} onClick={() => save()}>Save and go live</button>
-            {dirty && <button className="ghost" disabled={busy} onClick={() => { setDraft(state.files); setIssues(state.issues); }}>Discard</button>}
+            <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="What changed? (shown in history)" maxLength={500} />
+            <Button disabled={busy || !dirty || issues.length > 0} onClick={() => save()}>Save and go live</Button>
+            {dirty && <Button variant="outline" disabled={busy} onClick={() => { setDraft(state.files); setIssues(state.issues); }}>Discard</Button>}
             {saved !== null && <span className="muted small">Version {saved} is live ✓</span>}
           </div>
         )}
         {conflict && (
           <div className="agent-conflict small">
             <span className="error">{conflict}</span>
-            <button className="ghost small" onClick={() => load().catch(() => {})}>Load latest (drops your edits)</button>
-            <button className="ghost small" onClick={() => save(true)}>Overwrite with mine</button>
+            <Button variant="outline" size="sm" onClick={() => load().catch(() => {})}>Load latest (drops your edits)</Button>
+            <Button variant="outline" size="sm" onClick={() => save(true)}>Overwrite with mine</Button>
           </div>
         )}
         {error && <p className="error small">{error}</p>}
@@ -262,7 +265,7 @@ export function AgentPage({ workspaceId, canEdit }: { workspaceId: string; canEd
                 <span className="strong">v{v.version}</span>
                 <span className="tag">{v.source === "cli" ? "git" : "dashboard"}</span>
                 <span className="spacer" />
-                {canEdit && v.version !== state.version && <button className="ghost small" disabled={busy} onClick={() => restore(v.version)}>Restore</button>}
+                {canEdit && v.version !== state.version && <Button variant="outline" size="sm" disabled={busy} onClick={() => restore(v.version)}>Restore</Button>}
               </div>
               <div>{v.message || <span className="muted">No message</span>}</div>
               <div className="muted">{v.createdBy ?? "someone"} · {ago(v.createdAt)}</div>

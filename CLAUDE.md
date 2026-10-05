@@ -11,7 +11,7 @@ Plan: `docs/build-plan.md`. Build milestone by milestone; keep the Deploy button
 npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stripping, no build step); `worker/` and `web/` are bundled by Vite:
 - Only erasable TS syntax (no enums, namespaces or constructor parameter properties); relative imports use `.ts` extensions.
 - `packages/llm` uses web-standard APIs only (fetch, crypto.subtle, web streams) so it runs on Node and Cloudflare Workers. Node-only code goes in `packages/cli`.
-- `packages/` has zero runtime dependencies; the app uses Hono, React, SimpleWebAuthn, the AI SDK (`ai`, `workers-ai-provider`, `@ai-sdk/openai`, `zod` peer) and `yaml` (D-22). Add dependencies only with a clear reason.
+- `packages/` has zero runtime dependencies; the app uses Hono, React, SimpleWebAuthn, the AI SDK (`ai`, `workers-ai-provider`, `@ai-sdk/openai`, `zod` peer) and `yaml` (D-22); the dashboard uses Tailwind v4 + shadcn/ui (`@base-ui/react`, `cn`, `class-variance-authority`, `lucide-react`; D-30). Add dependencies only with a clear reason.
 
 | Path | What |
 |---|---|
@@ -30,6 +30,7 @@ npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stri
 | `web/widget/`, `widget.html` | The chat UI inside the widget iframe (served at `/widget?key=`) |
 | `public/widget.js` | Embeddable loader (MIT, plain JS, readable in the repo; the build minifies it, budget 5 KB gzipped served). Debug capture, nudges, live visitor socket, identify/logout/consent API. `public/demo.html?key=` is a test page (`&consent=required` for consent mode) |
 | `web/` | React dashboard (Vite), served as the Worker's static assets |
+| `web/desk.css`, `web/components/ui/`, `components.json` (D-30) | Dashboard look: Tailwind v4 + shadcn/ui (base-nova, neutral; tokens in `:root`, dark via `prefers-color-scheme`; Outfit / Geist Mono self-hosted in `public/fonts/`). `@/` = `web/`. Add parts with `npx shadcn@latest add <name>` (the CLI reads `tsconfig.json` paths: add `"@/*": ["./web/*"]` there for the run, then remove it). `Button` keeps the native `type="submit"` default. The widget never loads this CSS: it uses `web/styles.css` + `web/widget/widget.css`, and the shared `Composer`/`MessageList` keep plain markup |
 | `migrations/` | D1 migrations (`NNNN_name.sql`); applied by `npm run dev` (local) and `npm run deploy` (remote) |
 | `scripts/upgrade-check.ts` | T-12: `seed` an older install, upgrade the same DB, then `verify` (see the file header) |
 | `shared/notifications.ts`, `worker/lib/webpush.ts`, `worker/lib/notify.ts`, `worker/routes/notifications.ts`, `public/sw.js`, `web/lib/notifications.ts`, `web/settings/NotificationsPanel.tsx` (I-14) | Notifications for agents: who gets what (pure), Web Push (RFC 8291 aes128gcm + RFC 8292 VAPID on WebCrypto), `notifyTeam` (callers use waitUntil), prefs/devices/test API, the service worker (push + click, no fetch handler), in-page notifications and Settings → Notifications. `WorkspaceHub.notify` sends |

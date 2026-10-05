@@ -3,6 +3,8 @@ import { describeBrowser, describeIssueKind, describeTarget, formatDuration, for
 import type { AiAction, ConversationSummary } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { navigate } from "../lib/router.ts";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
 
 interface ContextResponse {
   context: Omit<DebugContext, "events"> | null;
@@ -173,15 +175,15 @@ function ContactCard({ workspaceId, contact, conversationId, refreshKey }: { wor
       <div className="row">
         <h3>Customer {details.verified && <span className="verified" title="Identity verified by your site">✓ verified</span>}</h3>
         <span className="spacer" />
-        {!details.verified && !editing && <button className="ghost small" onClick={() => setEditing(true)}>Edit</button>}
+        {!details.verified && !editing && <Button variant="outline" size="sm" onClick={() => setEditing(true)}>Edit</Button>}
       </div>
       {editing ? (
         <form className="contact-edit" onSubmit={save}>
-          <input name="name" defaultValue={details.name ?? ""} placeholder="Name" maxLength={200} autoFocus />
-          <input name="email" type="email" defaultValue={details.email ?? ""} placeholder="Email" maxLength={320} />
+          <Input name="name" defaultValue={details.name ?? ""} placeholder="Name" maxLength={200} autoFocus />
+          <Input name="email" type="email" defaultValue={details.email ?? ""} placeholder="Email" maxLength={320} />
           <div className="row">
-            <button className="small">Save</button>
-            <button type="button" className="ghost small" onClick={() => setEditing(false)}>Cancel</button>
+            <Button size="sm">Save</Button>
+            <Button variant="outline" size="sm" type="button" onClick={() => setEditing(false)}>Cancel</Button>
           </div>
           {error && <span className="error small">{error}</span>}
         </form>

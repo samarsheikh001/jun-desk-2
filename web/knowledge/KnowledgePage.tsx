@@ -4,6 +4,10 @@ import { formatSize } from "../lib/thread.ts";
 import { useAction } from "../useAction.ts";
 import { FileUpload } from "./FileUpload.tsx";
 import { SourceDetail } from "./SourceDetail.tsx";
+import { Card } from "@/components/ui/card.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { Textarea } from "@/components/ui/textarea.tsx";
 
 interface SourceRow {
   id: string;
@@ -94,7 +98,7 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
 
   return (
     <main className="content">
-      <section className="panel">
+      <Card className="panel">
         <h2>Knowledge</h2>
         <p className="muted small">
           The AI assistant answers only from what's here, and cites it. Add your docs site (we read its sitemap or follow its links, and re-sync daily), upload files, or write snippets for anything that isn't on the web.
@@ -103,15 +107,15 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
           <div className="kb-forms">
             <FileUpload base={base} onUploaded={() => load().catch(() => {})} />
             <form onSubmit={addWebsite} className="row">
-              <input name="url" type="url" required placeholder="https://docs.yourcompany.com" aria-label="Website URL" />
-              <button disabled={busy}>Add website</button>
+              <Input name="url" type="url" required placeholder="https://docs.yourcompany.com" aria-label="Website URL" />
+              <Button disabled={busy}>Add website</Button>
             </form>
             <details>
               <summary className="small">Add a snippet (FAQ, policy, internal note)</summary>
               <form onSubmit={addSnippet}>
-                <input name="title" required placeholder="Title, e.g. Refund policy" aria-label="Snippet title" />
-                <textarea name="body" required rows={5} placeholder="Write the answer the way you'd explain it to a customer." aria-label="Snippet text" />
-                <button disabled={busy}>Save snippet</button>
+                <Input name="title" required placeholder="Title, e.g. Refund policy" aria-label="Snippet title" />
+                <Textarea name="body" required rows={5} placeholder="Write the answer the way you'd explain it to a customer." aria-label="Snippet text" />
+                <Button disabled={busy}>Save snippet</Button>
               </form>
             </details>
           </div>
@@ -125,9 +129,9 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
           <ul className="list">
             {sources.map((s) => (
               <li key={s.id} className="kb-source">
-                <button className="link kb-title" onClick={() => setExpanded(expanded === s.id ? null : s.id)} aria-expanded={expanded === s.id}>
+                <Button variant="link" className="kb-title" onClick={() => setExpanded(expanded === s.id ? null : s.id)} aria-expanded={expanded === s.id}>
                   {expanded === s.id ? "▾" : "▸"} {ICONS[s.kind]} {s.title}
-                </button>
+                </Button>
                 <span className="muted small">
                   {s.status === "syncing" || s.status === "pending"
                     ? s.kind === "website"
@@ -139,19 +143,12 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
                 </span>
                 {canEdit && (
                   <>
-                    <button className="ghost small" disabled={busy || s.status === "syncing" || s.status === "pending"} onClick={() => run(async () => { await api(`${base}/${s.id}/sync`, { body: {} }); await load(); })}>
+                    <Button variant="outline" size="sm" disabled={busy || s.status === "syncing" || s.status === "pending"} onClick={() => run(async () => { await api(`${base}/${s.id}/sync`, { body: {} }); await load(); })}>
                       {s.kind === "website" ? "Re-sync" : "Re-index"}
-                    </button>
-                    <button
-                      className="ghost small"
-                      disabled={busy}
-                      onClick={() => {
-                        if (!confirm(`Remove "${s.title}" from the knowledge base?`)) return;
-                        run(async () => { await api(`${base}/${s.id}`, { method: "DELETE" }); await load(); });
-                      }}
-                    >
+                    </Button>
+                    <Button variant="outline" size="sm" disabled={busy} onClick={() => { if (!confirm(`Remove "${s.title}" from the knowledge base?`)) return; run(async () => { await api(`${base}/${s.id}`, { method: "DELETE" }); await load(); }); }}>
                       Remove
-                    </button>
+                    </Button>
                   </>
                 )}
                 {s.chunksWithoutVectors > 0 && s.status !== "syncing" && s.status !== "pending" && (
@@ -165,7 +162,7 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
             ))}
           </ul>
         )}
-      </section>
+      </Card>
       <SearchTester base={base} />
     </main>
   );
@@ -181,12 +178,12 @@ function SearchTester({ base }: { base: string }) {
     run(async () => setHits((await api<{ hits: Hit[] }>(`${base}/search`, { body: { query } })).hits));
   };
   return (
-    <section className="panel">
+    <Card className="panel">
       <h2>Test a question</h2>
       <p className="muted small">See which knowledge the AI would use to answer.</p>
       <form onSubmit={submit} className="row">
-        <input name="query" required placeholder="e.g. How do I get a refund?" aria-label="Question" />
-        <button disabled={busy}>{busy ? "Searching…" : "Search"}</button>
+        <Input name="query" required placeholder="e.g. How do I get a refund?" aria-label="Question" />
+        <Button disabled={busy}>{busy ? "Searching…" : "Search"}</Button>
       </form>
       {error && <p className="error">{error}</p>}
       {hits && (hits.length === 0 ? <p className="muted small">No matching knowledge. The AI would hand this to a person.</p> : (
@@ -204,6 +201,6 @@ function SearchTester({ base }: { base: string }) {
           ))}
         </ol>
       ))}
-    </section>
+    </Card>
   );
 }

@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BookOpenIcon, BotIcon, ChartColumnIcon, InboxIcon, SearchIcon, SettingsIcon, UsersIcon } from "lucide-react";
+import { Button } from "@/components/ui/button.tsx";
+import { DeskIcon } from "./components/DeskIcon.tsx";
 import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
 import { api, type Me } from "./api.ts";
 import { InboxPage } from "./inbox/InboxPage.tsx";
@@ -14,6 +17,15 @@ import { navigate, usePath } from "./lib/router.ts";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { VisitorsPage } from "./visitors/VisitorsPage.tsx";
 import { STEP_ORDER, useOnboarding, WelcomePage } from "./welcome/WelcomePage.tsx";
+
+const NAV = [
+  { id: "inbox", label: "Inbox", Icon: InboxIcon },
+  { id: "visitors", label: "Visitors", Icon: UsersIcon },
+  { id: "knowledge", label: "Knowledge", Icon: BookOpenIcon },
+  { id: "agent", label: "Agent", Icon: BotIcon },
+  { id: "reports", label: "Reports", Icon: ChartColumnIcon },
+  { id: "settings", label: "Settings", Icon: SettingsIcon },
+] as const;
 
 export interface Hub {
   subscribe(listener: (event: HubEvent) => void): () => void;
@@ -182,34 +194,45 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
 
   return (
     <div className="shell">
-      <header className="topbar">
-        <div className="brand">Jun Desk</div>
-        <nav>
-          <a href="/inbox" className={section === "inbox" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/inbox"); }}>Inbox</a>
-          <a href="/visitors" className={section === "visitors" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/visitors"); }}>
-            Visitors{visitors.length > 0 && <span className="nav-count">{visitors.length}</span>}
-          </a>
-          <a href="/knowledge" className={section === "knowledge" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/knowledge"); }}>Knowledge</a>
-          <a href="/agent" className={section === "agent" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/agent"); }}>Agent</a>
-          <a href="/reports" className={section === "reports" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/reports"); }}>Reports</a>
-          <a href="/settings" className={section === "settings" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/settings"); }}>Settings</a>
-        </nav>
-        <span className="spacer" />
-        <button className="ghost small palette-open" onClick={() => openOverlay("palette")} aria-keyshortcuts="Control+K Meta+K" title="Search and commands">
-          <span className="palette-open-label">Search</span> <kbd>{modKey()} K</kbd>
-        </button>
-        <button className="ghost small shortcuts-open" onClick={openHelp} aria-label="Keyboard shortcuts" aria-keyshortcuts="Shift+?" title="Keyboard shortcuts (?)">?</button>
-        {showGetStarted && section !== "welcome" && (
-          <a className="get-started" href="/welcome" onClick={(e) => { e.preventDefault(); navigate("/welcome"); }}>Get started {obDone}/{STEP_ORDER.length}</a>
-        )}
-        <span className="presence" title={online.map((o) => o.name).join(", ")}>
-          {online.slice(0, 5).map((o) => (
-            <span key={o.userId} className="avatar" title={`${o.name} is online`}>{o.name.slice(0, 1).toUpperCase()}</span>
+      <header className="sidebar">
+        <div className="brand"><DeskIcon /><span>Jun Desk</span></div>
+        <nav aria-label="Main">
+          {NAV.map(({ id, label, Icon }) => (
+            <a
+              key={id}
+              href={`/${id}`}
+              className={`nav-item ${section === id ? "active" : ""}`}
+              aria-current={section === id ? "page" : undefined}
+              onClick={(e) => { e.preventDefault(); navigate(`/${id}`); }}
+            >
+              <Icon aria-hidden="true" />
+              {label}
+              {id === "visitors" && visitors.length > 0 && <span className="nav-count">{visitors.length}</span>}
+            </a>
           ))}
-        </span>
-        <span className="muted small">{workspace.workspaceName}</span>
-        <button className="ghost small" onClick={async () => { await api("/auth/logout", { body: {} }); onSignOut(); }}>Sign out</button>
+        </nav>
+        <div className="sidebar-foot">
+          <div className="sidebar-tools">
+            <Button variant="outline" size="sm" className="palette-open" onClick={() => openOverlay("palette")} aria-keyshortcuts="Control+K Meta+K" title="Search and commands">
+              <SearchIcon aria-hidden="true" /><span className="palette-open-label">Search</span> <kbd>{modKey()} K</kbd>
+            </Button>
+            <Button variant="outline" size="icon-sm" className="shortcuts-open" onClick={openHelp} aria-label="Keyboard shortcuts" aria-keyshortcuts="Shift+?" title="Keyboard shortcuts (?)">?</Button>
+          </div>
+          {showGetStarted && section !== "welcome" && (
+            <a className="get-started" href="/welcome" onClick={(e) => { e.preventDefault(); navigate("/welcome"); }}>Get started <span className="muted">{obDone}/{STEP_ORDER.length}</span></a>
+          )}
+          <div className="sidebar-user">
+            <span className="presence" title={online.map((o) => o.name).join(", ")}>
+              {online.slice(0, 5).map((o) => (
+                <span key={o.userId} className="avatar" title={`${o.name} is online`}>{o.name.slice(0, 1).toUpperCase()}</span>
+              ))}
+            </span>
+            <span className="workspace">{workspace.workspaceName}</span>
+            <Button variant="ghost" size="sm" onClick={async () => { await api("/auth/logout", { body: {} }); onSignOut(); }}>Sign out</Button>
+          </div>
+        </div>
       </header>
+      <main className="desk-main">
       {section === "inbox" ? (
         <InboxPage workspaceId={workspace.workspaceId} me={me.user} hub={hub} conversationId={conversationId} />
       ) : section === "knowledge" ? (
@@ -225,6 +248,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       ) : (
         <SettingsPage me={me} />
       )}
+      </main>
       {overlay === "palette" && <CommandPalette workspaceId={workspace.workspaceId} meId={me.user.id} onClose={closeOverlay} onHelp={openHelp} onToast={showNotice} />}
       {overlay === "help" && <ShortcutsHelp onClose={closeOverlay} />}
       {notice && <div className="toast" role="status"><span>{notice}</span></div>}

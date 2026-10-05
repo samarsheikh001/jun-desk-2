@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
 import { formatSize } from "../lib/thread.ts";
 import { useAction } from "../useAction.ts";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { Textarea } from "@/components/ui/textarea.tsx";
 
 // K-04: what a knowledge source contains, and the knobs to fix it: edit a snippet, cap or
 // skip pages of a website, remove a page (kept out of future syncs), see its indexed text.
@@ -89,12 +92,12 @@ export function SourceDetail({ base, sourceId, canEdit, onChanged }: { base: str
       <form onSubmit={save} className="kb-edit">
         <label className="field">
           <span className="small">Title</span>
-          <input name="title" defaultValue={source.title} disabled={!canEdit} maxLength={200} />
+          <Input name="title" defaultValue={source.title} disabled={!canEdit} maxLength={200} />
         </label>
         {source.kind === "snippet" ? (
           <label className="field">
             <span className="small">Text</span>
-            <textarea name="body" rows={8} defaultValue={source.body ?? ""} disabled={!canEdit} />
+            <Textarea name="body" rows={8} defaultValue={source.body ?? ""} disabled={!canEdit} />
           </label>
         ) : source.kind === "file" ? (
           source.file && (
@@ -109,17 +112,17 @@ export function SourceDetail({ base, sourceId, canEdit, onChanged }: { base: str
           <>
             <label className="field">
               <span className="small">Max pages</span>
-              <input name="maxPages" type="number" min={1} max={2000} defaultValue={source.maxPages} disabled={!canEdit} style={{ width: 120 }} />
+              <Input name="maxPages" type="number" min={1} max={2000} defaultValue={source.maxPages} disabled={!canEdit} style={{ width: 120 }} />
             </label>
             <label className="field">
               <span className="small">Skip these pages <span className="muted">(one per line: a full URL, or a path like /blog/ or /changelog*)</span></span>
-              <textarea name="exclude" rows={3} defaultValue={source.exclude.join("\n")} disabled={!canEdit} placeholder="/blog/" />
+              <Textarea name="exclude" rows={3} defaultValue={source.exclude.join("\n")} disabled={!canEdit} placeholder="/blog/" />
             </label>
           </>
         )}
         {canEdit && (
           <div className="row">
-            <button className="small" disabled={busy}>{source.kind === "website" ? "Save" : "Save and re-index"}</button>
+            <Button size="sm" disabled={busy}>{source.kind === "website" ? "Save" : "Save and re-index"}</Button>
             {source.kind === "website" && <span className="muted small">Page limits and skips apply on the next sync.</span>}
             {saved && <span className="muted small">Saved ✓</span>}
           </div>
@@ -131,9 +134,9 @@ export function SourceDetail({ base, sourceId, canEdit, onChanged }: { base: str
         documents.map((d) => (
           <div key={d.id} className="kb-file-doc">
             <div className="row">
-              <button className="link small" onClick={() => setOpen(open === d.id ? null : d.id)} title="Show what the AI can quote from this file">
+              <Button variant="link" size="sm" onClick={() => setOpen(open === d.id ? null : d.id)} title="Show what the AI can quote from this file">
                 {open === d.id ? "▾" : "▸"} Indexed text
-              </button>
+              </Button>
               <span className="spacer" />
               <span className="muted small">
                 {d.chunkCount} chunk{d.chunkCount === 1 ? "" : "s"}
@@ -149,27 +152,22 @@ export function SourceDetail({ base, sourceId, canEdit, onChanged }: { base: str
           <div className="row">
             <span className="strong small">{documents.length} indexed page{documents.length === 1 ? "" : "s"}</span>
             <span className="spacer" />
-            {documents.length > 8 && <input className="kb-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter pages" />}
+            {documents.length > 8 && <Input className="kb-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter pages" />}
           </div>
           <ul className="kb-docs">
             {shown.map((d) => (
               <li key={d.id}>
                 <div className="row">
-                  <button className="link small" onClick={() => setOpen(open === d.id ? null : d.id)} title="Show what the AI can quote from this page">
+                  <Button variant="link" size="sm" onClick={() => setOpen(open === d.id ? null : d.id)} title="Show what the AI can quote from this page">
                     {open === d.id ? "▾" : "▸"} {d.title || pathOf(d.url, source.url)}
-                  </button>
+                  </Button>
                   <span className="spacer" />
                   <span className="muted small">{d.chunkCount} chunk{d.chunkCount === 1 ? "" : "s"}{d.chunksWithoutVectors > 0 ? ` (${d.chunksWithoutVectors} keyword only)` : ""}</span>
                   <a className="small" href={d.url} target="_blank" rel="noreferrer">Open</a>
                   {canEdit && (
-                    <button
-                      className="ghost small"
-                      disabled={busy}
-                      title="Remove it now and skip it in future syncs"
-                      onClick={() => run(async () => { await api(`${url}/documents/${d.id}`, { method: "DELETE" }); await load(); onChanged(); })}
-                    >
+                    <Button variant="outline" size="sm" disabled={busy} title="Remove it now and skip it in future syncs" onClick={() => run(async () => { await api(`${url}/documents/${d.id}`, { method: "DELETE" }); await load(); onChanged(); })}>
                       Remove
-                    </button>
+                    </Button>
                   )}
                 </div>
                 <div className="muted small">{pathOf(d.url, source.url)}</div>
