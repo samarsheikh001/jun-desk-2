@@ -115,7 +115,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
 | I-01 | Real-time shared inbox: AI, pending, open, snoozed, resolved views | v1 | shipped | Shipped M1: Open/Pending/Resolved/All + mine/unassigned filters, live via WorkspaceHub DO | 03 |
-| I-02 | Assignment: manual, round-robin, capacity-based | v1 | agreed | Manual assignment shipped in M1; round-robin and capacity-based in v1.1 (D-12) | 03 |
+| I-02 | Assignment: manual, round-robin, capacity-based | v1 | shipped | Manual assignment shipped in M1; round-robin and capacity-based in v1.1 (D-12). **Shipped 2026-10-05:** Settings → Assignment: Manual (default) or Round robin with an optional cap on open chats per teammate. Runs on an AI handoff and on new chats while the AI is off; picks the online teammate (dashboard open) who has waited longest, skipping anyone at the cap; turns are kept in the workspace hub so simultaneous handoffs don't collide; a manual assignment or an invite always wins; an internal note says who got it. Nobody online/eligible → stays Unassigned | 03 |
 | I-03 | Typing indicators, read receipts, agent presence | v1 | shipped | Shipped M1: typing both ways, read receipts ("Seen"), agent presence avatars | 03 |
 | I-04 | Agent takeover / barge-in on an AI conversation | v1 | shipped | Shipped M2: agent reply takes over (internal note); "Take over" / "Hand back to AI" buttons | 03 |
 | I-05 | Internal notes and @mentions | v1 | shipped | Shipped M7: Reply/Note switch in the composer; notes never reach the visitor or the AI and don't take over from the AI; @ suggests teammates; mentions get a live toast and a "Mentions me" filter (unread until opened) | |

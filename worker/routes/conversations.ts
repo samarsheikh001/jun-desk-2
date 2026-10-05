@@ -5,6 +5,7 @@ import type { ConversationRef, Participant } from "../conversation.ts";
 import { loadDebugContext, loadIssues, loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
 import { connectConversation, connectHub, notifyConversationChanged, sendMessage } from "../lib/realtime.ts";
 import { parseHours } from "../../shared/hours.ts";
+import { parseAssignment } from "../../shared/inbox.ts";
 import { normalizeDomains } from "../lib/origins.ts";
 import { object, readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
@@ -80,6 +81,14 @@ conversations.patch("/workspaces/:id/inbox", async (c) => {
   if (body.hours !== undefined) {
     try {
       settings.hours = parseHours(body.hours);
+    } catch (error) {
+      throw new HttpError(400, "invalid_field", (error as Error).message);
+    }
+  }
+  // I-02: who new chats that need a person go to.
+  if (body.assignment !== undefined) {
+    try {
+      settings.assignment = parseAssignment(body.assignment);
     } catch (error) {
       throw new HttpError(400, "invalid_field", (error as Error).message);
     }

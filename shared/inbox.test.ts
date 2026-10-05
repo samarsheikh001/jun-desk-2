@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fillSavedReply, findMentions, mentionParts, normalizeTag, offersRating, parseRating } from "./inbox.ts";
+import { assignmentSettings, DEFAULT_ASSIGNMENT, fillSavedReply, findMentions, mentionParts, normalizeTag, offersRating, parseAssignment, parseRating, pickAssignee } from "./inbox.ts";
 
 const team = [
   { id: "u1", name: "Ann" },
@@ -60,4 +60,29 @@ test("CSAT: offered for resolved conversations someone answered, when ratings ar
   assert.equal(offersRating(true, "open", [visitor, agent]), false);
   assert.equal(offersRating(true, "resolved", [visitor, { authorType: "system", internal: false }]), false, "nobody replied");
   assert.equal(offersRating(true, "resolved", [visitor, { authorType: "agent", internal: true }]), false, "a note isn't a reply");
+});
+
+test("assignment settings: manual or round robin, with a 0–100 cap", () => {
+  assert.deepEqual(parseAssignment({ mode: "round_robin", capacity: 5 }), { mode: "round_robin", capacity: 5 });
+  assert.deepEqual(parseAssignment({ mode: "manual" }), { mode: "manual", capacity: 0 });
+  assert.throws(() => parseAssignment({ mode: "random" }), /manual or round_robin/);
+  assert.throws(() => parseAssignment({ mode: "round_robin", capacity: -1 }), /whole number/);
+  assert.throws(() => parseAssignment({ mode: "round_robin", capacity: 2.5 }), /whole number/);
+  assert.deepEqual(assignmentSettings(undefined), DEFAULT_ASSIGNMENT, "unset means manual");
+  assert.deepEqual(assignmentSettings({ mode: "nope" }), DEFAULT_ASSIGNMENT);
+});
+
+test("round robin: longest wait first, the cap skips busy teammates, nobody eligible means null", () => {
+  const team = [
+    { userId: "u1", open: 0, lastAssignedAt: 300 },
+    { userId: "u2", open: 4, lastAssignedAt: 100 },
+    { userId: "u3", open: 1, lastAssignedAt: 200 },
+  ];
+  assert.equal(pickAssignee(team, 0), "u2", "waited longest");
+  assert.equal(pickAssignee(team, 3), "u3", "u2 is at the cap");
+  assert.equal(pickAssignee(team, 1), "u1");
+  assert.equal(pickAssignee([{ userId: "u1", open: 2, lastAssignedAt: 0 }], 2), null);
+  assert.equal(pickAssignee([], 0), null);
+  assert.equal(pickAssignee([{ userId: "b", open: 1, lastAssignedAt: 0 }, { userId: "a", open: 1, lastAssignedAt: 0 }, { userId: "c", open: 0, lastAssignedAt: 0 }], 0), "c", "never assigned: fewer open chats first");
+  assert.equal(pickAssignee([{ userId: "b", open: 0, lastAssignedAt: 0 }, { userId: "a", open: 0, lastAssignedAt: 0 }], 0), "a", "then a stable order");
 });

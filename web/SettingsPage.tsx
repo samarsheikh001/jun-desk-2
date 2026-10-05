@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, registerPasskey, type Me } from "./api.ts";
 import { AiPanel } from "./AiPanel.tsx";
 import { IssueTrackersPanel } from "./settings/IssueTrackersPanel.tsx";
-import { SavedRepliesPanel, TagsPanel } from "./settings/InboxPanels.tsx";
+import { AssignmentPanel, SavedRepliesPanel, TagsPanel } from "./settings/InboxPanels.tsx";
 import { AppearancePanel, HoursPanel, type InboxSettings } from "./settings/WidgetPanels.tsx";
 import { useAction } from "./useAction.ts";
 
@@ -31,6 +31,7 @@ export function SettingsPage({ me }: { me: Me }) {
       {workspace && <InstallPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
       {workspace && <WidgetSettings workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={workspace.role !== "agent"} />}
       {workspace && <AiPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
+      {workspace && <AssignmentPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
       {workspace && <SavedRepliesPanel workspaceId={workspace.workspaceId} />}
       {workspace && <TagsPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
       {workspace && <IssueTrackersPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}

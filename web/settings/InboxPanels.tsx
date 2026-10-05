@@ -114,3 +114,64 @@ export function TagsPanel({ workspaceId, canEdit }: { workspaceId: string; canEd
     </section>
   );
 }
+
+interface Assignment { mode: "manual" | "round_robin"; capacity: number }
+
+/** I-02: who new chats that need a person go to. */
+export function AssignmentPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
+  const base = `/workspaces/${workspaceId}/inbox`;
+  const [saved, setSaved] = useState<Assignment | null>(null);
+  const [mode, setMode] = useState<Assignment["mode"]>("manual");
+  const [capacity, setCapacity] = useState("0");
+  const [done, setDone] = useState(false);
+  const { busy, error, run } = useAction();
+  useEffect(() => {
+    api<{ inbox: { settings: { assignment?: Assignment } } | null }>(base).then((r) => {
+      const a = r.inbox?.settings.assignment ?? { mode: "manual", capacity: 0 };
+      setSaved(a);
+      setMode(a.mode);
+      setCapacity(String(a.capacity));
+    }, () => {});
+  }, [base]);
+  if (!saved) return null;
+  const changed = mode !== saved.mode || Number(capacity) !== saved.capacity;
+
+  const save = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    run(async () => {
+      const next = (await api<{ settings: { assignment: Assignment } }>(base, { method: "PATCH", body: { assignment: { mode, capacity: Number(capacity) } } })).settings.assignment;
+      setSaved(next);
+      setDone(true);
+      setTimeout(() => setDone(false), 2000);
+    });
+  };
+
+  return (
+    <section className="panel" id="assignment">
+      <h2>Assignment</h2>
+      <p className="muted small">When the AI hands a chat to the team, or a new chat comes in while the AI is off.</p>
+      <form onSubmit={save} className="stack">
+        <label className="check">
+          <input type="radio" name="mode" checked={mode === "manual"} onChange={() => setMode("manual")} disabled={!canEdit} /> Manual: chats wait in Unassigned until someone takes them
+        </label>
+        <label className="check">
+          <input type="radio" name="mode" checked={mode === "round_robin"} onChange={() => setMode("round_robin")} disabled={!canEdit} /> Round robin: give each chat to the next teammate who has the dashboard open
+        </label>
+        {mode === "round_robin" && (
+          <label className="field">
+            <span>Most open chats per teammate <span className="muted">(0 = no limit)</span></span>
+            <input type="number" min={0} max={100} step={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} disabled={!canEdit} />
+          </label>
+        )}
+        {mode === "round_robin" && <p className="muted small">If nobody's online or everyone is at the limit, the chat stays in Unassigned. Assigning someone by hand always wins.</p>}
+        {error && <p className="error small">{error}</p>}
+        {canEdit && (
+          <div className="row">
+            <button disabled={busy || !changed}>Save</button>
+            {done && <span className="ok-text small">Saved</span>}
+          </div>
+        )}
+      </form>
+    </section>
+  );
+}

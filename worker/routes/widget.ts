@@ -301,6 +301,8 @@ widget.post("/widget/:key/conversations", async (c) => {
     await c.env.DB.prepare("DELETE FROM conversations WHERE id = ? AND last_seq = 0").bind(ref.conversationId).run();
     throw error;
   }
+  // I-02: straight to the team (AI off): round robin, if the workspace uses it.
+  if (handling === "human" && !invite) c.executionCtx.waitUntil(c.env.CONVERSATION.getByName(ref.conversationId).assignIfNeeded(ref));
   // The visitor list shows who is in a chat.
   if (sessionId) c.executionCtx.waitUntil(c.env.WORKSPACE_HUB.getByName(inbox.workspaceId).linkSession(sessionId, contactId));
   const conversation = await loadSummary(c.env.DB, ref.conversationId);

@@ -15,6 +15,7 @@ import { asksForHuman, briefPrompt, HANDOFF_MESSAGES, resolveCitations } from ".
 import type { ToolUser } from "./ai/config.ts";
 import { loadAgentConfig } from "./ai/config-store.ts";
 import { AiUnavailableError, completeText, createModel, loadAiSettings, type AgentModel } from "./ai/providers.ts";
+import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
 import type { ToolAction } from "./ai/tools.ts";
 import { describeEvents, isIssue, sanitizeContext, type DebugContext } from "../shared/debug.ts";
@@ -196,6 +197,11 @@ export class Conversation extends DurableObject<Env> {
   async addNote(refIn: ConversationRef, body: string, clientMsgId: string, meta?: MessageMeta): Promise<void> {
     const ref = this.#bind(refIn);
     await this.#insert(ref, { authorType: "system", authorId: null, authorName: null, body, clientMsgId, internal: true, ...(meta ? { meta } : {}) });
+  }
+
+  /** RPC (I-02): a new chat went straight to the team (AI off): give it to an online teammate if the workspace uses round robin. */
+  async assignIfNeeded(refIn: ConversationRef): Promise<void> {
+    await this.#autoAssign(this.#bind(refIn));
   }
 
   /** After a status/assignment/handling change: update open threads, and let the AI pick up if handed back. */
@@ -630,6 +636,26 @@ export class Conversation extends DurableObject<Env> {
       internal: true,
       meta: { handoffReason: reason },
     });
+    await this.#autoAssign(ref);
+  }
+
+  /** I-02: round robin to an online teammate, with a note so the team sees why. */
+  async #autoAssign(ref: ConversationRef): Promise<void> {
+    try {
+      const picked = await autoAssign(this.env, ref);
+      if (!picked) return;
+      await this.#insert(ref, {
+        authorType: "system",
+        authorId: null,
+        authorName: null,
+        body: `Assigned to ${picked.name} automatically (round robin).`,
+        clientMsgId: newId("assign"),
+        internal: true,
+      });
+    } catch (error) {
+      // Assignment is a convenience: the chat is still in the shared inbox.
+      console.error("auto-assignment failed:", error);
+    }
   }
 
   async #recordUsage(workspaceId: string, month: string, usage: { inputTokens: number; outputTokens: number }): Promise<void> {

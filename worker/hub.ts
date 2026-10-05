@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { ChatGPTAuth, type ChatGPTCredentials, type CredentialStore } from "@jun/llm";
+import { pickAssignee } from "../shared/inbox.ts";
 import { SOCKET_PROTOCOL, type HubEvent, type LiveClientEvent, type LiveServerEvent, type LiveVisitor, type PresenceEntry } from "../shared/protocol.ts";
 import { upsertIdentified } from "./lib/contacts.ts";
 import { IdentityError, verifyIdentityToken } from "./lib/identity.ts";
@@ -126,6 +127,29 @@ export class WorkspaceHub extends DurableObject<Env> {
   /** RPC: fan an event out to every connected agent. */
   async publish(event: HubEvent): Promise<void> {
     this.#broadcast(JSON.stringify(event));
+  }
+
+  /** RPC (I-02): teammates with a dashboard open right now. */
+  async onlineAgentIds(): Promise<string[]> {
+    const ids = new Set<string>();
+    for (const ws of this.ctx.getWebSockets("agent")) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      const a = ws.deserializeAttachment() as AgentAttachment | null;
+      if (a?.userId) ids.add(a.userId);
+    }
+    return [...ids];
+  }
+
+  /**
+   * RPC (I-02): the round-robin turn. Picks from `candidates` (online, with their open-chat
+   * counts) and records the turn, all inside this object, so simultaneous handoffs never pick
+   * from the same stale order.
+   */
+  async claimNextAssignee(candidates: { userId: string; open: number }[], capacity: number): Promise<string | null> {
+    const times = await this.ctx.storage.get<Record<string, number>>("assignment:last") ?? {};
+    const picked = pickAssignee(candidates.map((c) => ({ ...c, lastAssignedAt: times[c.userId] ?? 0 })), capacity);
+    if (picked) await this.ctx.storage.put("assignment:last", { ...times, [picked]: Date.now() });
+    return picked;
   }
 
   /** RPC (W-08): is any teammate's dashboard open? Visitors only ever get this yes/no. */
