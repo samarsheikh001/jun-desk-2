@@ -60,7 +60,7 @@ Colour, logo, greeting, button side and business hours are set in **Settings** a
 
 **What the widget captures:** JavaScript errors, failed requests (method, URL and status, never request or response bodies) and pages visited, kept in memory and sent only when the visitor writes to you. Query values are stripped, and emails, tokens, keys and card-like numbers are masked before anything leaves the browser.
 
-**Errors your app knows about:** when something fails for a reason you can name, say so. The message (up to 300 characters, masked like everything else) joins the visitor's timeline, so the AI and your agents see it, and it can trigger the "Want a hand?" nudge ("Your CSV import failed on row 42."). `code` is optional (letters, digits, `_ . -`, up to 60), for your team: agents see it in the timeline and issue drafts, and the AI is told not to repeat it. It does nothing with `data-capture="off"` or before `JunDesk.consent(true)`, and never throws.
+**Errors your app knows about:** when something fails for a reason you can name, say so. The message (up to 300 characters, masked like everything else) joins the visitor's timeline, so the AI and your agents see it, and it can trigger the "Want a hand?" nudge ("Your CSV import failed on row 42."). `code` is optional (letters, digits, `_ . -`, up to 60), for your team: agents see it in the timeline and issue drafts; the AI answering visitors never gets it. It does nothing with `data-capture="off"` or before `JunDesk.consent(true)`, and never throws.
 
 ```js
 // The loader is async, so it may not be there yet.

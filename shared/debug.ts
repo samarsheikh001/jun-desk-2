@@ -148,8 +148,12 @@ export function formatEventTime(t: number, timezone?: string): string {
   }
 }
 
-/** One line per event, oldest first, for the AI prompt and handoff briefs. */
-export function describeEvents(context: DebugContext): string[] {
+/**
+ * One line per event, oldest first, for the AI prompt and handoff briefs. App error codes
+ * (S-12) are for engineering: the live AI never gets them, so it can't repeat one to a visitor;
+ * issue drafts pass `codes: true`.
+ */
+export function describeEvents(context: DebugContext, options: { codes?: boolean } = {}): string[] {
   return context.events.map((e) => {
     const at = formatEventTime(e.t, context.timezone);
     if (e.kind === "navigation") return `[${at}] Visited ${e.url}`;
@@ -157,7 +161,7 @@ export function describeEvents(context: DebugContext): string[] {
       const outcome = e.status ? `HTTP ${e.status}` : `failed${e.message ? ` (${e.message})` : ""}`;
       return `[${at}] ${e.method ?? "GET"} ${e.url} → ${outcome}${e.durationMs != null ? ` in ${e.durationMs} ms` : ""}`;
     }
-    if (e.kind === "app_error") return `[${at}] The app reported an error: ${e.message}${e.code ? ` (code ${e.code})` : ""}`;
+    if (e.kind === "app_error") return `[${at}] The app reported an error: ${e.message}${options.codes && e.code ? ` (code ${e.code})` : ""}`;
     return `[${at}] JavaScript error: ${e.message}${e.source ? ` at ${e.source}` : ""}`;
   });
 }

@@ -96,7 +96,7 @@ export function issueFactsText(facts: IssueFacts): string {
       `Page: ${env.page.url}${env.page.title ? ` ("${env.page.title}")` : ""}`,
       `Browser: ${browserName(env.userAgent)}${osName(env.userAgent) ? ` on ${osName(env.userAgent)}` : ""}`,
       "Recorded events (oldest first):",
-      ...(facts.events.length ? describeEvents({ ...env, events: facts.events }).slice(-30) : ["(none)"]),
+      ...(facts.events.length ? describeEvents({ ...env, events: facts.events }, { codes: true }).slice(-30) : ["(none)"]),
     );
   } else {
     lines.push("", "Customer's browser: nothing was recorded.");

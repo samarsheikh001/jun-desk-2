@@ -91,6 +91,7 @@ test("S-12 app errors: message masked and capped, code [\\w.-] only, nothing els
   assert.equal(card.code, "key");
   assert.deepEqual(ctx.events.find((e) => e.t === 6), { t: 6, kind: "app_error", message: "No code" });
   assert.ok(ctx.events.every(isIssue));
-  assert.equal(describeEvents(ctx).at(-1), "[09:00:00] The app reported an error: Row 42: missing email for [email] (token=[redacted]) (code import.row_invalid)");
+  assert.equal(describeEvents(ctx).at(-1), "[09:00:00] The app reported an error: Row 42: missing email for [email] (token=[redacted])", "the live AI never sees the code");
+  assert.equal(describeEvents(ctx, { codes: true }).at(-1), "[09:00:00] The app reported an error: Row 42: missing email for [email] (token=[redacted]) (code import.row_invalid)");
   assert.equal(describeEvents({ ...ctx, events: [{ t: 0, kind: "app_error", message: "Upload too big" }] })[0], "[00:00:00] The app reported an error: Upload too big");
 });
