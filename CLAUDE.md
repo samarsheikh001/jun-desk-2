@@ -2,7 +2,7 @@
 
 An open-source, AI-first customer support desk for B2B SaaS, deployable to your own Cloudflare account in one click: an embeddable website widget, live visitor tracking, an AI agent that answers and takes actions, and a real-time inbox for human agents. Think Intercom/Fin, Chatbase, Crisp — rebuilt for 2026.
 
-## Current phase: building v1 (M0–M2, M4–M6 deployed; M7 launch-critical items built; M8 next)
+## Current phase: v1 launch prep (M0–M2, M4–M7 deployed; M8 in progress: wizard + upgrade check built)
 
 Plan: `docs/build-plan.md`. Build milestone by milestone; keep the Deploy button working at every step.
 
@@ -26,6 +26,8 @@ npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stri
 | `public/widget.js` | Embeddable loader (MIT, plain JS, readable in the repo; the build minifies it, budget 5 KB gzipped served). Debug capture, nudges, live visitor socket, identify/logout/consent API. `public/demo.html?key=` is a test page (`&consent=required` for consent mode) |
 | `web/` | React dashboard (Vite), served as the Worker's static assets |
 | `migrations/` | D1 migrations (`NNNN_name.sql`); applied by `npm run dev` (local) and `npm run deploy` (remote) |
+| `scripts/upgrade-check.ts` | T-12: `seed` an older install, upgrade the same DB, then `verify` (see the file header) |
+| `worker/routes/onboarding.ts`, `web/welcome/` | T-11 "Get started": steps computed from real state; install detected on the loader's first non-desk origin |
 | `scripts/bench-models.ts` | Latency/behaviour comparison of Workers AI chat models on five support questions, incl. a tool call (run against the e2e server after `npm run test:e2e`) |
 | `scripts/e2e-*.ts` | E2E on a separate dev server + DB (`JUN_STATE_DIR=.wrangler/e2e-state`, port 5174, see README) so your own local desk isn't wiped: `e2e-auth`, `e2e-chat`, `e2e-ai`, `e2e-debug`, `e2e-agent`, `e2e-visitors`, `e2e-polish` (real Workers AI; `e2e-agent`/`e2e-visitors` use httpbin.org as the customer's API; `e2e-agent` runs the `jun` CLI). Helpers in `e2e-lib.ts` |
 
@@ -57,6 +59,7 @@ Worker conventions: throw `HttpError` for expected failures (rendered as `{ erro
 | `docs/features.md` | **Source of truth** for the feature backlog: every feature with an ID, proposed version, status, and rationale. Includes the "Not building" list. |
 | `docs/build-plan.md` | v1 milestones (M0–M8) in build order, launch-critical 🚀 markers, decisions needed before each milestone. |
 | `docs/decisions.md` | Open questions that block planning, plus a dated log of decisions made. |
+| `docs/launch/` | Launch drafts (Show HN, release notes). Not posted until the user says so. |
 | `docs/research/01-market-landscape.md` | Competitors (Fin/Intercom, Chatbase, Decagon, Sierra, Plain, Pylon, Crisp, Chatwoot, Zendesk), table stakes, differentiators, complaints, pricing trends. |
 | `docs/research/02-visitor-experience.md` | Visitor tracking, identity, proactive engagement, struggle detection, co-browse, widget tech & privacy. |
 | `docs/research/03-architecture.md` | Realtime transport, AI agent layer, data model, OSS references, candidate stacks, Claude model options. |

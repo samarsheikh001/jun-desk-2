@@ -1,68 +1,93 @@
 # Jun Desk
 
-Open-source AI support desk for B2B SaaS that knows what broke before your customer finishes typing — running in your own Cloudflare account.
+An open-source support desk for B2B SaaS where the AI already knows what broke. The widget on your site notices the failed request or JavaScript error your customer just hit, so when they write "I can't pay my invoice", the AI can answer "your payment request failed with a server error at 14:02, I've flagged it to the team" instead of asking which browser they use. It runs entirely in your own Cloudflare account.
 
-> **Status: early development (M4).** Live chat widget, real-time inbox, an AI assistant that answers from your docs with citations, and **support that sees the bug**: the widget notices errors and failed requests in your customer's browser, so the AI and your team know what broke. See [`docs/build-plan.md`](docs/build-plan.md).
+> **Status: v1 release candidate.** Everything below works and is tested end to end. Expect rough edges; [issues](https://github.com/samarsheikh001/jun-desk-2/issues) welcome.
+
+What you get:
+
+- **A chat widget** (about 4 KB) with live replies, typing indicators, read receipts, file uploads, your colour and logo, and business hours.
+- **An AI agent** that answers from your docs with citations and hands off to a person when it can't help, or when the customer asks. It runs on Workers AI out of the box, so you don't need an API key, and it can use OpenAI instead.
+- **Support that sees the bug.** Recent errors, failed requests and pages visited are captured in the visitor's browser, masked twice (in the browser and on the server), and shown to your agents and the AI. If something on the page breaks, the widget can offer help on its own: "Adding a team member didn't work. Want a hand?"
+- **A support agent you keep in git.** The AI's rules, procedures, tools and tests are plain files. `jun eval` replays recent real conversations against your edits before you push them, so you see which answers would change.
+- **A real-time inbox** with assignment, takeover from the AI, a contact sidebar, and a live list of who's on your site right now. You can start a chat with any of them.
 
 ## Deploy
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/samarsheikh001/jun-desk-2)
 
-The button creates the Worker, a D1 database and a Durable Object namespace in your account. It asks for one secret:
+The button copies this repo into your GitHub account, creates the Worker, a D1 database, an R2 bucket, a Queue and the Durable Objects, and asks for one secret:
 
-- **`SETUP_TOKEN`**: any passphrase of 16+ characters. On first visit you enter it once to create the owner account. Keep it: it's also how you recover access if you lose all your passkeys.
+- **`SETUP_TOKEN`**: any passphrase of 16+ characters. You type it once on first visit to create the owner account. Keep it somewhere safe, because it's also how you get back in if you lose every passkey.
 
-Then open your Worker's URL, enter the setup token, and create a passkey (fingerprint, face or device PIN). No email service, OAuth app or database server is needed.
+Then open the Worker's URL, enter the token and create a passkey (fingerprint, face or device PIN). A **Get started** page walks you through the rest: add your docs, turn on the AI, brand the widget, paste the snippet on your site and invite your team. Each step ticks itself off as you go. Nothing else needs signing up for; there's no email service, auth provider or database server to run.
 
-> Passkeys are tied to the hostname you create them on. If you later move the desk to a custom domain, sign in on the old URL and add a passkey on the new one, or use the recovery page (`/recover`).
+Prefer the command line? Clone the repo, then `npm install`, `npx wrangler secret put SETUP_TOKEN` and `npm run build && npm run deploy`.
 
-## The widget
+> Passkeys belong to the hostname you create them on. If you move the desk to a custom domain later, sign in on the old URL and add a passkey on the new one, or use `/recover` with the setup token.
 
-Paste the snippet from **Settings → Install the chat widget**, ideally in `<head>` so it sees errors from the start of the page.
+## Upgrade
 
-The loader also keeps a short, in-memory list of what went wrong in the visitor's browser: JavaScript errors, failed requests (status only, never bodies) and pages visited. It's shared with your team only when the visitor sends a message. Query values are stripped and emails, tokens and secrets are masked before anything leaves the browser (and again on the server). To turn it off, add `data-capture="off"` to the script tag.
+Pull the new version into your copy of the repo and run `npm run deploy`:
 
-## AI assistant
+```sh
+git pull https://github.com/samarsheikh001/jun-desk-2 main
+npm install && npm run build && npm run deploy
+```
 
-Turn it on in **Settings → AI assistant** and add your docs under **Knowledge**. Providers:
+`npm run deploy` applies any new D1 migrations **before** it deploys the new Worker, so new code never runs against an old schema. Your conversations, contacts, knowledge, passkeys and visitors' chat history carry over. `scripts/upgrade-check.ts` is the test for this: it seeds an old install, upgrades it and checks everything survived. It passes from the first AI release (M2) onwards.
 
-- **Workers AI** (default): built in, no key needed.
-- **OpenAI**: `npx wrangler secret put OPENAI_API_KEY`. Optional `OPENAI_BASE_URL` to route through Cloudflare AI Gateway.
-- **ChatGPT sign-in** (local development only): add `JUN_DEV_CHATGPT=1` to `.dev.vars`, then use "Sign in with ChatGPT" in Settings. OpenAI allows ChatGPT plan usage for open-source apps running on your own machine; deployed desks must use an API key or Workers AI.
+## Put the widget on your site
 
-## Know who you're talking to
+Copy the snippet from **Settings → Install the chat widget**, ideally into `<head>` so it sees errors from the start of the page:
 
-- **Live visitors:** the **Visitors** page lists everyone on pages with the widget, with page, referrer, location, device and time on site. "Start chat" pops a message up on their page.
-- **Signed-in customers:** create an identity secret in Settings → Install, have your backend sign a short-lived HS256 JWT for the logged-in user (`sub`, `exp`, optional `email`, `name`, `attributes`), and pass it to the widget:
+```html
+<script src="https://your-desk.example.com/widget.js" data-key="wk_…" async></script>
+```
 
-  ```html
-  <script src="https://your-desk.example.com/widget.js" data-key="wk_…" data-user-token="<signed JWT>" async></script>
-  <!-- or later: JunDesk.identify(jwt), and JunDesk.logout() on sign-out -->
-  ```
+| Option | What it does |
+|---|---|
+| `data-user-token="<jwt>"` or `JunDesk.identify(jwt)` | Says who the signed-in customer is (see below). `JunDesk.logout()` on sign-out |
+| `data-consent="required"` | Stores nothing and stays off your visitor list until `JunDesk.consent(true)` (for cookie banners) |
+| `data-capture="off"` | Turns off error and request capture |
+| `data-color="#0f766e"` | Overrides the brand colour from Settings |
+| `JunDesk.open()`, `.close()`, `.toggle()` | Control the chat from your own buttons |
 
-  Agents see a verified name, email and attributes; chats follow the user across devices; the AI greets them and tools can look up their account with `{user.id}`.
-- **Allowed websites:** list your domains in Settings → Install so copies of your (public) widget key don't work on other sites.
-- **Consent:** add `data-consent="required"` and the widget stores nothing and stays off the visitor list until you call `JunDesk.consent(true)`.
+Colour, logo, greeting, button side and business hours are set in **Settings** and apply within a minute without touching the snippet. List your domains under **Allowed websites** so nobody can reuse your (public) widget key on their own site.
+
+**What the widget captures:** JavaScript errors, failed requests (method, URL and status, never request or response bodies) and pages visited, kept in memory and sent only when the visitor writes to you. Query values are stripped, and emails, tokens, keys and card-like numbers are masked before anything leaves the browser.
+
+**Signed-in customers:** create an identity secret in Settings → Install. Your backend signs a short-lived HS256 JWT with `sub` (the user's id) and `exp`, plus `email`, `name` and `attributes` if you like (`{ plan: "pro", seats: 12 }`). Agents then see a verified customer, chats follow them across devices, and the AI's tools can look up their own account with `{user.id}`. Without a valid token, visitors stay anonymous.
+
+## The AI
+
+Turn it on in **Settings** (or from Get started) and add your docs under **Knowledge**: paste a docs or help-center URL and it reads the sitemap, re-syncs daily, and lets you see and prune exactly what it indexed. Snippets cover anything that isn't on the web.
+
+- **Workers AI** is the default. It's built in and needs no key. Mistral Small 3.1 answered all five of our benchmark questions correctly at about 1 s to the first word (`scripts/bench-models.ts`).
+- **OpenAI**: run `npx wrangler secret put OPENAI_API_KEY`. `OPENAI_BASE_URL` routes it through Cloudflare AI Gateway.
+- **ChatGPT sign-in** is for local development only: add `JUN_DEV_CHATGPT=1` to `.dev.vars`. OpenAI allows plan usage for open-source apps running on your own machine, not for a deployed desk answering the public.
+
+It hands a conversation to your team when it can't answer from your docs, when the customer asks for a person, after a set number of replies, or when it hits the monthly cap you set. Your team gets a short brief with what was asked and what failed. Outside business hours the AI keeps answering, and chats waiting for a person get your away message.
 
 ## Support agent as code
 
-The AI's persona, procedures, tools and test cases are plain files. Edit them on the **Agent** page, or keep them in git and use the `jun` CLI (from a checkout of this repo; create a token in Settings → API tokens):
+The AI's persona, procedures, tools and tests are files. Edit them on the **Agent** page, or keep them in git and use the `jun` CLI from a checkout of this repo (create a token in Settings → API tokens):
 
 ```sh
 npm run jun -- login https://your-desk.example.com
-npm run jun -- init support-agent     # or: pull support-agent (the desk's live config)
-npm run jun -- eval support-agent     # run evals/*.yaml and replay recent real chats against your edits
+npm run jun -- pull support-agent      # the live config (or `init` for a starter)
+npm run jun -- eval support-agent      # your test cases, plus a replay of recent real chats
 npm run jun -- push support-agent -m "Refund window is now 30 days"
 ```
 
 | File | What |
 |---|---|
-| `AGENTS.md` | Persona and rules. Frontmatter: `maxReplies`, `handoffTopics` |
-| `skills/<name>/SKILL.md` | Procedures in plain language ([Agent Skills](https://agentskills.io) format: `name`, `description`) |
-| `tools/<name>.yaml` | HTTP lookups the AI may call. Secrets: `{secrets.NAME}` in headers, set with `npx wrangler secret put JUN_SECRET_NAME` |
-| `evals/<name>.yaml` | Test cases: a customer message and the expected outcome, tools, or criteria |
+| `AGENTS.md` | Tone and rules. Frontmatter: `maxReplies`, `handoffTopics` |
+| `skills/<name>/SKILL.md` | Procedures in plain language, in the [Agent Skills](https://agentskills.io) format |
+| `tools/<name>.yaml` | HTTP lookups the AI may call, e.g. order status. Secrets go in headers as `{secrets.NAME}` (Worker secret `JUN_SECRET_NAME`) |
+| `evals/<name>.yaml` | A customer message and what a good reply does: outcome, tools called, or criteria |
 
-Every save is a version (the Agent page shows history and can restore). In CI, set `JUN_DESK_URL` and `JUN_DESK_TOKEN` and run `jun eval --fail-on-change`.
+Every save is a version you can restore, and every tool call is logged next to the conversation. In CI, set `JUN_DESK_URL` and `JUN_DESK_TOKEN` and run `jun eval --fail-on-change`.
 
 ## Develop
 
@@ -77,14 +102,13 @@ npm run dev                      # dashboard + Worker on http://localhost:5173
 | Command | What |
 |---|---|
 | `npm run dev` | Applies local D1 migrations, then runs Vite with the Worker in the Workers runtime |
-| `npm run build` then `npm run deploy` | Build; then deploy to your Cloudflare account with remote D1 migrations (handles first install and upgrades). Set the secret once with `npx wrangler secret put SETUP_TOKEN` |
-| `npm test` | Unit tests (`packages/`, `worker/`, `shared/`) |
-| `npm run test:e2e` | Auth, chat, AI, debug context, agent-as-code, visitors/identity and inbox/widget polish end to end against a dev server on a fresh DB: run `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then `BASE_URL=http://localhost:5174 npm run test:e2e`. Uses real Workers AI |
+| `npm test` | Unit tests |
+| `npm run test:e2e` | Seven end-to-end suites against a dev server on a fresh database, with real Workers AI. Start the server with `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `npx wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then run `BASE_URL=http://localhost:5174 npm run test:e2e` |
 | `npm run typecheck` | Packages, Worker and dashboard |
-| `npm run jun -- <command>` | `jun` CLI: `login <desk-url>`, `init`, `pull`, `push`, `eval`; dev LLM: `login chatgpt`, `ask`, `chat`, `models` |
+| `npm run build` / `npm run deploy` | Build, then migrate and deploy to your Cloudflare account |
 
-Layout: `worker/` (API, Durable Objects), `web/` (dashboard), `migrations/` (D1), `packages/` (`llm`, `cli`), `docs/` (research, backlog, decisions, build plan).
+Code lives in `worker/` (API and Durable Objects), `web/` (dashboard and widget frame), `public/widget.js` (the loader), `migrations/` (D1), `packages/` (`llm`, `cli`) and `docs/` (research, backlog, decisions, build plan). [CLAUDE.md](CLAUDE.md) has the conventions.
 
 ## License
 
-The desk is [AGPL-3.0](LICENSE). The embeddable widget, SDKs and agent-config format will be MIT so embedding Jun Desk never triggers a license review. See [CONTRIBUTING.md](CONTRIBUTING.md).
+The desk is [AGPL-3.0](LICENSE). The widget loader and the agent-config format are MIT, so putting Jun Desk on your site never triggers a license review. Outside contributions will need a CLA, which isn't set up yet; see [CONTRIBUTING.md](CONTRIBUTING.md).

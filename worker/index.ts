@@ -5,6 +5,7 @@ import { auth } from "./routes/auth.ts";
 import { conversations } from "./routes/conversations.ts";
 import { files } from "./routes/files.ts";
 import { widget } from "./routes/widget.ts";
+import { onboarding } from "./routes/onboarding.ts";
 import { visitors } from "./routes/visitors.ts";
 import { workspaces } from "./routes/workspaces.ts";
 import { agent } from "./routes/agent.ts";
@@ -49,6 +50,7 @@ app.route("/", files);
 app.route("/", ai);
 app.route("/", agent);
 app.route("/", visitors);
+app.route("/", onboarding);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "No such API route." } }, 404));
 

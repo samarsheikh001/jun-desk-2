@@ -8,6 +8,7 @@ import { LiveSocket } from "./lib/socket.ts";
 import { navigate, usePath } from "./lib/router.ts";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { VisitorsPage } from "./visitors/VisitorsPage.tsx";
+import { STEP_ORDER, useOnboarding, WelcomePage } from "./welcome/WelcomePage.tsx";
 
 export interface Hub {
   subscribe(listener: (event: HubEvent) => void): () => void;
@@ -21,6 +22,12 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   // V-01: kept here (not in the page) because the hub sends the full list only on connect.
   const [visitors, setVisitors] = useState<LiveVisitor[]>([]);
   const listeners = useRef(new Set<(event: HubEvent) => void>());
+  const onboarding = useOnboarding(workspace?.workspaceId ?? "");
+  // The "Get started n/6" badge follows what's done elsewhere (Settings, Knowledge…).
+  const { reload: reloadOnboarding } = onboarding;
+  useEffect(() => {
+    if (workspace) reloadOnboarding().catch(() => {});
+  }, [path, workspace, reloadOnboarding]);
 
   useEffect(() => {
     if (path === "/" || path === "") navigate("/inbox", { replace: true });
@@ -57,7 +64,11 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     : path.startsWith("/knowledge") ? "knowledge"
     : path.startsWith("/agent") ? "agent"
     : path.startsWith("/visitors") ? "visitors"
+    : path.startsWith("/welcome") ? "welcome"
     : "inbox";
+  const ob = onboarding.state;
+  const obDone = ob ? STEP_ORDER.filter((k) => ob.steps[k]).length : 0;
+  const showGetStarted = Boolean(ob && !ob.dismissed && obDone < STEP_ORDER.length && workspace.role !== "agent");
   const canEdit = workspace.role !== "agent";
   const conversationId = path.match(/^\/inbox\/([\w-]+)/)?.[1] ?? null;
 
@@ -75,6 +86,9 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           <a href="/settings" className={section === "settings" ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate("/settings"); }}>Settings</a>
         </nav>
         <span className="spacer" />
+        {showGetStarted && section !== "welcome" && (
+          <a className="get-started" href="/welcome" onClick={(e) => { e.preventDefault(); navigate("/welcome"); }}>Get started {obDone}/{STEP_ORDER.length}</a>
+        )}
         <span className="presence" title={online.map((o) => o.name).join(", ")}>
           {online.slice(0, 5).map((o) => (
             <span key={o.userId} className="avatar" title={`${o.name} is online`}>{o.name.slice(0, 1).toUpperCase()}</span>
@@ -87,6 +101,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <InboxPage workspaceId={workspace.workspaceId} me={me.user} hub={hub} conversationId={conversationId} />
       ) : section === "knowledge" ? (
         <KnowledgePage workspaceId={workspace.workspaceId} canEdit={canEdit} />
+      ) : section === "welcome" ? (
+        <WelcomePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} onboarding={onboarding.state} reload={onboarding.reload} />
       ) : section === "visitors" ? (
         <VisitorsPage workspaceId={workspace.workspaceId} visitors={visitors} />
       ) : section === "agent" ? (

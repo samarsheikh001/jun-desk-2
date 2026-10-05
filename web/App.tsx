@@ -23,7 +23,8 @@ export function App() {
   if (!me) return <div className="center muted">Loading…</div>;
   if (invite?.[1]) return <InvitePage token={invite[1]} onDone={done} />;
   if (path === "/recover") return <RecoverPage onDone={done} />;
-  if (!me.setupComplete) return <SetupPage onDone={done} />;
+  // T-11: a fresh desk goes straight to "Get started".
+  if (!me.setupComplete) return <SetupPage onDone={() => { window.history.replaceState(null, "", "/welcome"); refresh(); }} />;
   if (!me.user) return <LoginPage onDone={refresh} />;
   return <Shell me={me} onSignOut={refresh} />;
 }

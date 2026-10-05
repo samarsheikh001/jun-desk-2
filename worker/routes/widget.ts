@@ -218,6 +218,16 @@ widget.get("/widget/:key/live", async (c) => {
   if (!fromAllowedSite(c, inbox)) throw new HttpError(403, "site_not_allowed", "This website isn't allowed to use this widget (Settings → Install → Allowed websites).");
   const sessionId = c.req.query("s") ?? "";
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(sessionId)) throw new HttpError(400, "invalid_field", "Bad session id.");
+  // T-11: the first time the widget runs on a real site (not the desk's demo page), note it
+  // so "Install on your site" ticks itself off.
+  const origin = c.req.header("origin");
+  if (origin && origin !== new URL(c.req.url).origin && typeof inbox.settings.installedAt !== "number") {
+    c.executionCtx.waitUntil(
+      c.env.DB.prepare("UPDATE inboxes SET settings = json_set(settings, '$.installedAt', ?, '$.installedOn', ?) WHERE id = ? AND json_extract(settings, '$.installedAt') IS NULL")
+        .bind(Date.now(), origin.slice(0, 200), inbox.inboxId)
+        .run(),
+    );
+  }
   const cf = (c.req.raw as Request & { cf?: { country?: string; city?: string } }).cf;
   return connectVisitorLive(c.env, c.req.raw, inbox.workspaceId, {
     sessionId,

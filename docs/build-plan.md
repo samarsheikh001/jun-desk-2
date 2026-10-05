@@ -151,6 +151,8 @@
 
 *Demo: a stranger goes from the README to a working AI desk on their own site in under 10 minutes.*
 
+**Status (2026-10-05): T-11 and T-12 built and verified; README rewritten; launch drafts in `docs/launch/`. Waiting on: a public repo (to test the Deploy button), a demo video, posting.**
+
 | ID | Feature | Size | |
 |---|---|---|---|
 | T-11 | First-run setup wizard | M | 🚀 |

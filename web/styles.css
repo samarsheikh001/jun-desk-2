@@ -349,3 +349,14 @@ fieldset.field { border: 0; padding: 0; margin: 0; min-width: 0; }
 .contact-history a { display: grid; gap: 1px; padding: 6px 8px; border-radius: 8px; background: var(--bg); color: var(--text); text-decoration: none; }
 .contact-history a:hover { background: var(--tag); }
 input[type="color"] { width: 44px; height: 38px; padding: 3px; cursor: pointer; }
+
+/* Get started (T-11) */
+.get-started { padding: 4px 10px; border-radius: 999px; background: var(--tag); color: var(--accent); font-size: 0.85rem; font-weight: 600; text-decoration: none; }
+.progress { height: 6px; border-radius: 999px; background: var(--bg); overflow: hidden; margin-top: 10px; }
+.progress span { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+.step .row h2 { margin: 0; font-size: 1.05rem; }
+.step-n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--bg); font-weight: 700; font-size: 0.85rem; flex: none; }
+.step.done .step-n { background: #1a7f37; color: #fff; }
+.step.done h2 { color: var(--muted); }
+.step-body { display: grid; gap: 8px; margin: 8px 0 0 38px; }
+.step-body > button { justify-self: start; }
