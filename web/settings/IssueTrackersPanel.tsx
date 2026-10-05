@@ -8,10 +8,12 @@ export interface LinearTeam {
   name: string;
 }
 
-/** Non-secret status from GET /workspaces/:id/trackers. Credentials are Worker secrets; this only says whether they're set. */
+type SecretSource = "worker" | "settings" | null;
+
+/** Non-secret status from GET /workspaces/:id/trackers: whether a credential is set and where, never its value. */
 export interface TrackerStatus {
-  github: { repo: string | null; tokenSet: boolean; configured: boolean; apiUrl?: string };
-  linear: { team: LinearTeam | null; keySet: boolean; configured: boolean; apiUrl?: string };
+  github: { repo: string | null; tokenSet: boolean; tokenSource: SecretSource; tokenHint: string | null; configured: boolean; apiUrl?: string };
+  linear: { team: LinearTeam | null; keySet: boolean; keySource: SecretSource; keyHint: string | null; configured: boolean; apiUrl?: string };
 }
 
 interface TestResult {
@@ -40,7 +42,7 @@ export function IssueTrackersPanel({ workspaceId, canEdit }: { workspaceId: stri
       <p className="muted small">
         Agents can turn a conversation into a GitHub or Linear issue: the AI drafts the title, steps to reproduce, failing requests and browser details, the agent edits
         it and files it, and the conversation keeps the link. The AI never files issues on its own. Issue text is masked again (emails, tokens, card numbers) before it's
-        sent, and credentials stay Worker secrets: they aren't stored in the database or shown here.
+        sent. Tokens you paste here are kept in the workspace's Durable Object storage (not the database) and never shown again.
       </p>
       <GitHubSection workspaceId={workspaceId} status={status} canEdit={canEdit} onChange={setStatus} />
       <LinearSection workspaceId={workspaceId} status={status} canEdit={canEdit} onChange={setStatus} />
@@ -49,16 +51,43 @@ export function IssueTrackersPanel({ workspaceId, canEdit }: { workspaceId: stri
   );
 }
 
-function SecretState({ name, set }: { name: string; set: boolean }) {
-  return set ? <span className="ok-text">✓ <code>{name}</code> is set</span> : <span className="error"><code>{name}</code> isn't set</span>;
+function SecretState({ name, set, source, hint }: { name: string; set: boolean; source: SecretSource; hint: string | null }) {
+  if (!set) return <span className="error">not set</span>;
+  if (source === "worker") return <span className="ok-text">✓ from the Worker secret <code>{name}</code></span>;
+  return <span className="ok-text">✓ saved{hint ? <> (<code>•••• {hint}</code>)</> : null}</span>;
 }
 
-function SecretStep({ name }: { name: string }) {
+/**
+ * Paste a token or key; it's saved write-only (PUT path { [field]: value }) and never shown
+ * again. A Worker secret overrides it, so then there's nothing to edit here.
+ */
+function CredentialField({ label, placeholder, path, field, source, onSaved }: {
+  label: string;
+  placeholder: string;
+  path: string;
+  field: string;
+  source: SecretSource;
+  onSaved: (next: TrackerStatus) => void;
+}) {
+  const [value, setValue] = useState("");
+  const { busy, error, run } = useAction();
+  if (source === "worker") return null;
+  const put = (v: string | null) =>
+    run(async () => {
+      const next = await api<TrackerStatus>(path, { method: "PUT", body: { [field]: v } });
+      setValue("");
+      onSaved(next);
+    });
   return (
-    <li>
-      Add it to this Worker as the secret <code>{name}</code>: run <code>npx wrangler secret put {name}</code> in your Jun Desk checkout (it asks for the value), or in the
-      Cloudflare dashboard go to your Worker → Settings → Variables and Secrets → Add → Secret. For local development, put it in <code>.dev.vars</code>.
-    </li>
+    <div className="field">
+      <span className="small strong">{label}</span>
+      <div className="row tracker-row">
+        <input type="password" value={value} onChange={(e) => setValue(e.target.value)} placeholder={source ? "Paste a new one to replace it" : placeholder} aria-label={label} autoComplete="off" spellCheck={false} />
+        <button className="small" disabled={busy || !value.trim()} onClick={() => put(value)}>Save</button>
+        {source === "settings" && <button className="ghost small" disabled={busy} onClick={() => put(null)}>Remove</button>}
+      </div>
+      {error && <p className="error small">{error}</p>}
+    </div>
   );
 }
 
@@ -87,13 +116,18 @@ function GitHubSection({ workspaceId, status, canEdit, onChange }: SectionProps)
       </div>
       <dl className="env small">
         <dt>Token</dt>
-        <dd><SecretState name="GITHUB_TOKEN" set={github.tokenSet} /></dd>
+        <dd><SecretState name="GITHUB_TOKEN" set={github.tokenSet} source={github.tokenSource} hint={github.tokenHint} /></dd>
         <dt>Repository</dt>
         <dd>{github.repo ? <code>{github.repo}</code> : <span className="muted">not set</span>}</dd>
         {github.apiUrl && (<><dt>API</dt><dd><code>{github.apiUrl}</code></dd></>)}
       </dl>
       {canEdit && (
         <>
+          <CredentialField label="Token" placeholder="github_pat_…" path={`${base}/token`} field="token" source={github.tokenSource} onSaved={(next) => {
+            onChange(next);
+            // Check it straight away, when there's a repository to check against.
+            if (next.github.repo) run(async () => setTest(await api<TestResult>(`${base}/test`, { body: {} })));
+          }} />
           <div className="field">
             <span className="small strong">Repository</span>
             <div className="row tracker-row">
@@ -110,8 +144,8 @@ function GitHubSection({ workspaceId, status, canEdit, onChange }: SectionProps)
               <li>
                 On GitHub, create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">fine-grained personal access token</a>: Repository access → <em>Only select repositories</em> → this repository; Permissions → <em>Issues: Read and write</em>.
               </li>
-              <SecretStep name="GITHUB_TOKEN" />
-              <li>Save the repository above, then Test connection.</li>
+              <li>Paste it in Token above and save. (Or set it as the Worker secret <code>GITHUB_TOKEN</code>, which takes priority.)</li>
+              <li>Save the repository, then Test connection.</li>
             </ol>
           </details>
         </>
@@ -149,13 +183,18 @@ function LinearSection({ workspaceId, status, canEdit, onChange }: SectionProps)
       </div>
       <dl className="env small">
         <dt>API key</dt>
-        <dd><SecretState name="LINEAR_API_KEY" set={linear.keySet} /></dd>
+        <dd><SecretState name="LINEAR_API_KEY" set={linear.keySet} source={linear.keySource} hint={linear.keyHint} /></dd>
         <dt>Team</dt>
         <dd>{linear.team ? <>{linear.team.name} <code>{linear.team.key}</code></> : <span className="muted">not set</span>}</dd>
         {linear.apiUrl && (<><dt>API</dt><dd><code>{linear.apiUrl}</code></dd></>)}
       </dl>
       {canEdit && (
         <>
+          <CredentialField label="API key" placeholder="lin_api_…" path={`${base}/key`} field="apiKey" source={linear.keySource} onSaved={(next) => {
+            onChange(next);
+            // Loads the teams for the picker.
+            if (next.linear.keySet) testConnection();
+          }} />
           <div className="field">
             <span className="small strong">Team</span>
             <div className="row tracker-row">
@@ -174,8 +213,8 @@ function LinearSection({ workspaceId, status, canEdit, onChange }: SectionProps)
             <summary>How to connect Linear</summary>
             <ol>
               <li>In Linear, go to Settings → Security &amp; access → Personal API keys and create a key (one that can create issues in the team you want).</li>
-              <SecretStep name="LINEAR_API_KEY" />
-              <li>Test connection, then pick the team new issues go to.</li>
+              <li>Paste it in API key above and save. (Or set it as the Worker secret <code>LINEAR_API_KEY</code>, which takes priority.)</li>
+              <li>Pick the team new issues go to.</li>
             </ol>
           </details>
         </>

@@ -17,7 +17,14 @@ export async function searchKnowledge(env: Env, workspaceId: string, query: stri
   if (!q) return [];
 
   const [vectorHits, keywordHits] = await Promise.all([
-    embed(env, [q]).then(([v]) => env.KNOWLEDGE_INDEX.getByName(workspaceId).query(v!, CANDIDATES)),
+    // Workers AI embeds the query even when replies come from another provider; if it fails
+    // (e.g. the daily free allocation is used up), keyword search alone still finds answers.
+    embed(env, [q])
+      .then(([v]) => env.KNOWLEDGE_INDEX.getByName(workspaceId).query(v!, CANDIDATES))
+      .catch((error: unknown) => {
+        console.error("query embedding failed, using keyword search only:", error);
+        return [] as { chunkId: string }[];
+      }),
     (async () => {
       const match = ftsQuery(q);
       if (!match) return [];

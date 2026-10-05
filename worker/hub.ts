@@ -109,6 +109,20 @@ export class WorkspaceHub extends DurableObject<Env> {
     this.#chatgpt = undefined;
   }
 
+  /**
+   * RPC (S-08): an issue-tracker credential pasted in Settings. Kept in this object's storage,
+   * not D1, so it's never in database exports, backups or the D1 console.
+   */
+  async trackerSecret(name: "github" | "linear"): Promise<string | null> {
+    return (await this.ctx.storage.get<string>(`tracker-secret:${name}`)) ?? null;
+  }
+
+  /** RPC (S-08): save or (null) remove a tracker credential. */
+  async setTrackerSecret(name: "github" | "linear", value: string | null): Promise<void> {
+    if (value) await this.ctx.storage.put(`tracker-secret:${name}`, value);
+    else await this.ctx.storage.delete(`tracker-secret:${name}`);
+  }
+
   /** RPC: fan an event out to every connected agent. */
   async publish(event: HubEvent): Promise<void> {
     this.#broadcast(JSON.stringify(event));

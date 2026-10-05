@@ -23,13 +23,33 @@ const DRAFT_TIMEOUT_MS = 15_000;
 /** A reserved client_id whose tracker call never finished (Worker died) can be retried after this. */
 const STALE_PENDING_MS = 2 * 60 * 1000;
 
-/** Credentials are only ever Worker secrets (GITHUB_TOKEN, LINEAR_API_KEY): never stored in D1, never returned. */
-function trackerEnv(env: Env) {
+/**
+ * Tracker credentials: a Worker secret (GITHUB_TOKEN, LINEAR_API_KEY) wins; otherwise the one an
+ * admin pasted in Settings, kept in the workspace hub's storage (never D1). Never returned.
+ */
+async function trackerCreds(env: Env, workspaceId: string) {
   const vars = env as unknown as { GITHUB_TOKEN?: string; GITHUB_API_URL?: string; LINEAR_API_KEY?: string; LINEAR_API_URL?: string };
+  const hub = env.WORKSPACE_HUB.getByName(workspaceId);
+  const envToken = vars.GITHUB_TOKEN?.trim() || null;
+  const envKey = vars.LINEAR_API_KEY?.trim() || null;
+  const [savedToken, savedKey] = await Promise.all([envToken ? null : hub.trackerSecret("github"), envKey ? null : hub.trackerSecret("linear")]);
+  const source = (fromEnv: string | null, saved: string | null) => (fromEnv ? ("worker" as const) : saved ? ("settings" as const) : null);
   return {
-    github: { token: vars.GITHUB_TOKEN?.trim() || null, apiUrl: vars.GITHUB_API_URL?.trim() || GITHUB_API_DEFAULT },
-    linear: { apiKey: vars.LINEAR_API_KEY?.trim() || null, apiUrl: vars.LINEAR_API_URL?.trim() || LINEAR_API_DEFAULT },
+    github: { token: envToken ?? savedToken, source: source(envToken, savedToken), apiUrl: vars.GITHUB_API_URL?.trim() || GITHUB_API_DEFAULT },
+    linear: { apiKey: envKey ?? savedKey, source: source(envKey, savedKey), apiUrl: vars.LINEAR_API_URL?.trim() || LINEAR_API_DEFAULT },
   };
+}
+
+/** The last 4 characters, for "•••• a1b2" in Settings. */
+const hint = (secret: string | null) => (secret && secret.length >= 12 ? secret.slice(-4) : null);
+
+/** A pasted token or key: one line, no spaces, sane length. Null clears it. */
+function parseSecret(raw: unknown, label: string): string | null {
+  if (raw === null || raw === "") return null;
+  if (typeof raw !== "string") throw new HttpError(400, "invalid_field", `${label} must be text.`);
+  const value = raw.trim();
+  if (value.length < 8 || value.length > 500 || /\s/.test(value)) throw new HttpError(400, "invalid_field", `That doesn't look like a ${label}. Paste it exactly as shown when you created it.`);
+  return value;
 }
 
 const platformFetch: typeof fetch = (input, init) => fetch(input, init);
@@ -65,10 +85,10 @@ async function loadTrackerSettings(db: D1Database, workspaceId: string): Promise
 /** What the dashboard may know: never a credential, only whether it's set. */
 async function trackerStatus(c: AppContext, workspaceId: string) {
   const { repo, team } = await loadTrackerSettings(c.env.DB, workspaceId);
-  const env = trackerEnv(c.env);
+  const env = await trackerCreds(c.env, workspaceId);
   return {
-    github: { repo, tokenSet: env.github.token !== null, configured: repo !== null && env.github.token !== null, ...(env.github.apiUrl !== GITHUB_API_DEFAULT ? { apiUrl: env.github.apiUrl } : {}) },
-    linear: { team, keySet: env.linear.apiKey !== null, configured: team !== null && env.linear.apiKey !== null, ...(env.linear.apiUrl !== LINEAR_API_DEFAULT ? { apiUrl: env.linear.apiUrl } : {}) },
+    github: { repo, tokenSet: env.github.token !== null, tokenSource: env.github.source, tokenHint: env.github.source === "settings" ? hint(env.github.token) : null, configured: repo !== null && env.github.token !== null, ...(env.github.apiUrl !== GITHUB_API_DEFAULT ? { apiUrl: env.github.apiUrl } : {}) },
+    linear: { team, keySet: env.linear.apiKey !== null, keySource: env.linear.source, keyHint: env.linear.source === "settings" ? hint(env.linear.apiKey) : null, configured: team !== null && env.linear.apiKey !== null, ...(env.linear.apiUrl !== LINEAR_API_DEFAULT ? { apiUrl: env.linear.apiUrl } : {}) },
   };
 }
 
@@ -98,13 +118,27 @@ issues.put("/workspaces/:id/github", async (c) => {
   return c.json(await trackerStatus(c, workspaceId));
 });
 
+/** Paste (or, with null, remove) a credential in Settings. A Worker secret, if set, still wins. */
+for (const [name, path, field, label] of [
+  ["github", "/workspaces/:id/github/token", "token", "GitHub token"],
+  ["linear", "/workspaces/:id/linear/key", "apiKey", "Linear API key"],
+] as const) {
+  issues.put(path, async (c) => {
+    const workspaceId = c.req.param("id");
+    await requireAdmin(c, workspaceId);
+    const value = parseSecret((await readJson(c.req))[field], label);
+    await c.env.WORKSPACE_HUB.getByName(workspaceId).setTrackerSecret(name, value);
+    return c.json(await trackerStatus(c, workspaceId));
+  });
+}
+
 /** GitHub "Test connection": GET /repos/:owner/:repo with the token. */
 issues.post("/workspaces/:id/github/test", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
   const { repo } = await loadTrackerSettings(c.env.DB, workspaceId);
-  const { token, apiUrl } = trackerEnv(c.env).github;
-  if (!token) return c.json({ ok: false, reason: "no_token", message: "The GITHUB_TOKEN secret isn't set on this Worker yet." });
+  const { token, apiUrl } = (await trackerCreds(c.env, workspaceId)).github;
+  if (!token) return c.json({ ok: false, reason: "no_token", message: "Add a GitHub token first." });
   if (!repo) return c.json({ ok: false, reason: "no_repo", message: "Save a repository first." });
   const result = await checkRepo(githubClient(token, apiUrl), repo);
   if (!result.ok) return c.json(result);
@@ -135,8 +169,8 @@ issues.put("/workspaces/:id/linear", async (c) => {
 issues.post("/workspaces/:id/linear/test", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
-  const { apiKey, apiUrl } = trackerEnv(c.env).linear;
-  if (!apiKey) return c.json({ ok: false, reason: "no_key", message: "The LINEAR_API_KEY secret isn't set on this Worker yet.", teams: [] });
+  const { apiKey, apiUrl } = (await trackerCreds(c.env, workspaceId)).linear;
+  if (!apiKey) return c.json({ ok: false, reason: "no_key", message: "Add a Linear API key first.", teams: [] });
   const result = await checkLinear(linearClient(apiKey, apiUrl));
   if (!result.ok) return c.json({ ...result, teams: [] });
   return c.json({ ok: true, reason: "ok", message: `Connected as ${result.viewer}. ${result.teams.length} team${result.teams.length === 1 ? "" : "s"} available.`, teams: result.teams });
@@ -264,14 +298,14 @@ issues.post("/conversations/:cid/issues", async (c) => {
 
   // Where it goes, and how to file it there.
   const settings = await loadTrackerSettings(c.env.DB, ref.workspaceId);
-  const env = trackerEnv(c.env);
+  const env = await trackerCreds(c.env, ref.workspaceId);
   let target: string;
   let file: () => Promise<Filed>;
   if (provider === "github") {
     const { repo } = settings;
     const { token, apiUrl } = env.github;
     if (!repo || !token) {
-      throw new HttpError(409, "github_not_configured", !repo ? "No GitHub repository is set. An admin can add one in Settings → Issue trackers." : "The GITHUB_TOKEN secret isn't set on this Worker. See Settings → Issue trackers.");
+      throw new HttpError(409, "github_not_configured", !repo ? "No GitHub repository is set. An admin can add one in Settings → Issue trackers." : "No GitHub token is set. An admin can add one in Settings → Issue trackers.");
     }
     target = repo;
     file = async () => {
@@ -282,7 +316,7 @@ issues.post("/conversations/:cid/issues", async (c) => {
     const { team } = settings;
     const { apiKey, apiUrl } = env.linear;
     if (!team || !apiKey) {
-      throw new HttpError(409, "linear_not_configured", !team ? "No Linear team is set. An admin can pick one in Settings → Issue trackers." : "The LINEAR_API_KEY secret isn't set on this Worker. See Settings → Issue trackers.");
+      throw new HttpError(409, "linear_not_configured", !team ? "No Linear team is set. An admin can pick one in Settings → Issue trackers." : "No Linear API key is set. An admin can add one in Settings → Issue trackers.");
     }
     target = team.key;
     file = async () => {

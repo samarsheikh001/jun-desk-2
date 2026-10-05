@@ -1,7 +1,7 @@
 // End-to-end test of S-08 (issues from a conversation, GitHub or Linear) against a running dev
 // server. The draft uses real Workers AI. Filing never reaches GitHub or Linear here: the e2e
-// server has neither GITHUB_TOKEN nor LINEAR_API_KEY, so this checks validation and the "not
-// configured" paths; the tracker requests are covered by worker/lib/{github,linear}.test.ts.
+// server has neither GITHUB_TOKEN nor LINEAR_API_KEY, and the pasted-credential step removes what it
+// saves, so this checks validation and the "not configured" paths; the tracker requests are covered by worker/lib/{github,linear}.test.ts.
 
 import assert from "node:assert/strict";
 import { BASE, Client, SETUP_TOKEN, SoftAuthenticator, step, summary } from "./e2e-lib.ts";
@@ -50,8 +50,8 @@ await step("tracker settings: anyone in the workspace sees the status, never a c
   assert.equal(status.json.github.tokenSet, false, "this e2e expects no GITHUB_TOKEN on the dev server (it must never reach real GitHub)");
   assert.equal(status.json.linear.keySet, false, "this e2e expects no LINEAR_API_KEY on the dev server (it must never reach real Linear)");
   // Only non-secret fields (a rerun may find a repo/team saved by an earlier run).
-  assert.deepEqual(Object.keys(status.json.github).sort(), ["configured", "repo", "tokenSet"]);
-  assert.deepEqual(Object.keys(status.json.linear).sort(), ["configured", "keySet", "team"]);
+  assert.deepEqual(Object.keys(status.json.github).sort(), ["configured", "repo", "tokenHint", "tokenSet", "tokenSource"]);
+  assert.deepEqual(Object.keys(status.json.linear).sort(), ["configured", "keyHint", "keySet", "keySource", "team"]);
   assert.equal(status.json.github.configured || status.json.linear.configured, false);
   assert.equal((await new Client().call(`/workspaces/${workspaceId}/trackers`)).status, 401);
   assert.equal((await owner.call(`/workspaces/ws_nope/trackers`)).status, 404);
@@ -71,11 +71,38 @@ await step("GitHub settings: only admins change the repo; it's validated; Test c
 
   const saved = await owner.call(base, { method: "PUT", body: { repo: "https://github.com/acme/web-app.git" } });
   assert.equal(saved.status, 200);
-  assert.deepEqual(saved.json.github, { repo: "acme/web-app", tokenSet: false, configured: false });
+  assert.deepEqual(saved.json.github, { repo: "acme/web-app", tokenSet: false, tokenSource: null, tokenHint: null, configured: false });
   const test = await owner.call(`${base}/test`, { body: {} });
   assert.equal(test.status, 200);
   assert.deepEqual([test.json.ok, test.json.reason], [false, "no_token"]);
-  assert.match(test.json.message, /GITHUB_TOKEN/);
+  assert.match(test.json.message, /GitHub token/);
+});
+
+await step("pasted credentials: admins only, validated, saved write-only (last 4 shown), removable", async () => {
+  const token = `github_pat_e2e${run}WXYZ`;
+  const key = `lin_api_e2e${run}ABCD`;
+  const tokenPath = `/workspaces/${workspaceId}/github/token`;
+  const keyPath = `/workspaces/${workspaceId}/linear/key`;
+  assert.equal((await teammate.call(tokenPath, { method: "PUT", body: { token } })).status, 403);
+  assert.equal((await teammate.call(keyPath, { method: "PUT", body: { apiKey: key } })).status, 403);
+  for (const bad of ["short", "has a space in it", 42, "x".repeat(501)]) {
+    assert.equal((await owner.call(tokenPath, { method: "PUT", body: { token: bad } })).status, 400, `token ${String(bad).slice(0, 20)}`);
+  }
+  const saved = await owner.call(tokenPath, { method: "PUT", body: { token: `  ${token}
+` } });
+  assert.equal(saved.status, 200);
+  assert.deepEqual([saved.json.github.tokenSet, saved.json.github.tokenSource, saved.json.github.tokenHint], [true, "settings", "WXYZ"]);
+  const savedKey = await owner.call(keyPath, { method: "PUT", body: { apiKey: key } });
+  assert.deepEqual([savedKey.json.linear.keySet, savedKey.json.linear.keySource, savedKey.json.linear.keyHint], [true, "settings", "ABCD"]);
+  // Never returned, to anyone.
+  for (const who of [owner, teammate]) {
+    const raw = JSON.stringify((await who.call(`/workspaces/${workspaceId}/trackers`)).json);
+    assert.ok(!raw.includes(token) && !raw.includes(key), "a credential leaked into the status");
+  }
+  // Removed again, so nothing below can reach the real GitHub or Linear.
+  const cleared = await owner.call(tokenPath, { method: "PUT", body: { token: null } });
+  assert.deepEqual([cleared.json.github.tokenSet, cleared.json.github.tokenSource, cleared.json.github.tokenHint], [false, null, null]);
+  assert.equal((await owner.call(keyPath, { method: "PUT", body: { apiKey: "" } })).json.linear.keySet, false);
 });
 
 await step("Linear settings: only admins pick the team; it's validated; Test connection needs the secret", async () => {
@@ -90,11 +117,11 @@ await step("Linear settings: only admins pick the team; it's validated; Test con
   }
   const test = await owner.call(`${base}/test`, { body: {} });
   assert.deepEqual([test.status, test.json.ok, test.json.reason, test.json.teams], [200, false, "no_key", []]);
-  assert.match(test.json.message, /LINEAR_API_KEY/);
+  assert.match(test.json.message, /Linear API key/);
 
   const saved = await owner.call(base, { method: "PUT", body: { team } });
   assert.equal(saved.status, 200);
-  assert.deepEqual(saved.json.linear, { team: { ...team, key: "ENG" }, keySet: false, configured: false });
+  assert.deepEqual(saved.json.linear, { team: { ...team, key: "ENG" }, keySet: false, keySource: null, keyHint: null, configured: false });
   assert.deepEqual(saved.json.github.repo, "acme/web-app", "GitHub and Linear are independent");
 });
 
@@ -190,10 +217,10 @@ await step("filing validates provider and issue, then says the tracker isn't con
   // Repo and team are set, the secrets aren't.
   const github = await teammate.call(path, { body: { provider: "github", title: "Pay fails", body: "Steps…", labels: ["bug"], clientId: crypto.randomUUID() } });
   assert.deepEqual([github.status, github.json.error.code], [409, "github_not_configured"]);
-  assert.match(github.json.error.message, /GITHUB_TOKEN/);
+  assert.match(github.json.error.message, /GitHub token/);
   const linear = await teammate.call(path, { body: { provider: "linear", title: "Pay fails", body: "Steps…", clientId: crypto.randomUUID() } });
   assert.deepEqual([linear.status, linear.json.error.code], [409, "linear_not_configured"]);
-  assert.match(linear.json.error.message, /LINEAR_API_KEY/);
+  assert.match(linear.json.error.message, /Linear API key/);
   // Without a repo / team the message says that instead.
   assert.equal((await owner.call(`/workspaces/${workspaceId}/github`, { method: "PUT", body: { repo: "" } })).json.github.repo, null);
   assert.equal((await owner.call(`/workspaces/${workspaceId}/linear`, { method: "PUT", body: { team: null } })).json.linear.team, null);

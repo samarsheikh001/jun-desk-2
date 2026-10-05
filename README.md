@@ -75,10 +75,10 @@ It hands a conversation to your team when it can't answer from your docs, when t
 
 An agent's "Create issue" files to GitHub, Linear, or either (they pick when both are set up). Set them up in **Settings → Issue trackers**:
 
-- **GitHub:** create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) for the one repository, with **Issues: Read and write**. Run `npx wrangler secret put GITHUB_TOKEN` (it asks for the value), or add it in the Cloudflare dashboard under your Worker → Settings → Variables and Secrets. Then enter the repository (`owner/name`) and press Test connection.
-- **Linear:** create a personal API key (Linear → Settings → Security & access). Run `npx wrangler secret put LINEAR_API_KEY`, or add it in the Cloudflare dashboard. Then press Test connection and pick the team.
+- **GitHub:** create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) for the one repository, with **Issues: Read and write**. Paste it in Token and save, enter the repository (`owner/name`), and press Test connection.
+- **Linear:** create a personal API key (Linear → Settings → Security & access). Paste it in API key and save; the teams load, pick one.
 
-The credentials stay Worker secrets: they're never stored in the database or shown in the dashboard. Issue text is masked again on the server before it's sent. `GITHUB_API_URL` (GitHub Enterprise Server) and `LINEAR_API_URL` override the endpoints.
+Pasted credentials are kept in the workspace's Durable Object storage, not the database, and never shown again (only their last 4 characters). If you'd rather use Worker secrets, set `GITHUB_TOKEN` / `LINEAR_API_KEY` (`npx wrangler secret put …`); they take priority. Issue text is masked again on the server before it's sent. `GITHUB_API_URL` (GitHub Enterprise Server) and `LINEAR_API_URL` override the endpoints.
 
 ## Support agent as code
 
