@@ -141,3 +141,24 @@ export function describeEvents(context: DebugContext): string[] {
     return `[${at}] JavaScript error: ${e.message}${e.source ? ` at ${e.source}` : ""}`;
   });
 }
+
+/** "Chrome 141" from a user agent string (good enough for a support panel or an issue). */
+export function browserName(ua: string): string {
+  const version = (re: RegExp) => re.exec(ua)?.[1];
+  if (version(/Edg\/(\d+)/)) return `Edge ${version(/Edg\/(\d+)/)}`;
+  if (version(/Firefox\/(\d+)/)) return `Firefox ${version(/Firefox\/(\d+)/)}`;
+  if (version(/Chrome\/(\d+)/)) return `Chrome ${version(/Chrome\/(\d+)/)}`;
+  if (/Safari/.test(ua) && version(/Version\/(\d+)/)) return `Safari ${version(/Version\/(\d+)/)}`;
+  return "Unknown browser";
+}
+
+/** "Windows", "macOS", … or "" when the user agent doesn't say. */
+export function osName(ua: string): string {
+  return /Windows/.test(ua) ? "Windows" : /iPhone|iPad/.test(ua) ? "iOS" : /Mac OS X/.test(ua) ? "macOS" : /Android/.test(ua) ? "Android" : /Linux/.test(ua) ? "Linux" : "";
+}
+
+/** "Chrome 141 on Windows". */
+export function describeBrowser(ua: string): string {
+  const os = osName(ua);
+  return os ? `${browserName(ua)} on ${os}` : browserName(ua);
+}

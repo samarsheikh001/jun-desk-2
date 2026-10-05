@@ -11,6 +11,7 @@ What you get:
 - **Support that sees the bug.** Recent errors, failed requests and pages visited are captured in the visitor's browser, masked twice (in the browser and on the server), and shown to your agents and the AI. If something on the page breaks, the widget can offer help on its own: "Adding a team member didn't work. Want a hand?"
 - **A support agent you keep in git.** The AI's rules, procedures, tools and tests are plain files. `jun eval` replays recent real conversations against your edits before you push them, so you see which answers would change.
 - **A real-time inbox** with assignment, takeover from the AI, internal notes with @mentions, saved replies, tags, a contact sidebar, and a live list of who's on your site right now. You can start a chat with any of them.
+- **Issues from a conversation.** "Create issue" drafts a GitHub or Linear issue from the chat and the masked browser details (steps to reproduce, failing requests, errors, browser), your agent edits it and files it, and the conversation keeps the link. The AI never files issues on its own.
 - **Reports** for the last 7, 30 or 90 days: conversations, how many the AI resolved on its own, handoff rate and reasons, first-response times, CSAT and replies per teammate.
 
 ## Deploy
@@ -66,9 +67,18 @@ Turn it on in **Settings** (or from Get started) and add your docs under **Knowl
 
 - **Workers AI** is the default. It's built in and needs no key. Mistral Small 3.1 answered all five of our benchmark questions correctly at about 1 s to the first word (`scripts/bench-models.ts`).
 - **OpenAI**: run `npx wrangler secret put OPENAI_API_KEY`. `OPENAI_BASE_URL` routes it through Cloudflare AI Gateway.
-- **ChatGPT sign-in** is for local development only: add `JUN_DEV_CHATGPT=1` to `.dev.vars`. OpenAI allows plan usage for open-source apps running on your own machine, not for a deployed desk answering the public.
+- **ChatGPT sign-in** spends your own ChatGPT plan. Settings → AI assistant → ChatGPT sign-in → Sign in with ChatGPT. Locally it returns to the desk by itself; on a deployed desk, paste back the address of the page that doesn't load. OpenAI's terms cover plan usage for your own use, not a desk answering the public.
 
 It hands a conversation to your team when it can't answer from your docs, when the customer asks for a person, after a set number of replies, or when it hits the monthly cap you set. Your team gets a short brief with what was asked and what failed. Outside business hours the AI keeps answering, and chats waiting for a person get your away message.
+
+## Issue trackers
+
+An agent's "Create issue" files to GitHub, Linear, or either (they pick when both are set up). Set them up in **Settings → Issue trackers**:
+
+- **GitHub:** create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) for the one repository, with **Issues: Read and write**. Run `npx wrangler secret put GITHUB_TOKEN` (it asks for the value), or add it in the Cloudflare dashboard under your Worker → Settings → Variables and Secrets. Then enter the repository (`owner/name`) and press Test connection.
+- **Linear:** create a personal API key (Linear → Settings → Security & access). Run `npx wrangler secret put LINEAR_API_KEY`, or add it in the Cloudflare dashboard. Then press Test connection and pick the team.
+
+The credentials stay Worker secrets: they're never stored in the database or shown in the dashboard. Issue text is masked again on the server before it's sent. `GITHUB_API_URL` (GitHub Enterprise Server) and `LINEAR_API_URL` override the endpoints.
 
 ## Support agent as code
 

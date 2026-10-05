@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { LiveVisitor } from "../../shared/protocol.ts";
 import { api, describeError } from "../api.ts";
-import { describeBrowser } from "../inbox/DebugPanel.tsx";
+import { describeBrowser } from "../../shared/debug.ts";
 
 // V-01 live visitors and V-07 agent-started chats. The list itself comes from the workspace
 // hub socket (Shell keeps it), so it updates as people browse.

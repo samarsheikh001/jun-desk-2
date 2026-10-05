@@ -17,6 +17,7 @@ It's an Intercom/Fin-style desk for B2B SaaS that you deploy to your own Cloudfl
 A few things I haven't seen in other open-source desks:
 
 - The AI's rules, procedures, HTTP tools and tests live as files you can keep in git (procedures use the Agent Skills SKILL.md format). `jun eval` replays your recent real conversations against an edited config and shows which answers would change before you push it.
+- An agent can turn the conversation into a GitHub or Linear issue in one click: the AI drafts steps to reproduce from the page trail, the failing request and the browser, the agent edits it, and the conversation keeps the link. The AI never files issues by itself.
 - If the page breaks, the widget can offer help on its own, and the AI words the offer from what failed ("Adding a team member didn't work. Want a hand?") rather than a canned line.
 - Signed-in customers come through as a verified identity (an HS256 JWT from your backend), so tools can look up that customer's own account.
 
@@ -31,6 +32,7 @@ First release. Deploy with the button in the README; upgrades from any earlier c
 - Widget (about 4 KB loader): live chat, files, read receipts, branding, business hours with email capture, consent mode, allowed websites.
 - AI agent on Workers AI or OpenAI: answers from your docs with citations, hands off with a brief, follows procedures, calls your HTTP tools, logs every call.
 - Debug context: masked errors, failed requests and page trail for agents and the AI; AI-worded proactive help when something breaks.
+- Issues: "Create issue" drafts a GitHub or Linear issue from the conversation and the debug context; the agent edits and files it, and the conversation keeps the link.
 - Agent as code: AGENTS.md, skills, tools and evals in git; `jun pull/push/eval`; versions and restore in the dashboard.
 - Inbox: real-time, assignment, AI takeover, notes with @mentions, saved replies, tags, contact sidebar, live visitors, agent-started chats, identity verification.
 - Reports: conversations per day, AI resolution and handoff rates with the top handoff reasons, first-response times, CSAT with recent 👎 comments, and a per-teammate table.

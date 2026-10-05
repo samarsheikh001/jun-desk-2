@@ -106,6 +106,7 @@ export function MessageList({
             <div key={m.id} className={`system-msg ${m.internal ? "internal" : ""}`}>
               {m.internal && <span className="tag">Note · only your team sees this</span>}
               <div>{m.body}</div>
+              {m.meta.issue && <a href={m.meta.issue.url} target="_blank" rel="noreferrer">Open {m.meta.issue.key} in {m.meta.issue.provider === "linear" ? "Linear" : "GitHub"}</a>}
             </div>
           );
         }

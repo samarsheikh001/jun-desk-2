@@ -157,6 +157,7 @@
 |---|---|---|---|
 | T-11 | First-run setup wizard | M | 🚀 |
 | T-12 | Upgrade path verified on a real older install | S | 🚀 |
+| S-08 | Create a GitHub or Linear issue from a conversation (pulled in, D-26). Shipped 2026-10-05 | M | 🚀 |
 | — | README, docs site, demo video, launch post (HN, GitHub) | M | 🚀 |
 
 ---

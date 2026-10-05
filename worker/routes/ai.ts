@@ -1,7 +1,7 @@
 import { chatgptOAuth as oauth, tokensFromResponse, type ChatGPTCredentials } from "@jun/llm";
 import { Hono } from "hono";
 import { deleteSource, DEFAULT_MAX_PAGES, indexSnippet, removeDocument, startSync, type SourceSettings } from "../ai/knowledge.ts";
-import { DEFAULT_MODELS, devChatGPTAllowed, loadAiSettings, type ProviderId } from "../ai/providers.ts";
+import { DEFAULT_MODELS, isLoopback, loadAiSettings, type ProviderId } from "../ai/providers.ts";
 import { searchKnowledge } from "../ai/search.ts";
 import { requireUser } from "../auth/session.ts";
 import { newId } from "../lib/crypto.ts";
@@ -43,7 +43,7 @@ ai.get("/workspaces/:id/ai", async (c) => {
     defaults: DEFAULT_MODELS,
     openaiKeyConfigured: Boolean((c.env as unknown as { OPENAI_API_KEY?: string }).OPENAI_API_KEY),
     devChatgpt: {
-      available: devChatGPTAllowed(c.env, new URL(c.req.url).hostname),
+      available: true,
       connected: Boolean(creds?.tokens),
       email: creds?.tokens?.email ?? null,
     },
@@ -73,18 +73,20 @@ ai.put("/workspaces/:id/ai", async (c) => {
   return c.json({ settings: await loadAiSettings(c.env, workspaceId) });
 });
 
-// ---------- dev-only Sign in with ChatGPT (D-10) ----------
+// ---------- Sign in with ChatGPT (D-10, D-27) ----------
+
+// A deployed desk can't receive the 127.0.0.1 loopback redirect, so the browser lands on a page
+// that doesn't load; the admin pastes that address back (POST .../chatgpt/finish).
+const PASTE_PORT = "1455";
 
 ai.post("/workspaces/:id/ai/chatgpt/start", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
   const url = new URL(c.req.url);
-  if (!devChatGPTAllowed(c.env, url.hostname)) {
-    throw new HttpError(403, "dev_only", "Sign in with ChatGPT is for local development only (JUN_DEV_CHATGPT=1 on localhost).");
-  }
 
   // OpenAI's open-source flow requires a 127.0.0.1 loopback redirect; only the port may vary.
-  const redirectUri = `http://127.0.0.1:${url.port || "80"}${oauth.CALLBACK_PATH}`;
+  const paste = !isLoopback(url.hostname);
+  const redirectUri = `http://127.0.0.1:${paste ? PASTE_PORT : url.port || "80"}${oauth.CALLBACK_PATH}`;
   const row = await c.env.DB.prepare("SELECT credentials FROM dev_chatgpt WHERE workspace_id = ?").bind(workspaceId).first<{ credentials: string }>();
   let creds = row ? (JSON.parse(row.credentials) as ChatGPTCredentials) : undefined;
   if (!creds) {
@@ -103,6 +105,7 @@ ai.post("/workspaces/:id/ai/chatgpt/start", async (c) => {
     ).bind(state, workspaceId, codeVerifier, nonce, redirectUri, `${url.origin}/settings`, Date.now() + 10 * 60 * 1000),
   ]);
   return c.json({
+    paste,
     url: oauth.buildAuthorizeUrl({
       clientId: creds.clientId,
       hostId: creds.hostId,
@@ -113,6 +116,25 @@ ai.post("/workspaces/:id/ai/chatgpt/start", async (c) => {
       idTokenHint: creds.tokens?.idToken,
     }),
   });
+});
+
+ai.post("/workspaces/:id/ai/chatgpt/finish", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  const body = await readJson(c.req);
+  let callback: URL;
+  try {
+    callback = new URL(String(body.callbackUrl ?? "").trim());
+  } catch {
+    throw new HttpError(400, "invalid_field", "Paste the full address of the page that didn't load (it starts with http://127.0.0.1).");
+  }
+  if (callback.pathname !== oauth.CALLBACK_PATH) throw new HttpError(400, "invalid_field", "That isn't the sign-in return address. It should end in /auth/callback?code=…");
+  try {
+    await finishChatGPTSignIn(c.env, callback.searchParams, workspaceId);
+  } catch (e) {
+    throw new HttpError(400, "chatgpt_failed", (e as Error).message);
+  }
+  return c.json({ ok: true });
 });
 
 ai.delete("/workspaces/:id/ai/chatgpt", async (c) => {
@@ -131,7 +153,7 @@ ai.delete("/workspaces/:id/ai/chatgpt", async (c) => {
   return c.json({ ok: true });
 });
 
-/** GET /auth/callback on 127.0.0.1 (outside /api): finishes the dev ChatGPT sign-in. */
+/** GET /auth/callback on 127.0.0.1 (outside /api): finishes a local ChatGPT sign-in. */
 export async function handleChatGPTCallback(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const page = (title: string, body: string, status = 400) =>
@@ -139,38 +161,47 @@ export async function handleChatGPTCallback(request: Request, env: Env): Promise
       status,
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
-  if (!devChatGPTAllowed(env, url.hostname)) return page("Not available", "Sign in with ChatGPT is for local development only.", 404);
-
-  const stateRow = await env.DB.prepare("DELETE FROM dev_chatgpt_states WHERE state = ? AND expires_at > ? RETURNING workspace_id, code_verifier, nonce, redirect_uri, return_to")
-    .bind(url.searchParams.get("state") ?? "", Date.now())
-    .first<{ workspace_id: string; code_verifier: string; nonce: string; redirect_uri: string; return_to: string }>();
-  if (!stateRow) return page("Sign-in expired", "This sign-in link is old or was already used. Start again from Settings.");
-  const error = url.searchParams.get("error");
-  if (error) return page("Sign-in failed", `${error} ${url.searchParams.get("error_description") ?? ""}`.replace(/</g, "&lt;"));
-
-  const row = await env.DB.prepare("SELECT credentials FROM dev_chatgpt WHERE workspace_id = ?").bind(stateRow.workspace_id).first<{ credentials: string }>();
-  const existing = row ? (JSON.parse(row.credentials) as ChatGPTCredentials) : undefined;
-  const clientId = url.searchParams.get("client_id") ?? existing?.clientId;
-  const code = url.searchParams.get("code");
-  if (!existing || !clientId || clientId === oauth.REGISTRATION_CLIENT_ID || !code) return page("Sign-in failed", "The callback was missing the code or client id.");
-
   try {
-    const response = await oauth.exchangeCode({ clientId, code, codeVerifier: stateRow.code_verifier, redirectUri: stateRow.redirect_uri });
-    if (!response.id_token) throw new Error("No id_token in the token response.");
-    await oauth.verifyIdToken(response.id_token, { clientId, nonce: stateRow.nonce });
-    const creds: ChatGPTCredentials = { hostId: existing.hostId, clientId, tokens: tokensFromResponse(response) };
-    await env.DB.batch([
-      env.DB.prepare("UPDATE dev_chatgpt SET credentials = ? WHERE workspace_id = ?").bind(JSON.stringify(creds), stateRow.workspace_id),
-      env.DB.prepare(
-        `INSERT INTO ai_settings (workspace_id, enabled, provider, updated_at) VALUES (?, 1, 'chatgpt', ?)
-         ON CONFLICT (workspace_id) DO UPDATE SET provider = 'chatgpt', updated_at = excluded.updated_at`,
-      ).bind(stateRow.workspace_id, Date.now()),
-    ]);
-    await env.WORKSPACE_HUB.getByName(stateRow.workspace_id).resetChatGPT();
+    const returnTo = await finishChatGPTSignIn(env, url.searchParams);
+    return Response.redirect(`${returnTo}?chatgpt=connected`, 302);
   } catch (e) {
     return page("Sign-in failed", String((e as Error).message).replace(/</g, "&lt;"));
   }
-  return Response.redirect(`${stateRow.return_to}?chatgpt=connected`, 302);
+}
+
+/**
+ * Exchanges the callback's code for tokens and switches the workspace to ChatGPT. Returns the
+ * page to go back to. `workspaceId`, when given, must match the sign-in that was started.
+ */
+async function finishChatGPTSignIn(env: Env, params: URLSearchParams, workspaceId?: string): Promise<string> {
+  const stateRow = await env.DB.prepare(
+    "DELETE FROM dev_chatgpt_states WHERE state = ? AND expires_at > ? AND (?3 IS NULL OR workspace_id = ?3) RETURNING workspace_id, code_verifier, nonce, redirect_uri, return_to",
+  )
+    .bind(params.get("state") ?? "", Date.now(), workspaceId ?? null)
+    .first<{ workspace_id: string; code_verifier: string; nonce: string; redirect_uri: string; return_to: string }>();
+  if (!stateRow) throw new Error("This sign-in is old or was already used. Start again from Settings.");
+  const error = params.get("error");
+  if (error) throw new Error(`${error} ${params.get("error_description") ?? ""}`.trim());
+
+  const row = await env.DB.prepare("SELECT credentials FROM dev_chatgpt WHERE workspace_id = ?").bind(stateRow.workspace_id).first<{ credentials: string }>();
+  const existing = row ? (JSON.parse(row.credentials) as ChatGPTCredentials) : undefined;
+  const clientId = params.get("client_id") ?? existing?.clientId;
+  const code = params.get("code");
+  if (!existing || !clientId || clientId === oauth.REGISTRATION_CLIENT_ID || !code) throw new Error("The return address was missing the code or client id.");
+
+  const response = await oauth.exchangeCode({ clientId, code, codeVerifier: stateRow.code_verifier, redirectUri: stateRow.redirect_uri });
+  if (!response.id_token) throw new Error("No id_token in the token response.");
+  await oauth.verifyIdToken(response.id_token, { clientId, nonce: stateRow.nonce });
+  const creds: ChatGPTCredentials = { hostId: existing.hostId, clientId, tokens: tokensFromResponse(response) };
+  await env.DB.batch([
+    env.DB.prepare("UPDATE dev_chatgpt SET credentials = ? WHERE workspace_id = ?").bind(JSON.stringify(creds), stateRow.workspace_id),
+    env.DB.prepare(
+      `INSERT INTO ai_settings (workspace_id, enabled, provider, updated_at) VALUES (?, 1, 'chatgpt', ?)
+       ON CONFLICT (workspace_id) DO UPDATE SET provider = 'chatgpt', updated_at = excluded.updated_at`,
+    ).bind(stateRow.workspace_id, Date.now()),
+  ]);
+  await env.WORKSPACE_HUB.getByName(stateRow.workspace_id).resetChatGPT();
+  return stateRow.return_to;
 }
 
 // ---------- knowledge base (K-01, K-03, K-04 lite) ----------

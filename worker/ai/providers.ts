@@ -36,14 +36,9 @@ export async function loadAiSettings(env: Env, workspaceId: string): Promise<AiS
   };
 }
 
-/**
- * "Sign in with ChatGPT" is development-only (D-10): OpenAI allows plan usage for
- * open-source apps running locally. It's off unless JUN_DEV_CHATGPT=1 and the request
- * comes to a loopback host.
- */
-export function devChatGPTAllowed(env: Env, hostname?: string): boolean {
-  const enabled = (env as unknown as { JUN_DEV_CHATGPT?: string }).JUN_DEV_CHATGPT === "1";
-  return enabled && (hostname === undefined || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]");
+/** Sign in with ChatGPT (D-27) spends the signed-in owner's plan; this private desk always offers it. */
+export function isLoopback(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 }
 
 export class AiUnavailableError extends Error {}
@@ -74,7 +69,6 @@ export function createModel(env: Env, workspaceId: string, settings: AiSettings)
       prompt: (system) => ({ system, providerOptions: { openai: { store: false } } }),
     };
   }
-  if (!devChatGPTAllowed(env)) throw new AiUnavailableError("Sign in with ChatGPT is development-only (set JUN_DEV_CHATGPT=1 locally).");
   // Token refresh happens in the workspace's hub object, so rotation is never raced.
   const hub = env.WORKSPACE_HUB.getByName(workspaceId);
   const chatgptFetch: typeof fetch = async (input, init) => {

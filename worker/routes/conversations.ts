@@ -1,9 +1,8 @@
 import { Hono } from "hono";
-import { isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
 import type { AiAction, ConversationStatus } from "../../shared/protocol.ts";
 import { requireUser } from "../auth/session.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
-import { loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
+import { loadDebugContext, loadIssues, loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
 import { connectConversation, connectHub, notifyConversationChanged, sendMessage } from "../lib/realtime.ts";
 import { parseHours } from "../../shared/hours.ts";
 import { normalizeDomains } from "../lib/origins.ts";
@@ -13,13 +12,13 @@ import { storeUpload } from "./files.ts";
 
 const STATUSES: ConversationStatus[] = ["open", "pending", "snoozed", "resolved"];
 
-async function requireMember(c: AppContext, workspaceId: string): Promise<void> {
+export async function requireMember(c: AppContext, workspaceId: string): Promise<void> {
   const row = await c.env.DB.prepare("SELECT 1 FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, c.get("user").id).first();
   if (!row) throw new HttpError(404, "not_found", "Workspace not found.");
 }
 
 /** Resolves a conversation the signed-in agent can access. */
-async function requireConversation(c: AppContext, conversationId: string): Promise<ConversationRef> {
+export async function requireConversation(c: AppContext, conversationId: string): Promise<ConversationRef> {
   const row = await c.env.DB.prepare(
     `SELECT c.workspace_id FROM conversations c JOIN members m ON m.workspace_id = c.workspace_id AND m.user_id = ?
      WHERE c.id = ?`,
@@ -147,37 +146,21 @@ conversations.post("/workspaces/:id/files", async (c) => {
 
 conversations.get("/conversations/:cid", async (c) => {
   const ref = await requireConversation(c, c.req.param("cid"));
-  const [conversation, messages] = await Promise.all([
+  const [conversation, messages, issues] = await Promise.all([
     loadSummary(c.env.DB, ref.conversationId),
     loadMessages(c.env.DB, ref.conversationId, { includeInternal: true }),
+    loadIssues(c.env.DB, ref.conversationId), // S-08
     // Opening the conversation reads my @mentions in it (I-05).
     c.env.DB.prepare("UPDATE mentions SET read_at = ? WHERE conversation_id = ? AND user_id = ? AND read_at IS NULL").bind(Date.now(), ref.conversationId, c.get("user").id).run(),
   ]);
-  return c.json({ conversation, messages });
+  return c.json({ conversation, messages, issues });
 });
 
 // Debug context (S-03): the latest snapshot's environment plus every captured event,
 // merged across snapshots (each message sends the loader's whole recent buffer).
 conversations.get("/conversations/:cid/context", async (c) => {
   const ref = await requireConversation(c, c.req.param("cid"));
-  const rows = await c.env.DB.prepare("SELECT context FROM debug_snapshots WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 20")
-    .bind(ref.conversationId)
-    .all<{ context: string }>();
-  if (rows.results.length === 0) return c.json({ context: null, events: [], issueCount: 0 });
-  const snapshots = rows.results.map((r) => JSON.parse(r.context) as DebugContext);
-  const seen = new Set<string>();
-  const events: DebugEvent[] = [];
-  for (const snapshot of snapshots) {
-    for (const e of snapshot.events) {
-      const key = `${e.t}|${e.kind}|${e.url ?? ""}|${e.message ?? ""}|${e.status ?? ""}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      events.push(e);
-    }
-  }
-  events.sort((a, b) => b.t - a.t);
-  const { events: _latestEvents, ...latest } = snapshots[0]!;
-  return c.json({ context: latest, events: events.slice(0, 100), issueCount: events.filter(isIssue).length });
+  return c.json(await loadDebugContext(c.env.DB, ref.conversationId));
 });
 
 // AI-11: tool calls the AI made in this conversation, newest last.

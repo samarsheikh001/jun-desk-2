@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ConversationStatus, ConversationSummary, CsatRating, Message } from "../../shared/protocol.ts";
+import type { ConversationIssue, ConversationStatus, ConversationSummary, CsatRating, Message } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { fillSavedReply } from "../../shared/inbox.ts";
 import { Composer, type SavedReply } from "../components/Composer.tsx";
 import { MessageList } from "../components/MessageList.tsx";
 import { navigate } from "../lib/router.ts";
 import { DebugPanel } from "./DebugPanel.tsx";
+import { configuredProviders, IssueDialog } from "./IssueDialog.tsx";
+import type { TrackerStatus } from "../settings/IssueTrackersPanel.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
 import type { Hub } from "../Shell.tsx";
 
@@ -49,6 +51,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
   const [tags, setTags] = useState<Tag[]>([]);
   const [unreadMentions, setUnreadMentions] = useState(0);
   const [toast, setToast] = useState<MentionToast | null>(null);
+  const [trackers, setTrackers] = useState<TrackerStatus | null>(null);
 
   const matches = useCallback(
     (c: ConversationSummary) =>
@@ -73,6 +76,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
   const loadMentions = useCallback(() => api<{ unread: number }>(`/workspaces/${workspaceId}/mentions`).then((r) => setUnreadMentions(r.unread)), [workspaceId]);
   useEffect(() => {
     api<{ members: Member[] }>(`/workspaces/${workspaceId}/members`).then((r) => setMembers(r.members));
+    api<TrackerStatus>(`/workspaces/${workspaceId}/trackers`).then(setTrackers, () => setTrackers(null));
     void loadTags();
     void loadMentions();
   }, [workspaceId, loadTags, loadMentions]);
@@ -193,6 +197,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
           me={me}
           members={members}
           tags={tags}
+          trackers={trackers}
           onTagsChanged={() => void loadTags()}
           onOpened={() => void loadMentions()}
         />
@@ -209,6 +214,7 @@ function Thread({
   me,
   members,
   tags,
+  trackers,
   onTagsChanged,
   onOpened,
 }: {
@@ -217,19 +223,24 @@ function Thread({
   me: { id: string; name: string };
   members: Member[];
   tags: Tag[];
+  trackers: TrackerStatus | null;
   onTagsChanged: () => void;
   onOpened: () => void;
 }) {
   const [conversation, setConversation] = useState<ConversationSummary | null>(null);
+  const [filed, setFiled] = useState<ConversationIssue[]>([]);
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [created, setCreated] = useState<ConversationIssue | null>(null);
   const [initial, setInitial] = useState<Message[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedReplies, setSavedReplies] = useState<SavedReply[]>([]);
 
   useEffect(() => {
-    api<{ conversation: ConversationSummary; messages: Message[] }>(`/conversations/${conversationId}`).then(
+    api<{ conversation: ConversationSummary; messages: Message[]; issues: ConversationIssue[] }>(`/conversations/${conversationId}`).then(
       (r) => {
         setConversation(r.conversation);
         setInitial(r.messages);
+        setFiled(r.issues);
         onOpened(); // opening it reads my @mentions here
       },
       (e: Error) => setError(e.message),
@@ -276,6 +287,13 @@ function Thread({
     }
   };
 
+  // S-08: issues filed from here; ones a teammate files arrive live as "Issue created" notes.
+  const issues = useMemo(() => {
+    const all = [...filed];
+    for (const m of thread.messages) if (m.meta.issue && !all.some((i) => i.id === m.meta.issue!.id)) all.push(m.meta.issue);
+    return all;
+  }, [filed, thread.messages]);
+
   if (error) return <div className="thread empty error">{error}</div>;
   if (!conversation || !initial) return <div className="thread empty muted">Loading…</div>;
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "Teammate";
@@ -308,8 +326,49 @@ function Thread({
           <option value="resolved">Resolved</option>
         </select>
         {conversation.status !== "resolved" && <button className="small" onClick={() => void update({ status: "resolved" })}>Resolve</button>}
+        <span className="issue-button">
+          <button
+            className="ghost small"
+            disabled={configuredProviders(trackers).length === 0}
+            title={configuredProviders(trackers).length ? "Draft an issue from this conversation" : "Connect GitHub or Linear in Settings first"}
+            onClick={() => setIssueOpen(true)}
+          >
+            Create issue
+          </button>
+          {trackers && configuredProviders(trackers).length === 0 && (
+            <a className="small" href="/settings#issue-trackers" onClick={(e) => { e.preventDefault(); navigate("/settings#issue-trackers"); }}>Set up</a>
+          )}
+        </span>
       </header>
       <TagEditor tags={conversation.tags} known={tags} onChange={(next) => void setTags(next)} />
+      {issues.length > 0 && (
+        <div className="issue-bar small">
+          <span className="muted">Issues</span>
+          {issues.map((i) => (
+            <a key={i.id} className="chip issue-chip" href={i.url} target="_blank" rel="noreferrer" title={i.title}>
+              {i.key} <span className="clip issue-chip-title">{i.title}</span>
+            </a>
+          ))}
+        </div>
+      )}
+      {issueOpen && trackers && configuredProviders(trackers).length > 0 && (
+        <IssueDialog
+          conversationId={conversationId}
+          trackers={trackers}
+          onClose={() => setIssueOpen(false)}
+          onCreated={(issue) => {
+            setFiled((current) => (current.some((i) => i.id === issue.id) ? current : [...current, issue]));
+            setCreated(issue);
+            setIssueOpen(false);
+          }}
+        />
+      )}
+      {created && (
+        <div className="toast" role="status">
+          <span>Created <a href={created.url} target="_blank" rel="noreferrer">{created.key}</a></span>
+          <button className="ghost small" aria-label="Dismiss" onClick={() => setCreated(null)}>×</button>
+        </div>
+      )}
       {conversation.handling === "ai" ? (
         <div className="ai-banner small">
           <span>🤖 The AI assistant is answering this conversation. Replying yourself takes it over.</span>

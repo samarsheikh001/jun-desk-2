@@ -24,6 +24,26 @@ export interface MessageMeta {
   away?: boolean;
   /** I-05: user ids @mentioned in an internal note. */
   mentions?: string[];
+  /** S-08: on the internal "Issue created" note. */
+  issue?: ConversationIssue;
+}
+
+export type IssueProvider = "github" | "linear";
+
+/** S-08: an issue an agent filed from a conversation (agents only). */
+export interface ConversationIssue {
+  id: string;
+  provider: IssueProvider;
+  /** GitHub "owner/name", or the Linear team key. */
+  target: string;
+  /** Linear issue id; GitHub issue number as text. */
+  externalId: string;
+  /** For display: "owner/name#123" or "ENG-42". */
+  key: string;
+  url: string;
+  title: string;
+  createdBy: string | null;
+  createdAt: number;
 }
 
 export interface Attachment {

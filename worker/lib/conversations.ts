@@ -1,4 +1,5 @@
-import type { Attachment, AuthorType, ConversationStatus, CsatRating, ConversationSummary, Handling, Message, MessageMeta } from "../../shared/protocol.ts";
+import { isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
+import type { Attachment, AuthorType, ConversationIssue, ConversationStatus, CsatRating, ConversationSummary, Handling, Message, MessageMeta } from "../../shared/protocol.ts";
 
 export const SUMMARY_SELECT = `
   SELECT c.id, c.status, c.handling, c.assignee_id, c.last_seq, c.last_message_at, c.last_message_preview,
@@ -120,4 +121,52 @@ export function preview(body: string, attachments: Attachment[]): string {
   if (text) return text.length > 140 ? `${text.slice(0, 139)}…` : text;
   if (attachments.length) return attachments.length === 1 ? `📎 ${attachments[0]!.name}` : `📎 ${attachments.length} files`;
   return "";
+}
+
+/**
+ * Debug context (S-03) as agents see it: the latest snapshot's environment plus every captured
+ * event, merged across snapshots (each message sends the loader's whole recent buffer), newest first.
+ */
+export async function loadDebugContext(
+  db: D1Database,
+  conversationId: string,
+): Promise<{ context: Omit<DebugContext, "events"> | null; events: DebugEvent[]; issueCount: number }> {
+  const rows = await db.prepare("SELECT context FROM debug_snapshots WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 20").bind(conversationId).all<{ context: string }>();
+  if (rows.results.length === 0) return { context: null, events: [], issueCount: 0 };
+  const snapshots = rows.results.map((r) => JSON.parse(r.context) as DebugContext);
+  const seen = new Set<string>();
+  const events: DebugEvent[] = [];
+  for (const snapshot of snapshots) {
+    for (const e of snapshot.events) {
+      const key = `${e.t}|${e.kind}|${e.url ?? ""}|${e.message ?? ""}|${e.status ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      events.push(e);
+    }
+  }
+  events.sort((a, b) => b.t - a.t);
+  const { events: _latestEvents, ...latest } = snapshots[0]!;
+  return { context: latest, events: events.slice(0, 100), issueCount: events.filter(isIssue).length };
+}
+
+/** S-08: issues filed from this conversation, oldest first (only ones the tracker confirmed). */
+export async function loadIssues(db: D1Database, conversationId: string): Promise<ConversationIssue[]> {
+  const rows = await db
+    .prepare(
+      `SELECT id, provider, target, external_id, key, url, title, created_by, created_at FROM conversation_issues
+       WHERE conversation_id = ? AND url IS NOT NULL ORDER BY created_at`,
+    )
+    .bind(conversationId)
+    .all<{ id: string; provider: ConversationIssue["provider"]; target: string; external_id: string; key: string; url: string; title: string; created_by: string | null; created_at: number }>();
+  return rows.results.map((r) => ({
+    id: r.id,
+    provider: r.provider,
+    target: r.target,
+    externalId: r.external_id,
+    key: r.key,
+    url: r.url,
+    title: r.title,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+  }));
 }

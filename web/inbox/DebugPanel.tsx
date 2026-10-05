@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { formatEventTime, isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
+import { describeBrowser, formatEventTime, isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
 import type { AiAction, ConversationSummary } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { navigate } from "../lib/router.ts";
@@ -8,17 +8,6 @@ interface ContextResponse {
   context: Omit<DebugContext, "events"> | null;
   events: DebugEvent[];
   issueCount: number;
-}
-
-/** "Chrome 141 on Windows" from a user agent string (good enough for a support panel). */
-export function describeBrowser(ua: string): string {
-  const browser =
-    /Edg\/(\d+)/.exec(ua)?.[1] ? `Edge ${/Edg\/(\d+)/.exec(ua)![1]}` :
-    /Firefox\/(\d+)/.exec(ua)?.[1] ? `Firefox ${/Firefox\/(\d+)/.exec(ua)![1]}` :
-    /Chrome\/(\d+)/.exec(ua)?.[1] ? `Chrome ${/Chrome\/(\d+)/.exec(ua)![1]}` :
-    /Version\/(\d+).*Safari/.exec(ua)?.[1] ? `Safari ${/Version\/(\d+)/.exec(ua)![1]}` : "Unknown browser";
-  const os = /Windows/.test(ua) ? "Windows" : /iPhone|iPad/.test(ua) ? "iOS" : /Mac OS X/.test(ua) ? "macOS" : /Android/.test(ua) ? "Android" : /Linux/.test(ua) ? "Linux" : "";
-  return os ? `${browser} on ${os}` : browser;
 }
 
 function EventRow({ event, timezone }: { event: DebugEvent; timezone: string }) {

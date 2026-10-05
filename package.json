@@ -19,7 +19,7 @@
     "jun": "node packages/cli/src/index.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.web.json",
     "test": "node --test \"packages/*/src/**/*.test.ts\" \"worker/**/*.test.ts\" \"shared/**/*.test.ts\"",
-    "test:e2e": "node scripts/e2e-auth.ts && node scripts/e2e-chat.ts && node scripts/e2e-ai.ts && node scripts/e2e-debug.ts && node scripts/e2e-agent.ts && node scripts/e2e-visitors.ts && node scripts/e2e-polish.ts && node scripts/e2e-inbox.ts && node scripts/e2e-metrics.ts"
+    "test:e2e": "node scripts/e2e-auth.ts && node scripts/e2e-chat.ts && node scripts/e2e-ai.ts && node scripts/e2e-debug.ts && node scripts/e2e-agent.ts && node scripts/e2e-visitors.ts && node scripts/e2e-polish.ts && node scripts/e2e-inbox.ts && node scripts/e2e-metrics.ts && node scripts/e2e-issues.ts"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.62.5",

@@ -255,6 +255,7 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .ai-form textarea, .kb-forms textarea { width: 100%; min-height: 7lh; }
 .check { display: flex; gap: 8px; align-items: center; font-weight: 500; }
 .chatgpt-box { display: grid; gap: 6px; padding: 10px 12px; background: var(--bg); border-radius: 8px; }
+.chatgpt-paste input { flex: 1; min-width: 0; }
 
 /* ---------- knowledge ---------- */
 .kb-forms { display: grid; gap: 10px; margin: 12px 0; }
@@ -346,6 +347,8 @@ fieldset.field { border: 0; padding: 0; margin: 0; min-width: 0; }
 .wpreview.left .wpreview-btn { right: auto; left: 12px; }
 .hours-grid { display: grid; gap: 6px; }
 .hours-row input[type="time"] { width: 120px; }
+/* Narrow screens: a day's times wrap under its name instead of widening the page. */
+@media (max-width: 480px) { .hours-row { flex-wrap: wrap; row-gap: 4px; } .hours-row input[type="time"] { width: 112px; } }
 
 /* Contact sidebar (I-08) */
 .contact-edit { display: grid; gap: 6px; }
@@ -446,3 +449,37 @@ mark.mention { background: var(--mention); color: inherit; border-radius: 4px; p
   .topbar nav { order: 10; flex-basis: 100%; overflow-x: auto; scrollbar-width: none; }
   .topbar > span.muted.small { display: none; }
 }
+
+/* GitHub issues from a conversation (S-08) */
+.issue-button { display: inline-flex; gap: 8px; align-items: center; }
+.issue-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 16px; border-bottom: 1px solid var(--border); }
+.issue-chip { color: var(--text); text-decoration: none; max-width: 100%; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; }
+.issue-chip:hover { border-color: var(--accent); }
+.issue-chip-title { max-width: 220px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--muted); }
+dialog.issue-dialog { width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 16px 48px rgb(0 0 0 / 0.25); }
+dialog.issue-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+.issue-dialog form { margin: 0; padding: 18px 20px; gap: 12px; }
+.issue-dialog .row { flex-wrap: wrap; row-gap: 6px; }
+.issue-dialog input { width: 100%; }
+.issue-body { width: 100%; min-height: 14lh; max-height: 52dvh; resize: vertical; field-sizing: fixed; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; line-height: 1.5; tab-size: 2; }
+.issue-drafting { display: flex; align-items: center; gap: 8px; min-height: 8lh; margin: 0; }
+.issue-drafting .typing { padding: 0; }
+.issue-actions { border-top: 1px solid var(--border); padding-top: 12px; }
+.ok-text { color: #1a7f37; }
+.tag-warn { background: var(--note-bg); color: var(--note-text); }
+@media (prefers-color-scheme: dark) { .ok-text { color: #4ac26b; } }
+/* Narrow screens: the conversation header wraps instead of scrolling sideways. */
+@media (max-width: 700px) {
+  .thread-head { flex-wrap: wrap; row-gap: 8px; }
+  .issue-dialog form { padding: 14px; }
+  .issue-chip-title { max-width: 140px; }
+  .issue-actions > .muted { flex-basis: 100%; }
+}
+.trackers-panel .tracker { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: grid; gap: 10px; }
+.trackers-panel .tracker h3 { margin: 0; }
+.trackers-panel .tracker .field { margin-top: 0; }
+.tracker-row { flex-wrap: wrap; gap: 8px; }
+.tracker-row input, .tracker-row select { flex: 1; min-width: 200px; }
+.tracker-help summary { cursor: pointer; color: var(--accent); }
+.tracker-help ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+.issue-target { margin: -6px 0 0; }

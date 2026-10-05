@@ -16,7 +16,7 @@ interface AiState {
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   "workers-ai": "Workers AI (built in, no key needed)",
   openai: "OpenAI (API key)",
-  chatgpt: "ChatGPT sign-in (development only)",
+  chatgpt: "ChatGPT sign-in (your plan)",
 };
 
 export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
@@ -24,6 +24,8 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
   const [state, setState] = useState<AiState | null>(null);
   const [provider, setProvider] = useState<ProviderId>("workers-ai");
   const [saved, setSaved] = useState(false);
+  // Deployed desks: the sign-in returns to a 127.0.0.1 page that doesn't load; its address is pasted here.
+  const [pasting, setPasting] = useState(false);
   const { busy, error, run } = useAction();
 
   const load = useCallback(async () => {
@@ -93,7 +95,13 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
             )}{" "}
             {canEdit && state.devChatgpt.available && (
               <button type="button" className="ghost small" disabled={busy} onClick={() => run(async () => {
-                window.location.href = (await api<{ url: string }>(`${base}/chatgpt/start`, { body: {} })).url;
+                const { url, paste } = await api<{ url: string; paste: boolean }>(`${base}/chatgpt/start`, { body: {} });
+                if (!paste) {
+                  window.location.href = url;
+                  return;
+                }
+                window.open(url, "_blank", "noopener");
+                setPasting(true);
               })}>
                 {state.devChatgpt.connected ? "Reconnect" : "Sign in with ChatGPT"}
               </button>
@@ -101,7 +109,23 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
             {canEdit && state.devChatgpt.connected && (
               <button type="button" className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`${base}/chatgpt`, { method: "DELETE" }); await load(); })}>Disconnect</button>
             )}
-            <div className="muted">For local development only: OpenAI allows plan usage in open-source apps running on your own machine. Deployed desks use an API key or Workers AI.</div>
+            {pasting && (
+              <div className="stack chatgpt-paste">
+                <span>After you approve in the new tab, it ends on a page that doesn't load (<code>http://127.0.0.1:1455/auth/callback?…</code>). Copy that page's address and paste it here.</span>
+                <div className="row">
+                  <input name="callbackUrl" placeholder="http://127.0.0.1:1455/auth/callback?code=…" aria-label="Sign-in return address" autoComplete="off" />
+                  <button type="button" className="small" disabled={busy} onClick={(e) => {
+                    const input = e.currentTarget.parentElement?.querySelector("input");
+                    run(async () => {
+                      await api(`${base}/chatgpt/finish`, { body: { callbackUrl: input?.value ?? "" } });
+                      setPasting(false);
+                      await load();
+                    });
+                  }}>Finish</button>
+                </div>
+              </div>
+            )}
+            <div className="muted">Replies spend the signed-in ChatGPT plan. Only for a private desk: OpenAI's terms cover plan usage for your own use, not for serving the public.</div>
           </div>
         )}
         <label className="field">
