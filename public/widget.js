@@ -17,7 +17,7 @@
   var script = document.currentScript;
   if (!script || window.JunDesk) return;
   var key = script.getAttribute("data-key");
-  if (!key) return console.warn("[Jun Desk] Missing data-key on the widget script tag.");
+  if (!key) return console.warn("Jun Desk: no data-key");
   var origin = new URL(script.src).origin;
   var color = script.getAttribute("data-color"); // overrides the desk's branding colour
 
@@ -40,25 +40,36 @@
       .replace(/\b(?:\d[ -]?){13,19}\b/g, "[number]")
       .slice(0, max);
   }
+  function parse(u) { try { return new URL(String(u), location.href); } catch (e) {} }
   function cleanUrl(u) {
-    try {
-      var x = new URL(String(u), location.href), q = [];
-      x.searchParams.forEach(function (_, k) { if (q.indexOf(k) < 0 && q.length < 10) q.push(k); });
-      var path = redact(x.pathname, 300) + (q.length ? "?" + q.map(function (k) { return redact(k, 40) + "=…"; }).join("&") : "");
-      return x.origin === location.origin ? path : x.origin + path;
-    } catch (e) { return redact(String(u).split(/[?#]/)[0], 300); }
+    var x = parse(u), q = [];
+    if (!x) return redact(String(u).split(/[?#]/)[0], 300);
+    x.searchParams.forEach(function (_, k) { if (q.indexOf(k) < 0 && q.length < 10) q.push(k); });
+    var path = redact(x.pathname, 300) + (q.length ? "?" + q.map(function (k) { return redact(k, 40) + "=…"; }).join("&") : "");
+    return x.origin === location.origin ? path : x.origin + path;
   }
+  // Registrable domain, roughly: the last two labels, or three for "co.uk"-style suffixes.
+  function site(h) { var p = h.split("."), n = p.length; return p.slice(n > 2 && p[n - 2].length < 4 && p[n - 1].length < 3 ? -3 : -2).join("."); }
   function push(e) {
     e.t = Date.now();
     events.push(e);
     if (events.length > 40) events.shift();
     // S-13: remember this page's latest problem (a successful submit clears it). Any failed
-    // request counts (a GET 404 doesn't nudge by itself), but not asset loads (ad blockers).
-    if (/error$|rage/.test(e.kind) || e.kind == "network" && !/^failed to load/.test(e.message)) pageIssue = e.kind;
-    maybeNudge(e);
+    // request counts (a GET 404 doesn't nudge by itself), but not asset loads, and a request that
+    // got no response (status 0) only when it went to the page's own site: ad blockers and privacy
+    // tools block third-party requests (analytics, trackers) all the time.
+    var x, k = e.kind, net = k == "network" && !/^failed to load/.test(e.message) &&
+      (e.status || e.url[0] == "/" || (x = parse(e.url)) && site(x.hostname) == site(location.hostname));
+    if (/error$|rage/.test(k) || net) pageIssue = k;
+    // P-01: offer a chat for JS errors, the app's own (reportError), S-02, S-13 and failed API
+    // calls, not 404s on GETs. Nothing leaves the page before consent (V-06).
+    if (nudged || open || !consented || !(/error$|rage|stuck/.test(k) || net && (!e.status || e.status > 499 || e.method != "GET"))) return;
+    nudgeEvent = e;
+    clearTimeout(nudgeTimer);
+    nudgeTimer = setTimeout(showNudge, /rage|stuck/.test(k) ? 0 : 1200); // errors come in bursts; wait for things to settle (rage clicks already waited)
   }
   // Our own traffic (the chat iframe, uploads) isn't the customer's problem.
-  function ours(u) { try { var x = new URL(String(u), location.href); return x.origin === origin && /^\/(api\/(widget|files)|widget)/.test(x.pathname); } catch (e) { return false; } }
+  function ours(u) { var x = parse(u); return x && x.origin === origin && /^\/(api\/(widget|files)|widget)/.test(x.pathname); }
   function stackOf(err) { return redact(err && err.stack || "", 800).split("\n").slice(0, 5).join("\n") || undefined; }
 
   if (capture) {
@@ -66,45 +77,41 @@
       window.addEventListener("error", function (e) {
         var el = e.target;
         if (el && el !== window && (el.src || el.href)) {
-          if (!ours(el.src || el.href)) push({ kind: "network", method: "GET", url: cleanUrl(el.src || el.href), status: 0, message: "failed to load " + String(el.tagName || "").toLowerCase() });
+          if (!ours(el.src || el.href)) push({ kind: "network", method: "GET", url: cleanUrl(el.src || el.href), status: 0, message: "failed to load " + String(el.tagName).toLowerCase() });
         } else {
           push({ kind: "error", message: redact(e.message || (e.error && e.error.message)), source: e.filename ? cleanUrl(e.filename) + ":" + e.lineno : undefined, stack: stackOf(e.error) });
         }
       }, true);
       window.addEventListener("unhandledrejection", function (e) {
         var r = e.reason;
-        push({ kind: "error", message: "Unhandled promise rejection: " + redact(r && r.message || r), stack: stackOf(r) });
+        push({ kind: "error", message: "Unhandled rejection: " + redact(r && r.message || r), stack: stackOf(r) });
       });
 
+      // fetch and XHR: record failures (4xx/5xx, or no response at all: err); a successful
+      // non-GET means a save went through (S-13).
+      var request = function (method, url) {
+        var started = Date.now();
+        method = String(method || "GET").toUpperCase();
+        return !ours(url) && function (status, err) {
+          if (status > 399 || err) push({ kind: "network", method: method, url: cleanUrl(url), status: status, message: err && redact(err.message), durationMs: Date.now() - started });
+          else if (status > 199 && status < 300 && method != "GET") pageIssue = 0;
+        };
+      };
       if (nativeFetch) {
         window.fetch = function (input, init) {
-          var url = typeof input === "string" ? input : input && input.url || String(input);
-          var method = String(init && init.method || input && input.method || "GET").toUpperCase();
-          var started = Date.now();
+          var done = request(init && init.method || input && input.method, input && input.url || input);
           var p = nativeFetch.apply(this, arguments);
-          if (ours(url)) return p;
-          return p.then(function (res) {
-            if (res.ok && method != "GET") pageIssue = 0; // a save went through (S-13)
-            if (res.status >= 400) push({ kind: "network", method: method, url: cleanUrl(url), status: res.status, durationMs: Date.now() - started });
-            return res;
-          }, function (err) {
-            push({ kind: "network", method: method, url: cleanUrl(url), status: 0, message: redact(err && err.message), durationMs: Date.now() - started });
-            throw err;
-          });
+          return done ? p.then(function (res) { done(res.status); return res; }, function (err) { done(0, err || {}); throw err; }) : p;
         };
       }
 
-      var xhr = XMLHttpRequest.prototype, open = xhr.open, send = xhr.send;
-      xhr.open = function (method, url) { this.__jun = { method: String(method).toUpperCase(), url: url }; return open.apply(this, arguments); };
+      // Not "open"/"send": vars are function-scoped and `open` is the chat's state below.
+      var xhr = XMLHttpRequest.prototype, xhrOpen = xhr.open, xhrSend = xhr.send;
+      xhr.open = function (method, url) { this.__jun = [method, url]; return xhrOpen.apply(this, arguments); };
       xhr.send = function () {
-        var info = this.__jun, x = this, started = Date.now();
-        if (info && !ours(info.url)) {
-          x.addEventListener("loadend", function () {
-            if (x.status >= 400 || x.status === 0) push({ kind: "network", method: info.method, url: cleanUrl(info.url), status: x.status, durationMs: Date.now() - started });
-            else if (x.status < 300 && info.method != "GET") pageIssue = 0;
-          });
-        }
-        return send.apply(this, arguments);
+        var x = this, done = x.__jun && request(x.__jun[0], x.__jun[1]);
+        if (done) x.addEventListener("loadend", function () { done(x.status, !x.status && {}); });
+        return xhrSend.apply(this, arguments);
       };
 
       // S-02 rage clicks. Sentry's definitions (docs.sentry.io/product/issues/issue-details/replay-issues/rage-clicks/,
@@ -150,7 +157,7 @@
         if (!document.hidden) seen += 1000;
         if (seen >= stuckMs && pageIssue && !stuckSent && consented) {
           stuckSent = 1;
-          push({ kind: "stuck", url: cleanUrl(location.pathname), seconds: Math.round(seen / 1000), issue: pageIssue });
+          push({ kind: "stuck", url: cleanUrl(location.pathname), seconds: seen / 1000, issue: pageIssue });
         }
       }, 1000);
     } catch (e) { /* never break the host page */ }
@@ -176,21 +183,23 @@
   var userToken = script.getAttribute("data-user-token") || null;
   var sid, started, live, liveTries = 0;
   function store(k, v) { try { if (!consented) return null; if (v != null) sessionStorage.setItem(k, v); return sessionStorage.getItem(k); } catch (e) { return null; } }
-  function rid() { var a = new Uint8Array(12); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (b) { return ("0" + b.toString(16)).slice(-2); }).join(""); }
+  // 96 random bits as "12-255-0-…" (the desk accepts [A-Za-z0-9_-]{8,64}).
+  function rid() { return crypto.getRandomValues(new Uint8Array(12)).join("-"); }
   function liveSend(m) { if (live && live.readyState === 1) live.send(JSON.stringify(m)); }
+  function tz() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ""; } }
   function sendPage() {
-    var tz = ""; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
-    liveSend({ t: "page", url: location.origin + cleanUrl(location.href), title: redact(document.title, 120), ref: document.referrer ? cleanUrl(document.referrer) : "", start: started, lang: navigator.language, tz: tz });
+    liveSend({ t: "page", url: location.origin + cleanUrl(location.href), title: redact(document.title, 200), ref: document.referrer ? cleanUrl(document.referrer) : "", start: started, lang: navigator.language, tz: tz() });
   }
   function connect() {
-    if (!consented || live || !window.WebSocket) return;
+    if (!consented || live) return;
     sid = sid || store("jun:s") || store("jun:s", rid()) || rid();
-    started = started || Number(store("jun:t") || store("jun:t", String(Date.now()))) || Date.now();
+    started = started || Number(store("jun:t") || store("jun:t", Date.now())) || Date.now();
     var ws = live = new WebSocket(origin.replace(/^http/, "ws") + "/api/widget/" + encodeURIComponent(key) + "/live?s=" + sid);
     ws.onopen = function () { liveTries = 0; if (userToken) liveSend({ t: "id", token: userToken }); sendPage(); };
     ws.onmessage = function (e) {
       var m; try { m = JSON.parse(e.data); } catch (x) { return; }
-      if (m.t === "invite" && !open) showInvite(m);
+      // V-07: a teammate started a chat from the desk's visitor list.
+      if (m.t === "invite" && !open) showCard({ text: String(m.body).slice(0, 1000), inviteId: m.id, from: m.from });
     };
     // Reconnect with backoff, unless this socket was replaced or dropped on purpose.
     ws.onclose = function () { if (live !== ws) return; live = null; if (liveTries < 8) setTimeout(connect, 1000 * Math.pow(2, liveTries++)); };
@@ -199,60 +208,39 @@
   setInterval(function () { if (live && live.readyState === 1) live.send("ping"); }, 30000);
 
   function snapshot() {
-    var tz = "";
-    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
     return {
       page: { url: location.origin + cleanUrl(location.href), title: redact(document.title, 200) },
       userAgent: navigator.userAgent,
       viewport: { w: window.innerWidth, h: window.innerHeight },
       language: navigator.language,
-      timezone: tz,
+      timezone: tz(),
       capturedAt: Date.now(),
-      events: capture ? events.slice() : [],
+      events: events.slice(), // empty when capture is off
     };
   }
 
   // ---------- proactive help (P-01): offer a chat when something really breaks ----------
-  var nudged = false, nudgeTimer, nudgeEvent;
-  function worthNudging(e) {
-    if (/error$|rage|stuck/.test(e.kind)) return true; // JS errors, the app's own (reportError), S-02, S-13
-    // Failed API calls, not noisy asset loads or 404s on GETs.
-    return e.kind === "network" && !/^failed to load/.test(e.message || "") &&
-      (e.status === 0 || e.status >= 500 || (e.status >= 400 && e.method !== "GET"));
-  }
-  function maybeNudge(e) {
-    if (nudged || open || !consented || !worthNudging(e)) return; // nothing leaves the page before consent (V-06)
-    nudgeEvent = e;
-    clearTimeout(nudgeTimer);
-    nudgeTimer = setTimeout(showNudge, /rage|stuck/.test(e.kind) ? 0 : 1200); // errors come in bursts; wait for things to settle (rage clicks already waited)
-  }
-  function showCard(text, from) {
-    var card = root.querySelector(".nudge");
-    card.querySelector(".nudge-text").textContent = text;
-    card.querySelector(".nudge-from").textContent = from || "";
+  var nudged, nudgeTimer, nudgeEvent; // push() decides when (P-01)
+  // The card's opener (what the chat starts with if they click it): { text, inviteId?, from? }.
+  var cardOpener;
+  function showCard(o) {
+    nudged = true;
+    cardOpener = o;
+    card.querySelector("p").textContent = o.text;
+    card.querySelector(".from").textContent = o.from || "";
     card.style.display = "block";
   }
   // The desk words it from what failed (S-11). Plain-text POST: no CORS preflight.
   function showNudge() {
     if (nudged || open) return;
-    (nativeFetch || fetch)(origin + "/api/widget/" + encodeURIComponent(key) + "/nudge", {
+    nativeFetch(origin + "/api/widget/" + encodeURIComponent(key) + "/nudge", {
       method: "POST",
       body: JSON.stringify({ event: nudgeEvent, page: { url: location.origin + cleanUrl(location.href), title: redact(document.title, 200) } }),
     }).then(function (r) { return r.json(); }).then(function (res) {
-      if (!res.show || !res.text || nudged || open) return;
-      nudged = true;
-      cardOpener = { text: res.text };
-      showCard(res.text);
+      if (res.show && res.text && !nudged && !open) showCard({ text: res.text });
     }).catch(function () {});
   }
-  // V-07: a teammate started a chat from the desk's visitor list.
-  var cardOpener = null;
-  function showInvite(m) {
-    nudged = true;
-    cardOpener = { text: String(m.body).slice(0, 1000), inviteId: m.id, from: m.from };
-    showCard(cardOpener.text, m.from);
-  }
-  function hideNudge() { var card = root.querySelector(".nudge"); if (card) card.style.display = "none"; }
+  function hideNudge() { card.style.display = "none"; }
 
   // ---------- launcher ----------
   var host = document.createElement("div");
@@ -261,27 +249,28 @@
   root.innerHTML =
     "<style>" +
     ":host{all:initial}.w{--c:#2f5bea;--t:#fff;visibility:hidden}.w.on{visibility:visible}" +
-    ".l .btn,.l .frame,.l .nudge{right:auto;left:20px}" +
-    ".btn{position:fixed;right:20px;bottom:20px;width:56px;height:56px;border-radius:50%;border:0;cursor:pointer;" +
-    "background:var(--c);color:var(--t);box-shadow:0 6px 20px rgba(0,0,0,.2);z-index:2147483000;display:grid;place-items:center;transition:transform .15s}" +
-    ".btn:hover{transform:scale(1.05)}.btn svg{width:26px;height:26px}" +
+    "button,.frame{border:0}button{cursor:pointer}.btn,.frame,.nudge{position:fixed;right:20px;bottom:88px;z-index:2147483000}.frame,.nudge{background:#fff;display:none}" +
+    ".btn{bottom:20px;width:56px;height:56px;border-radius:50%;" +
+    "background:var(--c);color:var(--t);box-shadow:0 6px 20px rgba(0,0,0,.2);display:grid;place-items:center;transition:transform .15s}" +
+    ".btn:hover{transform:scale(1.05)}" +
     ".badge{position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#e5484d;" +
     "color:#fff;font:600 11px/18px system-ui,sans-serif;display:none}" +
-    ".frame{position:fixed;right:20px;bottom:88px;width:380px;height:min(640px,calc(100vh - 120px));border:0;border-radius:16px;" +
-    "box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:2147483000;background:#fff;display:none}" +
-    "@media (max-width:480px){.frame,.l .frame{right:0;left:0;bottom:0;width:100vw;height:100vh;border-radius:0}}" +
-    ".nudge{position:fixed;right:20px;bottom:88px;max-width:280px;padding:14px 16px;border-radius:14px;background:#fff;color:#1c1c1a;" +
-    "box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:2147483000;font:14px/1.45 system-ui,sans-serif;display:none}" +
-    ".nudge p{margin:0 18px 10px 0}.nudge-from{font-size:12px;color:#6b6b66;margin-bottom:4px}.nudge .go{border:0;border-radius:8px;padding:7px 12px;background:var(--c);color:var(--t);font:600 13px system-ui,sans-serif;cursor:pointer}" +
-    ".nudge .x{position:absolute;top:6px;right:8px;border:0;background:none;font-size:18px;line-height:1;color:#6b6b66;cursor:pointer}" +
+    ".frame{width:380px;height:min(640px,calc(100vh - 120px));border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.25)}" +
+    ".nudge{max-width:280px;padding:14px 16px;border-radius:14px;color:#1c1c1a;" +
+    "box-shadow:0 10px 30px rgba(0,0,0,.18);font:14px/1.45 system-ui,sans-serif}" +
+    // Left side (W-04); the full-screen frame on phones wins over it (same specificity, later).
+    ".l>*{right:auto;left:20px}" +
+    "@media(max-width:480px){.frame{right:0;left:0;bottom:0;width:100vw;height:100vh;border-radius:0}}" +
+    ".nudge p{margin:0 18px 10px 0}.from{font-size:12px;color:#6b6b66;margin-bottom:4px}.go{border-radius:8px;padding:7px 12px;background:var(--c);color:var(--t);font:600 13px system-ui,sans-serif}" +
+    ".x{position:absolute;top:6px;right:8px;background:none;font-size:18px;line-height:1;color:#6b6b66}" +
     "</style><div class=\"w\">" +
     '<div class="nudge" role="dialog" aria-label="Need help?"><button class="x" aria-label="Dismiss">×</button>' +
-    '<div class="nudge-from"></div><p class="nudge-text"></p><button class="go">Chat with us</button></div>' +
+    '<div class="from"></div><p></p><button class="go">Chat with us</button></div>' +
     '<button class="btn" aria-label="Open chat" aria-expanded="false">' +
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="badge"></span></button></div>';
+    '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="badge"></span></button><iframe class="frame" title="Chat" allow="clipboard-write; display-capture"></iframe></div>';
 
-  var wrap = root.querySelector(".w");
+  var wrap = root.querySelector(".w"), card = root.querySelector(".nudge");
   var button = root.querySelector(".btn");
   // W-04: colour and side from the desk's settings, so changing them needs no new snippet.
   // Hidden until then (at most 1.5 s) so the button doesn't flash in the default colour.
@@ -296,43 +285,36 @@
     wrap.classList.add("on");
   }
   setTimeout(brand, 1500);
-  (nativeFetch || fetch)(origin + "/api/widget/" + encodeURIComponent(key) + "/config").then(function (r) { return r.json(); }).then(brand, function () { brand(); });
+  nativeFetch(origin + "/api/widget/" + encodeURIComponent(key) + "/config").then(function (r) { return r.json(); }).then(brand, function () { brand(); });
   var badge = root.querySelector(".badge");
-  var frame = null;
-  var open = false;
+  var frame = root.querySelector("iframe"), open;
 
   function post(message) {
-    if (frame && frame.contentWindow) frame.contentWindow.postMessage(message, origin);
+    if (frame.contentWindow) frame.contentWindow.postMessage(message, origin);
   }
 
-  var pendingOpener = null;
+  var pendingOpener;
   function setOpen(next) {
     open = next;
     if (open) hideNudge();
-    if (open && !frame) {
-      frame = document.createElement("iframe");
-      frame.className = "frame";
-      frame.title = "Chat";
-      frame.allow = "clipboard-write; display-capture";
-      frame.src = origin + "/widget?key=" + encodeURIComponent(key) + (consented ? "" : "&persist=0");
-      wrap.appendChild(frame);
-    }
-    if (frame) frame.style.display = open ? "block" : "none";
-    button.setAttribute("aria-expanded", String(open));
+    // The chat loads on first open.
+    if (open && !frame.src) frame.src = origin + "/widget?key=" + encodeURIComponent(key) + (consented ? "" : "&persist=0");
+    frame.style.display = open ? "block" : "none";
+    button.setAttribute("aria-expanded", open);
     button.setAttribute("aria-label", open ? "Close chat" : "Open chat");
     post({ type: open ? "jun:open" : "jun:close" });
-    if (open && pendingOpener && frame && frame.contentWindow) post({ type: "jun:proactive", opener: pendingOpener, sessionId: sid });
+    if (open && pendingOpener) post({ type: "jun:proactive", opener: pendingOpener, sessionId: sid });
   }
 
   button.addEventListener("click", function () { setOpen(!open); });
-  root.querySelector(".nudge .x").addEventListener("click", hideNudge);
-  root.querySelector(".nudge .go").addEventListener("click", function () {
+  card.querySelector(".x").addEventListener("click", hideNudge);
+  card.querySelector(".go").addEventListener("click", function () {
     pendingOpener = cardOpener;
     setOpen(true);
   });
 
   window.addEventListener("message", function (e) {
-    if (e.origin !== origin || !e.data || !frame || e.source !== frame.contentWindow) return;
+    if (e.origin !== origin || !e.data || e.source !== frame.contentWindow) return;
     var type = e.data.type;
     // The frame says when it's listening; tell it whether it's currently shown.
     if (type === "jun:ready") {
@@ -345,7 +327,7 @@
     if (type === "jun:context-request") post({ type: "jun:context", id: e.data.id, context: snapshot() });
     if (type === "jun:unread") {
       var n = Number(e.data.count) || 0;
-      badge.textContent = n > 9 ? "9+" : String(n);
+      badge.textContent = n > 9 ? "9+" : n;
       badge.style.display = n > 0 && !open ? "block" : "none";
     }
   });
@@ -366,13 +348,13 @@
       post({ type: "jun:identify", userToken: null });
       disconnect();
       sid = null; started = null;
-      store("jun:s", rid()); store("jun:t", String(Date.now()));
+      store("jun:s", rid()); store("jun:t", Date.now());
       connect();
     },
     // S-12: the app says what failed, in its own words. Same masking as shared/debug.ts.
     reportError: function (err) {
       try {
-        var m = err && typeof err === "object" && typeof err.message === "string" && err.message.trim();
+        var m = err && typeof err.message == "string" && err.message.trim();
         if (!m || !capture || !consented) return;
         var e = { kind: "app_error", message: redact(m, 300) };
         var c = typeof err.code === "string" && redact(err.code, 60).replace(/[^\w.-]/g, "");
