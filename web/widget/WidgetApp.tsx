@@ -53,6 +53,8 @@ interface Opener {
   text: string;
   inviteId?: string;
   from?: string;
+  /** P-01 page opener: an offer, not about a problem (shown without "tell me what you were trying to do"). */
+  page?: boolean;
 }
 
 class WidgetApi {
@@ -221,6 +223,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
             text: opener.text.slice(0, 1000),
             ...(typeof opener.inviteId === "string" ? { inviteId: opener.inviteId } : {}),
             ...(typeof opener.from === "string" ? { from: opener.from.slice(0, 120) } : {}),
+            ...(opener.page === true ? { page: true } : {}),
           },
         });
         postToHost({ type: "jun:proactive-shown" });
@@ -405,7 +408,7 @@ function WidgetThread({
             </div>
           ) : (
             <div className="msg other ai w-opener">
-              <div className="bubble">{opener.text} Tell me what you were trying to do and I'll take a look.</div>
+              <div className="bubble">{opener.page ? opener.text : `${opener.text} Tell me what you were trying to do and I'll take a look.`}</div>
             </div>
           )
         ) : (

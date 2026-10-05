@@ -55,8 +55,38 @@ export function cleanNudge(raw: string, appMessage?: string): string | null {
   const appNumbers = new Set(appMessage?.match(/\d+/g) ?? []);
   const check = text.replace(/\d+/g, (n) => (appNumbers.has(n) ? "#" : n));
   // Anything that looks technical stays out of the visitor's sight.
-  if (/https?:|\/[a-z0-9_-]+\/|\[(email|token|key|number|redacted)\]|\b[1-5]\d\d\b|\b(error|exception|undefined|null|api|http|status|stack|typeerror|500|404)\b/i.test(check)) return null;
-  return text;
+  return looksTechnical(check) ? null : text;
+}
+
+function looksTechnical(text: string): boolean {
+  return /https?:|\/[a-z0-9_-]+\/|\[(email|token|key|number|redacted)\]|\b[1-5]\d\d\b|\b(error|exception|undefined|null|api|http|status|stack|typeerror|500|404)\b/i.test(text);
+}
+
+// ---------- P-01 page openers: an offer on a page the admin picked, not about a problem ----------
+
+export const GENERIC_OPENER = "Have a question? We're happy to help.";
+
+export function openerPrompt(workspaceName: string): string {
+  return `You write the one-line message a support chat widget on ${workspaceName}'s website shows to a visitor who has spent a while on a page.
+Rules:
+- ONE short, friendly sentence or question of at most 16 words that offers help with what the page is about (e.g. "Comparing plans? Happy to help you pick the right one.").
+- Use only the facts given. If the site owner says what to offer, follow it.
+- Nothing went wrong: never mention errors or problems. Never mention URLs, paths, code or technical terms. Never promise prices, discounts or anything else.
+- If the facts don't say what the page is about, write: ${GENERIC_OPENER}
+Reply with the message only.`;
+}
+
+export function openerFacts(page: { path: string; title: string }, hint?: string): string {
+  const lines = [`Page title: ${page.title || "(untitled)"}`, `Page path: ${page.path}`];
+  if (hint) lines.push(`What the site owner wants to offer on this page: ${hint}`);
+  return lines.join("\n");
+}
+
+/** The model's opener if it's usable on a customer's page (one short line, nothing technical or alarming), else null. */
+export function cleanOpener(raw: string): string | null {
+  const text = raw.trim().split("\n")[0]!.trim().replace(/^["'“”*_\s]+|["'“”*_\s]+$/g, "");
+  if (!text || text.length > 140 || looksTechnical(text) || /\b(problems?|wrong|fail\w*|broken|issues?)\b/i.test(text)) return null;
+  return /[.!?]$/.test(text) ? text : `${text}.`;
 }
 
 /** Same failure on the same page → same line; lets the route cache instead of calling the model. */

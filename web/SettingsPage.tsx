@@ -5,6 +5,8 @@ import { IssueTrackersPanel } from "./settings/IssueTrackersPanel.tsx";
 import { AssignmentPanel, SavedRepliesPanel, TagsPanel, TopicsPanel } from "./settings/InboxPanels.tsx";
 import { NotificationsPanel } from "./settings/NotificationsPanel.tsx";
 import { AppearancePanel, HoursPanel, type InboxSettings } from "./settings/WidgetPanels.tsx";
+import { OpenersPanel } from "./settings/OpenersPanel.tsx";
+import type { OpenerRule } from "../shared/openers.ts";
 import { useAction } from "./useAction.ts";
 
 interface Passkey { id: string; name: string | null; backedUp: number; createdAt: number; lastUsedAt: number | null }
@@ -71,14 +73,16 @@ export function SettingsPage({ me }: { me: Me }) {
 function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const [widgetKey, setWidgetKey] = useState<string | null>(null);
   const [proactive, setProactive] = useState(true);
+  const [openers, setOpeners] = useState<OpenerRule[]>([]);
   const [copied, setCopied] = useState(false);
   const [domains, setDomains] = useState("");
   const [savedDomains, setSavedDomains] = useState("");
   const { busy, error, run } = useAction();
   useEffect(() => {
-    api<{ inbox: { widgetKey: string; settings: { proactive?: boolean; allowedDomains?: string[] } } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => {
+    api<{ inbox: { widgetKey: string; settings: { proactive?: boolean; allowedDomains?: string[]; openers?: OpenerRule[] } } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => {
       setWidgetKey(r.inbox?.widgetKey ?? null);
       setProactive(r.inbox?.settings.proactive !== false);
+      setOpeners(r.inbox?.settings.openers ?? []);
       const list = (r.inbox?.settings.allowedDomains ?? []).join(", ");
       setDomains(list);
       setSavedDomains(list);
@@ -116,6 +120,7 @@ function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: 
         <input type="checkbox" checked={proactive} disabled={!canEdit} onChange={(e) => void toggleProactive(e.target.checked)} />
         Offer help when something breaks on the page (e.g. "Looks like your payment didn't go through. Want a hand?")
       </label>
+      {canEdit && <OpenersPanel workspaceId={workspaceId} proactive={proactive} initial={openers} />}
       <div className="field" style={{ marginTop: 12 }}>
         <span className="small strong">Allowed websites</span>
         <div className="row">

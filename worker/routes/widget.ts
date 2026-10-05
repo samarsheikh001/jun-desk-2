@@ -11,7 +11,8 @@ import { connectConversation, connectVisitorLive, notifyConversationChanged, off
 import { readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
 import { sanitizeContext, type DebugEvent } from "../../shared/debug.ts";
-import { cleanNudge, GENERIC_NUDGE, nudgeCacheKey, nudgeFacts, nudgePrompt } from "../ai/nudge.ts";
+import { cleanNudge, cleanOpener, GENERIC_NUDGE, GENERIC_OPENER, nudgeCacheKey, nudgeFacts, nudgePrompt, openerFacts, openerPrompt } from "../ai/nudge.ts";
+import { forLoader, matchesPath, storedOpeners } from "../../shared/openers.ts";
 import { completeText, createModel, loadAiSettings } from "../ai/providers.ts";
 import { describeOpening, isOpen, nextOpening, type BusinessHours } from "../../shared/hours.ts";
 
@@ -90,6 +91,8 @@ widget.get("/widget/:key/config", async (c) => {
       greeting: typeof s.greeting === "string" ? s.greeting : "Hi! How can we help?",
       // P-01: offer help when the page has an error (on unless turned off).
       proactive: s.proactive !== false,
+      // P-01 page openers: only the pattern (as a regex), the delay and an id; text and hints stay on the desk.
+      openers: s.proactive === false ? [] : forLoader(storedOpeners(s.openers)),
       // W-12: ask for a rating when a conversation is resolved (on unless turned off).
       csat: s.csat !== false,
       /** Whether new chats are answered by the AI first (the widget shows its typing dots right away). */
@@ -143,42 +146,83 @@ widget.post("/widget/:key/nudge", async (c) => {
   } catch {
     return c.json({ show: false }, 200, cors);
   }
+  const opener = raw.event && typeof raw.event === "object" && (raw.event as { kind?: unknown }).kind === "opener" ? (raw.event as { id?: unknown }) : null;
   // Masked again here, whatever the loader sent.
-  const context = sanitizeContext({ page: raw.page, events: raw.event ? [raw.event] : [] });
+  const context = sanitizeContext({ page: raw.page, events: raw.event && !opener ? [raw.event] : [] });
+
+  // P-01 page opener: the loader saw a rule's page and delay; check the rule and the page again.
+  if (opener) {
+    const rule = storedOpeners(inbox.settings.openers).find((r) => r.id === opener.id);
+    let path = "";
+    try {
+      path = new URL(context?.page.url ?? "").pathname;
+    } catch {
+      path = "";
+    }
+    if (!rule || !path || !matchesPath(rule.path, path)) return c.json({ show: false }, 200, cors);
+    // `page`: the chat shows the line as is (no "tell me what you were trying to do").
+    if (rule.text) return c.json({ show: true, text: rule.text, page: true }, 200, cors);
+    const page = { path, title: context?.page.title ?? "" };
+    const text = await aiLine(c, inbox, `opener|${inbox.workspaceId}|${rule.id}|${rule.hint ?? ""}|${path}|${page.title}`, {
+      system: openerPrompt(inbox.workspaceName),
+      facts: openerFacts(page, rule.hint),
+      clean: cleanOpener,
+      fallback: GENERIC_OPENER,
+    });
+    return c.json({ show: true, text, page: true }, 200, cors);
+  }
+
   const event: DebugEvent | undefined = context?.events[0];
   if (!context || !event) return c.json({ show: true, text: GENERIC_NUDGE }, 200, cors);
+  const text = await aiLine(c, inbox, nudgeCacheKey(inbox.workspaceId, event, context.page), {
+    system: nudgePrompt(inbox.workspaceName),
+    facts: nudgeFacts(event, context.page),
+    // Numbers the visitor can see (the app's message, a button's label) may appear in the line.
+    clean: (line) => cleanNudge(line, event.kind === "app_error" ? event.message : event.kind === "rage_click" ? event.target?.text : undefined),
+    fallback: GENERIC_NUDGE,
+  });
+  return c.json({ show: true, text }, 200, cors);
+});
 
+/**
+ * One proactive line from the AI (S-11 nudge, P-01 opener): cached per key for a day; the
+ * fallback when the AI is off, over its cap, slow, or writes something unusable.
+ */
+async function aiLine(
+  c: AppContext,
+  inbox: WidgetInbox,
+  cacheKey: string,
+  line: { system: string; facts: string; clean: (text: string) => string | null; fallback: string },
+): Promise<string> {
   const settings = await loadAiSettings(c.env, inbox.workspaceId);
   const month = new Date().toISOString().slice(0, 7);
   const usage = await c.env.DB.prepare("SELECT replies FROM ai_usage WHERE workspace_id = ? AND month = ?").bind(inbox.workspaceId, month).first<{ replies: number }>();
-  if (!settings.enabled || (usage?.replies ?? 0) >= settings.monthlyReplyCap) return c.json({ show: true, text: GENERIC_NUDGE }, 200, cors);
+  if (!settings.enabled || (usage?.replies ?? 0) >= settings.monthlyReplyCap) return line.fallback;
 
-  // The same failure on the same page gets the same line: one model call per day, not per visitor.
-  const cacheUrl = `https://nudge.jun-desk.internal/${await sha256(nudgeCacheKey(inbox.workspaceId, event, context.page))}`;
+  // The same failure (or opener) on the same page gets the same line: one model call per day, not per visitor.
+  const cacheUrl = `https://nudge.jun-desk.internal/${await sha256(cacheKey)}`;
   const cache = (globalThis as unknown as { caches?: { default: Cache } }).caches?.default;
   const cached = await cache?.match(cacheUrl);
-  if (cached) return c.json({ show: true, text: await cached.text() }, 200, cors);
+  if (cached) return cached.text();
 
-  let text = GENERIC_NUDGE;
   try {
     const model = createModel(c.env, inbox.workspaceId, settings, "nudge");
     const result = await completeText({
       model: model.model,
-      ...model.prompt(nudgePrompt(inbox.workspaceName)),
-      messages: [{ role: "user", content: nudgeFacts(event, context.page) }],
+      ...model.prompt(line.system),
+      messages: [{ role: "user", content: line.facts }],
       maxOutputTokens: 400, // reasoning models spend part of this before the line
       temperature: 0.2,
       abortSignal: AbortSignal.timeout(NUDGE_TIMEOUT_MS),
     });
-    // Numbers the visitor can see (the app's message, a button's label) may appear in the line.
-    const cleaned = cleanNudge(result.text, event.kind === "app_error" ? event.message : event.kind === "rage_click" ? event.target?.text : undefined);
+    const cleaned = line.clean(result.text);
     // Logged so a too-strict filter shows up in `wrangler tail` (the line is already masked).
-    if (!cleaned) console.warn("nudge line filtered, using the generic line:", JSON.stringify(result.text.slice(0, 200)));
-    text = cleaned ?? GENERIC_NUDGE;
+    if (!cleaned) console.warn("proactive line filtered, using the fallback:", JSON.stringify(result.text.slice(0, 200)));
+    const text = cleaned ?? line.fallback;
     c.executionCtx.waitUntil(
       Promise.all([
         cache?.put(cacheUrl, new Response(text, { headers: { "Cache-Control": `max-age=${NUDGE_CACHE_S}` } })),
-        // Tokens count toward usage; nudges aren't replies, so they don't use up the reply cap.
+        // Tokens count toward usage; proactive lines aren't replies, so they don't use up the reply cap.
         c.env.DB.prepare(
           `INSERT INTO ai_usage (workspace_id, month, replies, input_tokens, output_tokens) VALUES (?1, ?2, 0, ?3, ?4)
            ON CONFLICT (workspace_id, month) DO UPDATE SET input_tokens = input_tokens + ?3, output_tokens = output_tokens + ?4`,
@@ -187,11 +231,12 @@ widget.post("/widget/:key/nudge", async (c) => {
           .run(),
       ]),
     );
+    return text;
   } catch (error) {
-    console.warn("nudge text failed, using the generic line:", (error as Error).message);
+    console.warn("proactive line failed, using the fallback:", (error as Error).message);
+    return line.fallback;
   }
-  return c.json({ show: true, text }, 200, cors);
-});
+}
 
 widget.post("/widget/:key/visitor", async (c) => {
   const inbox = await widgetInbox(c);
