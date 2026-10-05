@@ -22,6 +22,7 @@ import { describeEvents, isIssue, sanitizeContext, type DebugContext } from "../
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { findMentions } from "../shared/inbox.ts";
+import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
 import { newId } from "./lib/crypto.ts";
 
 /** Who is on the other end of a socket or RPC call. The Worker authenticates before forwarding. */
@@ -468,7 +469,8 @@ export class Conversation extends DurableObject<Env> {
     if (!last || last.authorType !== "visitor") return false;
 
     if (!settings.enabled) {
-      await this.#handoff(ref, "AI replies are turned off.", HANDOFF_MESSAGES.default);
+      // Reports don't count this one as the AI handing off (A-01).
+      await this.#handoff(ref, AI_OFF_HANDOFF_REASON, HANDOFF_MESSAGES.default);
       return false;
     }
     if (asksForHuman(last.body)) {

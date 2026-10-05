@@ -19,8 +19,12 @@ export interface ConversationFacts {
   /** First public agent reply at or after the first visitor message (internal notes don't count). */
   firstAgentAt: number | null;
   firstAgentId: string | null;
-  /** Reason on the first public handoff message, or null if it was never handed off. */
+  /** Reason on the first public handoff by the AI (never AI_OFF_HANDOFF_REASON), or null. */
   handoffReason: string | null;
+  /** It was passed to the team because AI replies were off: not the AI handing off. */
+  aiOffHandoff: boolean;
+  /** Page of the conversation's first debug snapshot, sent with the visitor's first message (A-06). */
+  startUrl: string | null;
 }
 
 export interface RatingRow {
@@ -41,6 +45,8 @@ export interface MetricsInput {
   now: number;
   days: MetricPeriod;
   timezone: string;
+  /** The workspace's AI replies are on right now. */
+  aiEnabled: boolean;
   conversations: ConversationFacts[];
   ratings: RatingRow[];
   replies: ReplyRow[];
@@ -62,6 +68,14 @@ export interface DayPoint {
   aiResolved: number;
 }
 
+export interface PageCount {
+  /** Grouped page: origin + path, no query or hash, ids as ":id" (see startPage). */
+  page: string;
+  count: number;
+  /** Of the conversations with a known start page. */
+  share: number;
+}
+
 export interface MetricsReport {
   days: MetricPeriod;
   timezone: string;
@@ -70,7 +84,13 @@ export interface MetricsReport {
   truncated: boolean;
   conversations: { total: number; resolved: number; series: DayPoint[] };
   ai: {
-    /** Conversations the AI answered, or that were handed off from the AI. */
+    /** AI replies are on right now. */
+    enabled: boolean;
+    /** Off now and no AI conversations in the period: Reports shows "AI is off" instead of the AI numbers. */
+    off: boolean;
+    /** Conversations that reached the AI while it was off and went straight to the team. */
+    passedWhileOff: number;
+    /** Conversations the AI answered, or that the AI handed off (passedWhileOff ones aren't). */
     conversations: number;
     /** …that the AI handled alone: no handoff and no public agent reply. */
     resolved: number;
@@ -83,6 +103,52 @@ export interface MetricsReport {
   team: { answered: number; firstResponse: DurationStat };
   csat: { good: number; bad: number; score: number | null; badComments: { conversationId: string; comment: string; createdAt: number }[] };
   teammates: { userId: string; name: string; replies: number; conversations: number; firstResponse: DurationStat }[];
+  /** A-06: the pages chats started on, most first; `withoutPage` had no snapshot (e.g. the widget opened outside a site). */
+  pages: { top: PageCount[]; withPage: number; withoutPage: number };
+}
+
+/** Most pages "Pages where chats start" lists. */
+export const MAX_START_PAGES = 8;
+
+/**
+ * The reason the Conversation DO gives when a visitor writes in a chat the AI handles while AI
+ * replies are off. That's the desk's setting, not the AI handing off, so it never counts as one.
+ */
+export const AI_OFF_HANDOFF_REASON = "AI replies are turned off.";
+export const isAiOffHandoff = (reason: string | null | undefined): boolean => reason?.trim() === AI_OFF_HANDOFF_REASON;
+
+/**
+ * Path segments that are ids, not pages: numbers, UUIDs, long hex, prefixed ids ("cus_8f3k2a"),
+ * long letter+digit tokens, and the masks redaction leaves ("[number]").
+ */
+const ID_SEGMENT = [
+  /^\d+$/,
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  /^(?=.*\d)[0-9a-f]{12,}$/i,
+  /^[a-z]{1,10}_(?=[a-z]*\d)[a-z0-9]{6,}$/i,
+  /^(?=.*\d)(?=.*[a-z])[a-z0-9]{16,}$/i,
+  /^(?:\[|%5B)[a-z]+(?:\]|%5D)$/i,
+];
+
+/**
+ * A-06: the page a chat started on, grouped: origin + path without query or hash, no trailing
+ * slash, id segments as ":id" ("/invoices/123" → "/invoices/:id"). Null if it isn't a web URL.
+ */
+export function startPage(url: string | null | undefined): string | null {
+  if (!url) return null;
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  const path = u.pathname
+    .split("/")
+    .filter(Boolean)
+    .map((s) => (ID_SEGMENT.some((re) => re.test(s)) ? ":id" : s))
+    .join("/");
+  return `${u.origin}/${path}`;
 }
 
 /** `days` from a query string, or null if it isn't one of the periods. */
@@ -198,6 +264,9 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
   const teamTimes: number[] = [];
   const byAgent = new Map<string, number[]>();
   const reasons = new Map<string, { reason: string; count: number }>();
+  let passedWhileOff = 0;
+  const pages = new Map<string, number>();
+  let withoutPage = 0;
 
   for (const c of input.conversations) {
     const i = dayIndex(c.createdAt);
@@ -205,10 +274,17 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
     total++;
     series[i]!.conversations++;
     if (c.resolved) resolved++;
+    const page = startPage(c.startUrl);
+    if (page) pages.set(page, (pages.get(page) ?? 0) + 1);
+    else withoutPage++;
 
-    // A handoff only happens from the AI, so a handed-off conversation was the AI's even if it
-    // never got to answer (the visitor asked for a person first, or its first reply was a handoff).
-    const handed = c.handoffReason !== null;
+    // A handoff only happens from AI handling, so a handed-off conversation was the AI's even if
+    // it never got to answer (the visitor asked for a person first, or its first reply was a
+    // handoff). Not when AI replies were off: the team was answering anyway. If the AI answered
+    // before it was turned off, it's an AI conversation, but neither resolved nor handed off.
+    const aiOff = c.aiOffHandoff || isAiOffHandoff(c.handoffReason);
+    if (aiOff) passedWhileOff++;
+    const handed = c.handoffReason !== null && !isAiOffHandoff(c.handoffReason);
     if (c.firstAiAt !== null || handed) {
       aiConversations++;
       if (handed) {
@@ -218,7 +294,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
         const entry = reasons.get(key) ?? { reason: label, count: 0 };
         entry.count++;
         reasons.set(key, entry);
-      } else if (c.firstAgentAt === null) {
+      } else if (c.firstAgentAt === null && !aiOff) {
         aiResolved++;
         series[i]!.aiResolved++;
       }
@@ -270,6 +346,9 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
     truncated: input.truncated,
     conversations: { total, resolved, series },
     ai: {
+      enabled: input.aiEnabled,
+      off: !input.aiEnabled && aiConversations === 0,
+      passedWhileOff,
       conversations: aiConversations,
       resolved: aiResolved,
       handedOff,
@@ -281,5 +360,13 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
     team: { answered: teamTimes.length, firstResponse: durationStat(teamTimes) },
     csat: { good, bad, score: rate(good, good + bad), badComments },
     teammates,
+    pages: {
+      top: [...pages]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, MAX_START_PAGES)
+        .map(([page, count]) => ({ page, count, share: count / (total - withoutPage) })),
+      withPage: total - withoutPage,
+      withoutPage,
+    },
   };
 }

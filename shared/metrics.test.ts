@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   addDays,
+  AI_OFF_HANDOFF_REASON,
   computeMetrics,
+  isAiOffHandoff,
+  MAX_START_PAGES,
+  startPage,
   dayKey,
   durationStat,
   formatDuration,
@@ -21,12 +25,25 @@ const NOW = Date.parse("2026-10-05T12:00:00Z");
 
 let n = 0;
 function conv(at: number, facts: Partial<ConversationFacts> = {}): ConversationFacts {
-  return { id: `cv_${++n}`, createdAt: at, resolved: false, firstVisitorAt: at, firstAiAt: null, firstAgentAt: null, firstAgentId: null, handoffReason: null, ...facts };
+  return {
+    id: `cv_${++n}`,
+    createdAt: at,
+    resolved: false,
+    firstVisitorAt: at,
+    firstAiAt: null,
+    firstAgentAt: null,
+    firstAgentId: null,
+    handoffReason: null,
+    aiOffHandoff: false,
+    startUrl: null,
+    ...facts,
+  };
 }
 const input = (over: Partial<MetricsInput>): MetricsInput => ({
   now: NOW,
   days: 7,
   timezone: "UTC",
+  aiEnabled: true,
   conversations: [],
   ratings: [],
   replies: [],
@@ -118,6 +135,100 @@ test("AI resolution and handoff: the AI's conversations, and which it handled al
   assert.equal(r.ai.handoffRate, 2 / 5);
   assert.deepEqual(r.ai.firstResponse, { count: 4, median: 3.5 * S, p90: 5 * S });
   assert.equal(r.conversations.series[6]!.aiResolved, 2);
+});
+
+test("AI off: passed to the team isn't a handoff; 'AI is off' when it's off now with no AI chats", () => {
+  const t = NOW - 60 * MIN;
+  const offChats = [
+    conv(t, { aiOffHandoff: true, firstAgentAt: t + MIN, firstAgentId: "u1" }), // reached the AI while off
+    conv(t, { handoffReason: AI_OFF_HANDOFF_REASON }), // the reason alone is enough too
+    conv(t, { firstAgentAt: t + 2 * MIN, firstAgentId: "u1" }), // started while off: the team's
+  ];
+  const off = computeMetrics(input({ aiEnabled: false, conversations: offChats }));
+  assert.equal(off.ai.off, true);
+  assert.equal(off.ai.enabled, false);
+  assert.equal(off.ai.conversations, 0);
+  assert.equal(off.ai.handedOff, 0);
+  assert.equal(off.ai.handoffRate, null);
+  assert.deepEqual(off.ai.reasons, []);
+  assert.equal(off.ai.passedWhileOff, 2);
+  assert.equal(off.conversations.total, 3);
+
+  // On now (turned on recently): real numbers, the off-time chats still aren't handoffs.
+  const on = computeMetrics(input({ aiEnabled: true, conversations: offChats }));
+  assert.equal(on.ai.off, false);
+  assert.equal(on.ai.conversations, 0);
+
+  // Off now, but the AI worked earlier in the period: show what it did.
+  const mixed = computeMetrics(
+    input({
+      aiEnabled: false,
+      conversations: [
+        ...offChats,
+        conv(t, { firstAiAt: t + 3 * S }), // AI alone
+        conv(t, { firstAiAt: t + 3 * S, handoffReason: "The customer asked for a person." }),
+        // Answered, then turned off before the next message: the AI's, neither resolved nor handed off.
+        conv(t, { firstAiAt: t + 3 * S, aiOffHandoff: true }),
+        // Passed on while off, handed back, then the AI handed off for real.
+        conv(t, { firstAiAt: t + 9 * S, aiOffHandoff: true, handoffReason: "Refund request" }),
+      ],
+    }),
+  );
+  assert.equal(mixed.ai.off, false);
+  assert.equal(mixed.ai.conversations, 4);
+  assert.equal(mixed.ai.resolved, 1);
+  assert.equal(mixed.ai.handedOff, 2);
+  assert.equal(mixed.ai.passedWhileOff, 4);
+  assert.deepEqual(mixed.ai.reasons.map((r) => r.reason).sort(), ["Refund request", "The customer asked for a person"]);
+  assert.equal(isAiOffHandoff(" AI replies are turned off. "), true);
+  assert.equal(isAiOffHandoff("AI error: off"), false);
+  assert.equal(isAiOffHandoff(null), false);
+});
+
+test("start pages: origin + path, no query, trailing slash or ids", () => {
+  assert.equal(startPage("https://app.example.com/billing?session=…"), "https://app.example.com/billing");
+  assert.equal(startPage("https://app.example.com/billing/"), "https://app.example.com/billing");
+  assert.equal(startPage("https://APP.example.com/billing#plans"), "https://app.example.com/billing");
+  assert.equal(startPage("https://app.example.com"), "https://app.example.com/");
+  assert.equal(startPage("https://app.example.com/"), "https://app.example.com/");
+  assert.equal(startPage("http://localhost:5173//docs//setup/"), "http://localhost:5173/docs/setup");
+  assert.equal(startPage("https://app.example.com/invoices/123"), "https://app.example.com/invoices/:id");
+  assert.equal(startPage("https://app.example.com/invoices/123/edit"), "https://app.example.com/invoices/:id/edit");
+  assert.equal(startPage("https://x.test/u/3f2c1a9e-8b7d-4c6e-9f10-2a3b4c5d6e7f"), "https://x.test/u/:id");
+  assert.equal(startPage("https://x.test/commit/9fceb02d0ae598e9"), "https://x.test/commit/:id");
+  assert.equal(startPage("https://x.test/customers/cus_8f3k2a91"), "https://x.test/customers/:id");
+  assert.equal(startPage("https://x.test/share/aZ9kQ2mX7pL4tR8w"), "https://x.test/share/:id");
+  assert.equal(startPage("https://x.test/cards/%5Bnumber%5D"), "https://x.test/cards/:id");
+  // Words, slugs and versions stay.
+  for (const path of ["/docs/getting-started", "/v2/api", "/blog/2fa-setup", "/settings/api_keys", "/deadbeef", "/how-to-reset-password-2026"]) {
+    assert.equal(startPage(`https://x.test${path}`), `https://x.test${path}`, path);
+  }
+  for (const bad of [null, undefined, "", "/billing", "not a url", "javascript:alert(1)", "file:///etc/passwd"]) assert.equal(startPage(bad), null, String(bad));
+});
+
+test("pages where chats start: top pages with counts and share", () => {
+  const at = (url: string | null) => conv(NOW, { startUrl: url });
+  const urls = [
+    ...Array(4).fill("https://app.test/billing?plan=…"),
+    "https://app.test/billing/",
+    "https://app.test/invoices/1",
+    "https://app.test/invoices/2",
+    "https://docs.test/setup",
+    ...Array.from({ length: 10 }, (_, i) => `https://app.test/p${String.fromCharCode(97 + i)}`),
+    null,
+    null,
+    "garbage",
+  ];
+  const r = computeMetrics(input({ conversations: urls.map(at) }));
+  assert.equal(r.pages.withPage, 18);
+  assert.equal(r.pages.withoutPage, 3);
+  assert.equal(r.pages.top.length, MAX_START_PAGES);
+  assert.deepEqual(r.pages.top.slice(0, 3), [
+    { page: "https://app.test/billing", count: 5, share: 5 / 18 },
+    { page: "https://app.test/invoices/:id", count: 2, share: 2 / 18 },
+    { page: "https://app.test/pa", count: 1, share: 1 / 18 },
+  ]);
+  assert.deepEqual(computeMetrics(input({})).pages, { top: [], withPage: 0, withoutPage: 0 });
 });
 
 test("handoff reasons: grouped, top five", () => {
