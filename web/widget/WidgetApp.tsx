@@ -445,7 +445,7 @@ function lastVisitorWaiting(messages: Message[]): Message | null {
   return null;
 }
 
-/** W-08: ask for an email when the team is away, or nobody has replied for this long. */
+/** W-08: ask for an email when the team is away or nobody's online, or nobody has replied for this long. */
 const EMAIL_ASK_AFTER_MS = 60_000;
 
 function EmailAsk({
@@ -466,6 +466,18 @@ function EmailAsk({
   const [saved, setSaved] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nobodyOnline, setNobodyOnline] = useState(false);
+
+  const eligible = Boolean(waiting && contact && !contact.verified && !contact.email);
+  // Nobody has the dashboard open: no point making them wait a minute first.
+  useEffect(() => {
+    if (!eligible || away) return;
+    let cancelled = false;
+    api.call<{ online: boolean }>("/online").then((r) => !cancelled && setNobodyOnline(!r.online), () => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [api, eligible, away, waiting?.id]);
 
   const due = waiting ? waiting.createdAt + EMAIL_ASK_AFTER_MS : 0;
   useEffect(() => {
@@ -476,7 +488,7 @@ function EmailAsk({
 
   if (saved) return <div className="w-email small"><span>Thanks. If you've gone by the time we reply, we'll email you at <strong>{saved}</strong>.</span></div>;
   if (dismissed || !waiting || !contact || contact.verified || contact.email) return null;
-  if (!away && now < due) return null;
+  if (!away && !nobodyOnline && now < due) return null;
 
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -495,7 +507,7 @@ function EmailAsk({
   return (
     <form className="w-email" onSubmit={submit}>
       <div className="row">
-        <span className="small strong">{away ? "We're away right now." : "Sorry for the wait."} Get the reply by email?</span>
+        <span className="small strong">{away ? "We're away right now." : nobodyOnline ? "Nobody's online right now." : "Sorry for the wait."} Get the reply by email?</span>
         <span className="spacer" />
         <button type="button" className="ghost icon small" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
       </div>

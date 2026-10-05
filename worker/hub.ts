@@ -114,6 +114,11 @@ export class WorkspaceHub extends DurableObject<Env> {
     this.#broadcast(JSON.stringify(event));
   }
 
+  /** RPC (W-08): is any teammate's dashboard open? Visitors only ever get this yes/no. */
+  async agentsOnline(): Promise<boolean> {
+    return this.ctx.getWebSockets("agent").some((ws) => ws.readyState === WebSocket.OPEN);
+  }
+
   /** RPC (V-07): deliver an agent's invite to a live visitor. False if they've left. */
   async invite(sessionId: string, invite: { id: string; body: string; from: string }): Promise<boolean> {
     const sockets = this.ctx.getWebSockets(`s:${sessionId}`);

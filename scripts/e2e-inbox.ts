@@ -150,6 +150,13 @@ await step("I-07: tags are set per conversation, deduped, filterable, and hidden
 });
 
 await step("W-08: a visitor waiting for the team leaves an email; agents get it as a note", async () => {
+  // Whether anyone's online decides if the widget asks right away (only a yes/no reaches visitors).
+  assert.deepEqual((await visitor.call(`/widget/${widgetKey}/online`)).json, { online: false });
+  const hub = new TestSocket(`/api/workspaces/${workspaceId}/ws`, { headers: { Cookie: cookieHeader(owner) } });
+  await hub.opened;
+  assert.deepEqual((await visitor.call(`/widget/${widgetKey}/online`)).json, { online: true });
+  hub.close();
+
   const path = `/widget/${widgetKey}/conversations/${conversationId}/email`;
   assert.equal((await visitor.call(path, { body: { email: "not-an-email" }, headers: vh() })).status, 400);
   assert.equal((await new Client().call(path, { body: { email: "a@b.co" } })).status, 401);

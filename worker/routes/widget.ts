@@ -316,6 +316,13 @@ widget.post("/widget/:key/conversations/:cid/messages", async (c) => {
   return c.json({ message });
 });
 
+// W-08: whether anyone on the team is online, so the widget knows to ask for an email right away.
+widget.get("/widget/:key/online", async (c) => {
+  const inbox = await widgetInbox(c);
+  c.header("Cache-Control", "no-store");
+  return c.json({ online: await c.env.WORKSPACE_HUB.getByName(inbox.workspaceId).agentsOnline() });
+});
+
 // W-08: nobody's around, so the visitor leaves an email for the reply. Stored on their contact
 // (verified contacts already have theirs from the host app) and noted in the conversation.
 widget.post("/widget/:key/conversations/:cid/email", async (c) => {
