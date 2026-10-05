@@ -19,8 +19,12 @@ const app = new Hono<AppEnv>().basePath("/api");
 // CSRF protection for cookie-authenticated requests: state-changing requests must be
 // JSON or carry our X-Jun-Upload header (neither of which a cross-site form can send)
 // and, when the browser says where they came from, come from this origin.
+// The loader's nudge request is the exception: it comes from customers' sites (any origin),
+// carries no cookies or tokens, and is sent as text/plain so browsers skip a CORS preflight.
+const PUBLIC_CROSS_ORIGIN = /^\/api\/widget\/[^/]+\/nudge$/;
+
 app.use("*", async (c, next) => {
-  if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+  if (c.req.method !== "GET" && c.req.method !== "HEAD" && !PUBLIC_CROSS_ORIGIN.test(new URL(c.req.url).pathname)) {
     const origin = c.req.header("origin");
     if (origin && origin !== new URL(c.req.url).origin) {
       throw new HttpError(403, "bad_origin", "Cross-origin request rejected.");

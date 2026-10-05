@@ -3,12 +3,15 @@ import { SOCKET_PROTOCOL, type Attachment } from "../../shared/protocol.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
 import { loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
 import { createVisitor, findVisitor, identify } from "../lib/contacts.ts";
-import { newId } from "../lib/crypto.ts";
+import { newId, sha256 } from "../lib/crypto.ts";
 import { IdentityError, verifyIdentityToken } from "../lib/identity.ts";
 import { connectConversation, connectVisitorLive, notifyConversationChanged, offeredProtocols, sendMessage } from "../lib/realtime.ts";
 import { readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
-import { loadAiSettings } from "../ai/providers.ts";
+import { generateText } from "ai";
+import { sanitizeContext, type DebugEvent } from "../../shared/debug.ts";
+import { cleanNudge, GENERIC_NUDGE, nudgeCacheKey, nudgeFacts, nudgePrompt } from "../ai/nudge.ts";
+import { createModel, loadAiSettings } from "../ai/providers.ts";
 import { storeUpload } from "./files.ts";
 
 // Public API used by the widget frame. Visitors are anonymous contacts identified by a
@@ -72,6 +75,68 @@ widget.get("/widget/:key/config", async (c) => {
     /** Whether new chats are answered by the AI first (the widget shows its typing dots right away). */
     ai: (await loadAiSettings(c.env, inbox.workspaceId)).enabled,
   });
+});
+
+// S-11 / P-01: the loader saw something break and asks what to offer. The AI phrases it from
+// the masked failure ("Looks like the usage chart didn't load. Want a hand?"); the generic line
+// when the AI is off, over its cap or slow. Called cross-origin from customers' sites.
+const NUDGE_CACHE_S = 24 * 60 * 60;
+const NUDGE_TIMEOUT_MS = 2500;
+
+widget.post("/widget/:key/nudge", async (c) => {
+  const cors = { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" };
+  const inbox = await widgetInbox(c).catch(() => null);
+  if (!inbox || inbox.settings.proactive === false) return c.json({ show: false }, 200, cors);
+  let raw: Record<string, unknown> = {};
+  try {
+    raw = JSON.parse(await c.req.text()) as Record<string, unknown>;
+  } catch {
+    return c.json({ show: false }, 200, cors);
+  }
+  // Masked again here, whatever the loader sent.
+  const context = sanitizeContext({ page: raw.page, events: raw.event ? [raw.event] : [] });
+  const event: DebugEvent | undefined = context?.events[0];
+  if (!context || !event) return c.json({ show: true, text: GENERIC_NUDGE }, 200, cors);
+
+  const settings = await loadAiSettings(c.env, inbox.workspaceId);
+  const month = new Date().toISOString().slice(0, 7);
+  const usage = await c.env.DB.prepare("SELECT replies FROM ai_usage WHERE workspace_id = ? AND month = ?").bind(inbox.workspaceId, month).first<{ replies: number }>();
+  if (!settings.enabled || (usage?.replies ?? 0) >= settings.monthlyReplyCap) return c.json({ show: true, text: GENERIC_NUDGE }, 200, cors);
+
+  // The same failure on the same page gets the same line: one model call per day, not per visitor.
+  const cacheUrl = `https://nudge.jun-desk.internal/${await sha256(nudgeCacheKey(inbox.workspaceId, event, context.page))}`;
+  const cache = (globalThis as unknown as { caches?: { default: Cache } }).caches?.default;
+  const cached = await cache?.match(cacheUrl);
+  if (cached) return c.json({ show: true, text: await cached.text() }, 200, cors);
+
+  let text = GENERIC_NUDGE;
+  try {
+    const model = createModel(c.env, inbox.workspaceId, settings);
+    const result = await generateText({
+      model: model.model,
+      ...model.prompt(nudgePrompt(inbox.workspaceName)),
+      messages: [{ role: "user", content: nudgeFacts(event, context.page) }],
+      maxOutputTokens: 60,
+      temperature: 0.2,
+      abortSignal: AbortSignal.timeout(NUDGE_TIMEOUT_MS),
+    });
+    text = cleanNudge(result.text) ?? GENERIC_NUDGE;
+    c.executionCtx.waitUntil(
+      Promise.all([
+        cache?.put(cacheUrl, new Response(text, { headers: { "Cache-Control": `max-age=${NUDGE_CACHE_S}` } })),
+        // Tokens count toward usage; nudges aren't replies, so they don't use up the reply cap.
+        c.env.DB.prepare(
+          `INSERT INTO ai_usage (workspace_id, month, replies, input_tokens, output_tokens) VALUES (?1, ?2, 0, ?3, ?4)
+           ON CONFLICT (workspace_id, month) DO UPDATE SET input_tokens = input_tokens + ?3, output_tokens = output_tokens + ?4`,
+        )
+          .bind(inbox.workspaceId, month, result.totalUsage.inputTokens ?? 0, result.totalUsage.outputTokens ?? 0)
+          .run(),
+      ]),
+    );
+  } catch (error) {
+    console.warn("nudge text failed, using the generic line:", (error as Error).message);
+  }
+  return c.json({ show: true, text }, 200, cors);
 });
 
 widget.post("/widget/:key/visitor", async (c) => {

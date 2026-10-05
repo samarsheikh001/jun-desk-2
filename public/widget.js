@@ -154,7 +154,7 @@
   }
 
   // ---------- proactive help (P-01): offer a chat when something really breaks ----------
-  var nudged = false, nudgeTimer, nudgeText = "";
+  var nudged = false, nudgeTimer, nudgeEvent;
   function worthNudging(e) {
     if (e.kind === "error") return true;
     // Failed API calls, not noisy asset loads or 404s on GETs.
@@ -163,9 +163,7 @@
   }
   function maybeNudge(e) {
     if (nudged || open || !worthNudging(e)) return;
-    nudgeText = /pay|billing|checkout|invoice|subscri|card|charge/i.test(e.url || "")
-      ? "Looks like your payment didn't go through. Want a hand?"
-      : "Looks like something went wrong on this page. Want a hand?";
+    nudgeEvent = e;
     clearTimeout(nudgeTimer);
     nudgeTimer = setTimeout(showNudge, 1200); // errors come in bursts; wait for things to settle
   }
@@ -175,13 +173,17 @@
     card.querySelector(".nudge-from").textContent = from || "";
     card.style.display = "block";
   }
+  // The desk words it from what failed (S-11). Plain-text POST: no CORS preflight.
   function showNudge() {
     if (nudged || open) return;
-    (nativeFetch || fetch)(origin + "/api/widget/" + encodeURIComponent(key) + "/config").then(function (r) { return r.json(); }).then(function (cfg) {
-      if (!cfg.proactive || nudged || open) return;
+    (nativeFetch || fetch)(origin + "/api/widget/" + encodeURIComponent(key) + "/nudge", {
+      method: "POST",
+      body: JSON.stringify({ event: nudgeEvent, page: { url: location.origin + cleanUrl(location.href), title: redact(document.title, 200) } }),
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (!res.show || !res.text || nudged || open) return;
       nudged = true;
-      cardOpener = { text: nudgeText };
-      showCard(nudgeText);
+      cardOpener = { text: res.text };
+      showCard(res.text);
     }).catch(function () {});
   }
   // V-07: a teammate started a chat from the desk's visitor list.

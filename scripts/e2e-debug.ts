@@ -3,7 +3,7 @@
 // (real Workers AI) to explain the failure and flag it to the team. Run after e2e-ai.
 
 import assert from "node:assert/strict";
-import { Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+import { BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const AI_TIMEOUT = 120_000;
 const agent = new Client();
@@ -110,6 +110,24 @@ await step("agents see the same context live in the conversation socket backlog'
   agentSocket.close();
   const list = (await agent.call(`/workspaces/${workspaceId}/conversations?status=all`)).json.conversations;
   assert.equal(list.find((c: { id: string }) => c.id === conversationId).debugIssueCount, 3);
+});
+
+await step("S-11: the nudge is worded by the AI from the failure, cross-origin, with nothing technical", async () => {
+  const nudge = async (body: string) => {
+    const res = await fetch(`${BASE}/api/widget/${widgetKey}/nudge`, { method: "POST", headers: { Origin: "https://customer.example", "Content-Type": "text/plain;charset=UTF-8" }, body });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    return (await res.json()) as { show: boolean; text?: string };
+  };
+  const pay = await nudge(JSON.stringify({ event: { t: 1, kind: "network", method: "POST", url: "/api/billing/pay", status: 500 }, page: { url: "https://app.customer.test/billing", title: "Billing" } }));
+  assert.equal(pay.show, true);
+  assert.match(pay.text!, /Want a hand\?$/);
+  assert.match(pay.text!, /pay|invoice|billing/i, pay.text);
+  assert.doesNotMatch(pay.text!, /\/api|500|error/i);
+  const chart = await nudge(JSON.stringify({ event: { t: 1, kind: "error", message: "TypeError: Cannot read properties of undefined (reading 'series')", source: "/assets/usage-chart.js:41" }, page: { url: "https://app.customer.test/usage", title: "Usage" } }));
+  assert.match(chart.text!, /chart|usage/i, chart.text);
+  assert.doesNotMatch(chart.text!, /pay/i, "no more keyword guesses");
+  assert.deepEqual(await nudge("not json"), { show: false });
 });
 
 summary();

@@ -125,3 +125,16 @@ test("citations in full-width brackets (some models) are understood", () => {
   assert.equal(text, "Refunds within 14 days[1] or credit[2].");
   assert.equal(sources.length, 2);
 });
+
+test("S-11 nudge: facts describe the failure; unsafe or rambling lines fall back", async () => {
+  const { cleanNudge, nudgeFacts, GENERIC_NUDGE } = await import("./nudge.ts");
+  const page = { url: "https://app.acme.test/billing", title: "Billing" };
+  assert.match(nudgeFacts({ t: 1, kind: "network", method: "POST", url: "/api/billing", status: 500 }, page), /POST \/api\/billing → HTTP 500/);
+  assert.match(nudgeFacts({ t: 1, kind: "error", message: "TypeError: x is undefined", source: "/chart.js:4" }, page), /JavaScript error happened: TypeError/);
+  assert.equal(cleanNudge('"Looks like your invoice payment didn\'t go through. Want a hand?"'), "Looks like your invoice payment didn't go through. Want a hand?");
+  assert.equal(cleanNudge("Looks like the usage chart didn't load"), "Looks like the usage chart didn't load. Want a hand?");
+  assert.equal(cleanNudge("Your POST to /api/billing returned 500. Want a hand?"), null);
+  assert.equal(cleanNudge("A TypeError happened. Want a hand?"), null);
+  assert.equal(cleanNudge(`${"Very long ".repeat(20)}Want a hand?`), null);
+  assert.equal(cleanNudge(GENERIC_NUDGE), GENERIC_NUDGE);
+});
