@@ -264,6 +264,13 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .check { display: flex; gap: 8px; align-items: center; font-weight: 500; }
 .chatgpt-box { display: grid; gap: 6px; padding: 10px 12px; background: var(--bg); border-radius: 8px; }
 .chatgpt-paste input { flex: 1; min-width: 0; }
+/* AI-16: model per task */
+.job-models summary { cursor: pointer; color: var(--accent); }
+.job-models-body { display: grid; gap: 14px; margin-top: 10px; }
+.job-models-body p { margin: 0; }
+.job-models .row { flex-wrap: wrap; row-gap: 6px; }
+.job-model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 12px; }
+.job-model-grid input { min-width: 0; }
 
 /* ---------- knowledge ---------- */
 .kb-forms { display: grid; gap: 10px; margin: 12px 0; }

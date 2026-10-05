@@ -2,36 +2,33 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { OPENAI_API_BASE } from "@jun/llm";
 import { streamText, type LanguageModel, type LanguageModelUsage } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
+import { modelFor, readJobModels, withFallback, type AiJob, type JobModels, type ProviderId } from "./models.ts";
 import { dedupedAi } from "./workers-ai.ts";
 
 type ProviderOptions = Record<string, Record<string, string | number | boolean | null>>;
 
-export type ProviderId = "openai" | "workers-ai" | "chatgpt";
+export { AI_JOBS, DEFAULT_MODELS, type AiJob, type ProviderId } from "./models.ts";
 
 export interface AiSettings {
   enabled: boolean;
   provider: ProviderId;
+  /** The workspace model (null = provider default); every job uses it unless overridden. */
   model: string | null;
+  /** AI-16: per-job model overrides within the same provider. */
+  models: JobModels;
   instructions: string;
   monthlyReplyCap: number;
 }
 
-export const DEFAULT_MODELS: Record<ProviderId, string> = {
-  openai: "gpt-6.1-sol",
-  // Fast, follows the rules and calls tools well (scripts/bench-models.ts, 2026-10-05).
-  "workers-ai": "@cf/mistralai/mistral-small-3.1-24b-instruct",
-  // Small and fast (user's pick, 2026-10-05). Not in `jun models`' list, but the plan serves it.
-  chatgpt: "gpt-6-luna",
-};
-
 export async function loadAiSettings(env: Env, workspaceId: string): Promise<AiSettings> {
-  const row = await env.DB.prepare("SELECT enabled, provider, model, instructions, monthly_reply_cap FROM ai_settings WHERE workspace_id = ?")
+  const row = await env.DB.prepare("SELECT enabled, provider, model, models, instructions, monthly_reply_cap FROM ai_settings WHERE workspace_id = ?")
     .bind(workspaceId)
-    .first<{ enabled: number; provider: ProviderId; model: string | null; instructions: string; monthly_reply_cap: number }>();
+    .first<{ enabled: number; provider: ProviderId; model: string | null; models: string | null; instructions: string; monthly_reply_cap: number }>();
   return {
     enabled: row?.enabled === 1,
     provider: row?.provider ?? "workers-ai",
     model: row?.model ?? null,
+    models: readJobModels(row?.models),
     instructions: row?.instructions ?? "",
     monthlyReplyCap: row?.monthly_reply_cap ?? 2000,
   };
@@ -75,15 +72,33 @@ export interface AgentModel {
   prompt(system: string): { system?: string; providerOptions?: ProviderOptions };
 }
 
-export function createModel(env: Env, workspaceId: string, settings: AiSettings): AgentModel {
-  const modelId = settings.model || DEFAULT_MODELS[settings.provider];
-  const plain = (model: LanguageModel): AgentModel => ({ provider: settings.provider, modelId, model, prompt: (system) => ({ system }) });
+/**
+ * The model for one AI job (AI-16: `modelFor` decides which). An override the provider
+ * rejects as unknown is retried once on the workspace model (`withFallback`).
+ */
+export function createModel(env: Env, workspaceId: string, settings: AiSettings, job: AiJob): AgentModel {
+  const { modelId, fallback } = modelFor(settings, job);
+  const agent = providerModel(env, workspaceId, settings.provider, modelId);
+  if (!fallback) return agent;
+  agent.model = withFallback(agent.model, () => providerModel(env, workspaceId, settings.provider, fallback).model, {
+    job,
+    modelId,
+    fallbackId: fallback,
+    onFallback: () => {
+      agent.modelId = fallback;
+    },
+  });
+  return agent;
+}
 
-  if (settings.provider === "workers-ai") {
+function providerModel(env: Env, workspaceId: string, provider: ProviderId, modelId: string): AgentModel {
+  const plain = (model: LanguageModel): AgentModel => ({ provider, modelId, model, prompt: (system) => ({ system }) });
+
+  if (provider === "workers-ai") {
     // dedupedAi: see workers-ai.ts (Workers AI streams text and tool calls twice).
     return plain(createWorkersAI({ binding: dedupedAi(env.AI) })(modelId));
   }
-  if (settings.provider === "openai") {
+  if (provider === "openai") {
     const apiKey = (env as unknown as { OPENAI_API_KEY?: string }).OPENAI_API_KEY;
     if (!apiKey) throw new AiUnavailableError("OPENAI_API_KEY isn't set. Add it as a Worker secret.");
     const baseURL = (env as unknown as { OPENAI_BASE_URL?: string }).OPENAI_BASE_URL;

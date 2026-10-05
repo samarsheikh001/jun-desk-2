@@ -33,7 +33,10 @@ export interface EvalContext {
   env: Env;
   workspaceId: string;
   workspaceName: string;
+  /** Writes the replies (job `answer`, as live chats). */
   model: AgentModel;
+  /** Grades them (job `judge`). */
+  judgeModel: AgentModel;
   live: AgentConfig;
   candidate: AgentConfig;
   sample: number;
@@ -82,8 +85,8 @@ async function runCase(ctx: EvalContext, c: EvalCase): Promise<RunResult> {
 
 async function judge(ctx: EvalContext, prompt: string): Promise<{ yes: boolean; why: string }> {
   const { text } = await completeText({
-    model: ctx.model.model,
-    ...ctx.model.prompt("You grade customer support replies. Be strict and literal. Answer with one word on the first line (YES or NO), then one short sentence explaining why."),
+    model: ctx.judgeModel.model,
+    ...ctx.judgeModel.prompt("You grade customer support replies. Be strict and literal. Answer with one word on the first line (YES or NO), then one short sentence explaining why."),
     messages: [{ role: "user", content: prompt }],
     maxOutputTokens: 800,
     temperature: 0,

@@ -5,7 +5,7 @@
 // never goes silent) rather than exact wording.
 
 import assert from "node:assert/strict";
-import { AI_PROVIDER, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+import { AI_PROVIDER, BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const AI_TIMEOUT = 120_000;
 const agent = new Client();
@@ -137,6 +137,81 @@ await step("an agent replying takes over from the AI", async () => {
   socket.close();
 });
 
+// ---------- AI-16: a model per AI job ----------
+
+const aiSettings = async () => (await agent.call(`/workspaces/${workspaceId}/ai`)).json;
+const putAi = (body: Record<string, unknown>) => agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: AI_PROVIDER, monthlyReplyCap: 100, ...body } });
+const GENERIC_NUDGE = "Looks like something went wrong on this page. Want a hand?";
+/** The loader's nudge request; a fresh page each time, since lines are cached per failure and page. */
+async function nudgeLine(): Promise<string> {
+  const page = `https://app.customer.test/billing/${crypto.randomUUID().slice(0, 8)}`;
+  const res = await fetch(`${BASE}/api/widget/${widgetKey}/nudge`, {
+    method: "POST",
+    headers: { Origin: "https://customer.example", "Content-Type": "text/plain;charset=UTF-8" },
+    body: JSON.stringify({ event: { t: 1, kind: "network", method: "POST", url: "/api/billing/pay", status: 500 }, page: { url: page, title: "Billing" } }),
+  });
+  assert.equal(res.status, 200);
+  const json = (await res.json()) as { show: boolean; text?: string };
+  assert.equal(json.show, true);
+  return json.text!;
+}
+let workspaceModel = "";
+
+await step("AI-16: per-job models are validated and reported with the model each job runs on", async () => {
+  const before = await aiSettings();
+  workspaceModel = before.effectiveModels.answer;
+  assert.deepEqual(before.settings.models, {});
+  assert.ok(Object.values(before.effectiveModels).every((m) => m === workspaceModel), JSON.stringify(before.effectiveModels));
+  for (const models of [{ triage: "x" }, { nudge: "has spaces" }, { nudge: "x".repeat(101) }, { nudge: 5 }, ["nudge"]]) {
+    const res = await putAi({ models });
+    assert.equal(res.status, 400, JSON.stringify(models));
+    assert.equal(res.json.error.code, "invalid_field");
+  }
+  assert.equal((await putAi({ models: { nudge: workspaceModel, brief: "" } })).status, 200);
+  const after = await aiSettings();
+  assert.deepEqual(after.settings.models, { nudge: workspaceModel });
+  // Not sent: kept.
+  assert.equal((await putAi({})).status, 200);
+  assert.deepEqual((await aiSettings()).settings.models, { nudge: workspaceModel });
+});
+
+await step("AI-16: with a nudge override, nudges and handoff briefs still work", async () => {
+  const line = await nudgeLine();
+  console.log(`    nudge: ${line}`);
+  assert.notEqual(line, GENERIC_NUDGE);
+  // A handoff the model decides on gets a model-written brief (job "brief", no override: workspace model).
+  const { conversationId, socket } = await startChat("Please change the email on my account to bob@example.com.");
+  await nextMessage(socket, (m) => m.authorType === "system", AI_TIMEOUT);
+  socket.close();
+  const deadline = Date.now() + 30_000;
+  let brief: { body: string } | undefined;
+  while (Date.now() < deadline && !brief) {
+    const { messages } = (await agent.call(`/conversations/${conversationId}`)).json;
+    brief = messages.find((m: { internal: boolean; body: string }) => m.internal && /^Handed off/.test(m.body));
+    if (!brief) await new Promise((r) => setTimeout(r, 500));
+  }
+  assert.ok(brief, "no handoff note");
+  assert.match(brief.body, /\n\n\S/, `expected a model-written brief: ${brief.body}`);
+});
+
+await step("AI-16: an unknown override model falls back to the workspace model", async () => {
+  assert.equal((await putAi({ models: { nudge: "does-not-exist-model", answer: "does-not-exist-model" } })).status, 200);
+  const settings = await aiSettings();
+  assert.equal(settings.effectiveModels.nudge, "does-not-exist-model");
+  assert.equal(settings.effectiveModels.topics, workspaceModel);
+  const line = await nudgeLine();
+  console.log(`    nudge (fallback): ${line}`);
+  assert.notEqual(line, GENERIC_NUDGE);
+  const { conversationId, socket } = await startChat("How many days do I have to ask for a refund?");
+  const answer = await nextMessage(socket, (m) => m.authorType === "ai" || m.authorType === "system", AI_TIMEOUT);
+  socket.close();
+  assert.equal(answer.authorType, "ai", `expected an AI reply, got: ${answer.body}`);
+  assert.equal(await handling(conversationId), "ai");
+  // Restore: other suites share this workspace.
+  assert.equal((await putAi({ models: {} })).status, 200);
+  assert.deepEqual((await aiSettings()).settings.models, {});
+});
+
 await step("usage is counted, and at the cap chats go straight to the team", async () => {
   const usage = (await agent.call(`/workspaces/${workspaceId}/ai`)).json.usage;
   assert.ok(usage.replies >= 3, JSON.stringify(usage));
@@ -154,6 +229,9 @@ await step("agents (not admins) can't change AI settings", async () => {
   const agentUser = new Client();
   await agentUser.register(`/invites/${token}`, new SoftAuthenticator(), { name: "Kim", email: `kim-${Date.now()}@acme.test` });
   assert.equal((await agentUser.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: false } })).status, 403);
+  assert.equal((await agentUser.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, models: { nudge: "gpt-6-luna" } } })).status, 403);
+  // Agents can read which model each job uses.
+  assert.ok((await agentUser.call(`/workspaces/${workspaceId}/ai`)).json.effectiveModels.answer);
   assert.equal((await agentUser.call(`/workspaces/${workspaceId}/knowledge/snippets`, { body: { title: "x", body: "y" } })).status, 403);
   assert.equal((await agentUser.call(`/workspaces/${workspaceId}/knowledge`)).status, 200);
 });

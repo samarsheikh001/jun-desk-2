@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { MAX_KB_FILE_BYTES, MAX_KB_FILES } from "../../shared/protocol.ts";
 import { sniffFormat, titleFromName, UnsupportedFile, type FileFormat } from "../ai/file-extract.ts";
 import { deleteSource, DEFAULT_MAX_PAGES, fileKey, indexSnippet, removeDocument, startFileIndex, startSync, type SourceSettings } from "../ai/knowledge.ts";
+import { effectiveModels, InvalidModelsError, parseJobModels, type JobModels } from "../ai/models.ts";
 import { DEFAULT_MODELS, isLoopback, loadAiSettings, type ProviderId } from "../ai/providers.ts";
 import { searchKnowledge } from "../ai/search.ts";
 import { requireUser } from "../auth/session.ts";
@@ -43,6 +44,8 @@ ai.get("/workspaces/:id/ai", async (c) => {
   return c.json({
     settings,
     defaults: DEFAULT_MODELS,
+    // AI-16: the model each job runs on now (its override, else the workspace model).
+    effectiveModels: effectiveModels(settings),
     openaiKeyConfigured: Boolean((c.env as unknown as { OPENAI_API_KEY?: string }).OPENAI_API_KEY),
     devChatgpt: {
       available: true,
@@ -62,15 +65,25 @@ ai.put("/workspaces/:id/ai", async (c) => {
   const cap = Number(body.monthlyReplyCap ?? 2000);
   if (!Number.isInteger(cap) || cap < 0 || cap > 1_000_000) throw new HttpError(400, "invalid_field", "Monthly cap must be a whole number.");
   const model = typeof body.model === "string" && body.model.trim() ? body.model.trim().slice(0, 100) : null;
+  // AI-16: per-job models; kept unless sent.
+  let models: JobModels | undefined;
+  try {
+    if (body.models !== undefined) models = parseJobModels(body.models);
+  } catch (error) {
+    if (error instanceof InvalidModelsError) throw new HttpError(400, "invalid_field", error.message);
+    throw error;
+  }
+  const current = typeof body.instructions === "string" && models ? null : await loadAiSettings(c.env, workspaceId);
   // Guidance now lives in the agent config (AGENTS.md); the old field is kept unless sent.
-  const instructions = typeof body.instructions === "string" ? body.instructions.slice(0, 4000) : (await loadAiSettings(c.env, workspaceId)).instructions;
+  const instructions = typeof body.instructions === "string" ? body.instructions.slice(0, 4000) : current!.instructions;
+  models ??= current!.models;
 
   await c.env.DB.prepare(
-    `INSERT INTO ai_settings (workspace_id, enabled, provider, model, instructions, monthly_reply_cap, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (workspace_id) DO UPDATE SET enabled = excluded.enabled, provider = excluded.provider, model = excluded.model,
+    `INSERT INTO ai_settings (workspace_id, enabled, provider, model, models, instructions, monthly_reply_cap, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (workspace_id) DO UPDATE SET enabled = excluded.enabled, provider = excluded.provider, model = excluded.model, models = excluded.models,
        instructions = excluded.instructions, monthly_reply_cap = excluded.monthly_reply_cap, updated_at = excluded.updated_at`,
   )
-    .bind(workspaceId, body.enabled ? 1 : 0, provider, model, instructions, cap, Date.now())
+    .bind(workspaceId, body.enabled ? 1 : 0, provider, model, JSON.stringify(models), instructions, cap, Date.now())
     .run();
   return c.json({ settings: await loadAiSettings(c.env, workspaceId) });
 });

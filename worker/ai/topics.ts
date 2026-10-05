@@ -66,7 +66,7 @@ async function topicModel(env: Env, workspaceId: string): Promise<AgentModel | T
   ]);
   if (!settings.enabled) return "ai_off";
   if ((usage?.replies ?? 0) >= settings.monthlyReplyCap) return "cap_reached";
-  return createModel(env, workspaceId, settings);
+  return createModel(env, workspaceId, settings, "topics");
 }
 
 async function recordUsage(env: Env, workspaceId: string, usage: { inputTokens?: number; outputTokens?: number }): Promise<void> {

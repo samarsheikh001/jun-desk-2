@@ -14,7 +14,7 @@ import {
 import { asksForHuman, briefPrompt, HANDOFF_MESSAGES, resolveCitations } from "./ai/agent.ts";
 import type { ToolUser } from "./ai/config.ts";
 import { loadAgentConfig } from "./ai/config-store.ts";
-import { AiUnavailableError, completeText, createModel, loadAiSettings, type AgentModel } from "./ai/providers.ts";
+import { AiUnavailableError, completeText, createModel, loadAiSettings, type AgentModel, type AiSettings } from "./ai/providers.ts";
 import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
 import type { ToolAction } from "./ai/tools.ts";
@@ -514,7 +514,7 @@ export class Conversation extends DurableObject<Env> {
     try {
       let model: AgentModel;
       try {
-        model = createModel(this.env, ref.workspaceId, settings);
+        model = createModel(this.env, ref.workspaceId, settings, "answer");
       } catch (error) {
         if (error instanceof AiUnavailableError) {
           await this.#handoff(ref, `AI unavailable: ${error.message}`, HANDOFF_MESSAGES.error);
@@ -561,7 +561,7 @@ export class Conversation extends DurableObject<Env> {
       if ((await this.#handling(ref)) !== "ai") return false;
 
       if (outcome.kind === "handoff") {
-        await this.#handoff(ref, outcome.reason, HANDOFF_MESSAGES.default, model, history, technical.lines);
+        await this.#handoff(ref, outcome.reason, HANDOFF_MESSAGES.default, settings, history, technical.lines);
         return false;
       }
       const { text: body, sources } = resolveCitations(outcome.text, hits);
@@ -578,7 +578,7 @@ export class Conversation extends DurableObject<Env> {
       this.#broadcast({ type: "ai_status", state: "idle" });
       if (outcome.escalate) {
         // P1: the AI explained what broke; now the team gets it with the technical details.
-        await this.#handoff(ref, `Bug flagged by the AI: ${outcome.escalate}`, HANDOFF_MESSAGES.escalated, model, [...history, answer], technical.lines);
+        await this.#handoff(ref, `Bug flagged by the AI: ${outcome.escalate}`, HANDOFF_MESSAGES.escalated, settings, [...history, answer], technical.lines);
         return false;
       }
       return true;
@@ -618,7 +618,7 @@ export class Conversation extends DurableObject<Env> {
     };
   }
 
-  async #handoff(ref: ConversationRef, reason: string, visitorText: string, model?: AgentModel, history?: Message[], technical: string[] = []): Promise<void> {
+  async #handoff(ref: ConversationRef, reason: string, visitorText: string, settings?: AiSettings, history?: Message[], technical: string[] = []): Promise<void> {
     const changed = await this.env.DB.prepare("UPDATE conversations SET handling = 'human', status = 'open' WHERE id = ? AND handling = 'ai'")
       .bind(ref.conversationId)
       .run();
@@ -627,8 +627,9 @@ export class Conversation extends DurableObject<Env> {
     await this.#insert(ref, { authorType: "system", authorId: null, authorName: null, body: visitorText, clientMsgId: `${key}:visitor`, meta: { handoffReason: reason } });
 
     let brief = "";
-    if (model && history) {
+    if (settings && history) {
       try {
+        const model = createModel(this.env, ref.workspaceId, settings, "brief");
         const transcript =
           history.map((m) => `${m.authorType === "visitor" ? "Customer" : m.authorType === "ai" ? "AI" : "Agent"}: ${m.body}`).join("\n") +
           (technical.length ? `\n\nTechnical context from the customer's browser:\n${technical.join("\n")}` : "");

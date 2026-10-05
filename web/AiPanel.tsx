@@ -4,10 +4,12 @@ import { navigate } from "./lib/router.ts";
 import { useAction } from "./useAction.ts";
 
 type ProviderId = "openai" | "workers-ai" | "chatgpt";
+type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge";
 
 interface AiState {
-  settings: { enabled: boolean; provider: ProviderId; model: string | null; instructions: string; monthlyReplyCap: number };
+  settings: { enabled: boolean; provider: ProviderId; model: string | null; models: Partial<Record<AiJob, string>>; instructions: string; monthlyReplyCap: number };
   defaults: Record<ProviderId, string>;
+  effectiveModels: Record<AiJob, string>;
   openaiKeyConfigured: boolean;
   devChatgpt: { available: boolean; connected: boolean; email: string | null };
   usage: { month: string; replies: number; inputTokens: number; outputTokens: number };
@@ -19,10 +21,25 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   chatgpt: "ChatGPT sign-in (your plan)",
 };
 
+// AI-16: every AI job, in Settings order.
+const JOBS: { job: AiJob; label: string; hint: string }[] = [
+  { job: "answer", label: "Replies to visitors", hint: "Also the replies evals test." },
+  { job: "brief", label: "Handoff briefs", hint: "Fast job: a short summary for your team." },
+  { job: "nudge", label: "Nudges and openers", hint: "Fast job: one line when a visitor gets stuck." },
+  { job: "draft", label: "Issue drafts", hint: "Bug reports written from a conversation." },
+  { job: "topics", label: "Topic labels", hint: "Fast job: labels for Reports." },
+  { job: "judge", label: "Eval grading", hint: "Checks eval replies against your criteria." },
+];
+// "Suggested for ChatGPT": the small model for fast jobs, the workspace model for the rest.
+const CHATGPT_FAST_MODEL = "gpt-6-luna";
+const FAST_JOBS: AiJob[] = ["nudge", "topics", "brief"];
+
 export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const base = `/workspaces/${workspaceId}/ai`;
   const [state, setState] = useState<AiState | null>(null);
   const [provider, setProvider] = useState<ProviderId>("workers-ai");
+  const [model, setModel] = useState("");
+  const [models, setModels] = useState<Partial<Record<AiJob, string>>>({});
   const [saved, setSaved] = useState(false);
   // Deployed desks: the sign-in returns to a 127.0.0.1 page that doesn't load; its address is pasted here.
   const [pasting, setPasting] = useState(false);
@@ -32,6 +49,8 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
     const next = await api<AiState>(base);
     setState(next);
     setProvider(next.settings.provider);
+    setModel(next.settings.model ?? "");
+    setModels(next.settings.models ?? {});
   }, [base]);
   useEffect(() => {
     load().catch(() => {});
@@ -54,7 +73,8 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
         body: {
           enabled: data.get("enabled") === "on",
           provider,
-          model: data.get("model"),
+          model,
+          models,
           monthlyReplyCap: Number(data.get("cap")),
         },
       });
@@ -64,6 +84,8 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
     });
   };
 
+  const workspaceModel = model.trim() || state.defaults[provider];
+  const overrides = JOBS.filter(({ job }) => models[job]?.trim()).length;
   const providers: ProviderId[] = ["workers-ai", "openai", ...(state.devChatgpt.available || state.settings.provider === "chatgpt" ? (["chatgpt"] as const) : [])];
 
   return (
@@ -135,8 +157,42 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
         )}
         <label className="field">
           <span>Model <span className="muted">(optional)</span></span>
-          <input name="model" defaultValue={state.settings.model ?? ""} placeholder={state.defaults[provider]} disabled={!canEdit} />
+          <input name="model" value={model} onChange={(e) => setModel(e.target.value)} placeholder={state.defaults[provider]} disabled={!canEdit} />
         </label>
+        <details className="job-models" open={overrides > 0}>
+          <summary className="small">Advanced: model per task{overrides > 0 ? ` (${overrides} set)` : ""}</summary>
+          <div className="job-models-body">
+            <p className="small muted">
+              Each task uses the model above unless you name another model from the same provider. Fast jobs (nudge, topics, brief) do well on a small model. If the provider
+              doesn't recognise a model here, that task falls back to the model above.
+            </p>
+            {canEdit && provider === "chatgpt" && (
+              <div className="row">
+                <button type="button" className="ghost small" onClick={() => setModels(Object.fromEntries(FAST_JOBS.map((job) => [job, CHATGPT_FAST_MODEL])))}>
+                  Suggested for ChatGPT
+                </button>
+                <span className="muted small">{CHATGPT_FAST_MODEL} for the fast jobs; the rest stay on the model above.</span>
+              </div>
+            )}
+            <div className="job-model-grid">
+              {JOBS.map(({ job, label, hint }) => (
+                <label className="field" key={job}>
+                  <span>{label}</span>
+                  <input
+                    name={`model-${job}`}
+                    value={models[job] ?? ""}
+                    onChange={(e) => setModels((m) => ({ ...m, [job]: e.target.value }))}
+                    placeholder={workspaceModel}
+                    disabled={!canEdit}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <small className="muted">{hint}</small>
+                </label>
+              ))}
+            </div>
+          </div>
+        </details>
         <p className="small muted">
           Tone, rules, procedures and tools are in{" "}
           <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent"); }}>Agent</a>, as files you can also keep in git.

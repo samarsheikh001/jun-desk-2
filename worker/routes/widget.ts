@@ -161,7 +161,7 @@ widget.post("/widget/:key/nudge", async (c) => {
 
   let text = GENERIC_NUDGE;
   try {
-    const model = createModel(c.env, inbox.workspaceId, settings);
+    const model = createModel(c.env, inbox.workspaceId, settings, "nudge");
     const result = await completeText({
       model: model.model,
       ...model.prompt(nudgePrompt(inbox.workspaceName)),
