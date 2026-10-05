@@ -104,7 +104,7 @@
 
 *Demo: edit `support-agent/skills/refund/SKILL.md` in git, run `jun eval`, and see which past answers change before `jun push`.*
 
-**Status (2026-10-05): built locally, all tests pass (unit 53, e2e 50 incl. `e2e-agent` 8). Not deployed yet.** Engine and format: D-22.
+**Status (2026-10-05): deployed.** Engine and format: D-22.
 
 | ID | Feature | Size | |
 |---|---|---|---|
@@ -116,6 +116,8 @@
 ## M6 — Visitors and identity
 
 *Demo: watch live visitors, see who's logged in (verified), and start a chat with one.*
+
+**Status (2026-10-05): built locally, all tests pass (unit 57, e2e 60 incl. `e2e-visitors` 10, browser check of the real loader). Design: D-23.**
 
 | ID | Feature | Size | |
 |---|---|---|---|

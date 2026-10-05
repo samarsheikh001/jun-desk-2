@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatEventTime, isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
-import type { AiAction } from "../../shared/protocol.ts";
+import type { AiAction, ConversationSummary } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 
 interface ContextResponse {
@@ -93,7 +93,36 @@ function AiActions({ actions }: { actions: AiAction[] }) {
   );
 }
 
-export function DebugPanel({ conversationId, refreshKey }: { conversationId: string; refreshKey: number }) {
+interface ContactDetails {
+  externalId: string | null;
+  email: string | null;
+  verified: boolean;
+  attributes: Record<string, string | number | boolean>;
+}
+
+/** V-03/V-05: who the customer is, as their account in the host app says (verified contacts only). */
+function CustomerCard({ workspaceId, contact }: { workspaceId: string; contact: ConversationSummary["contact"] }) {
+  const [details, setDetails] = useState<ContactDetails | null>(null);
+  useEffect(() => {
+    if (!contact.verified) return setDetails(null);
+    api<{ contact: ContactDetails }>(`/workspaces/${workspaceId}/contacts/${contact.id}`).then((r) => setDetails(r.contact), () => setDetails(null));
+  }, [workspaceId, contact.id, contact.verified]);
+  if (!details) return null;
+  return (
+    <>
+      <h3>Customer <span className="verified" title="Identity verified by your site">✓ verified</span></h3>
+      <dl className="env small">
+        {details.email && (<><dt>Email</dt><dd>{details.email}</dd></>)}
+        {details.externalId && (<><dt>User ID</dt><dd><code>{details.externalId}</code></dd></>)}
+        {Object.entries(details.attributes).map(([k, v]) => (
+          <span key={k} style={{ display: "contents" }}><dt>{k}</dt><dd>{String(v)}</dd></span>
+        ))}
+      </dl>
+    </>
+  );
+}
+
+export function DebugPanel({ conversationId, workspaceId, contact, refreshKey }: { conversationId: string; workspaceId: string; contact: ConversationSummary["contact"]; refreshKey: number }) {
   const [data, setData] = useState<ContextResponse | null>(null);
   const [actions, setActions] = useState<AiAction[]>([]);
   const [onlyIssues, setOnlyIssues] = useState(false);
@@ -107,6 +136,7 @@ export function DebugPanel({ conversationId, refreshKey }: { conversationId: str
   if (!data.context) {
     return (
       <aside className="debug-panel">
+        <CustomerCard workspaceId={workspaceId} contact={contact} />
         <AiActions actions={actions} />
         <h3>Customer context</h3>
         <p className="muted small">No browser details for this conversation. They appear when the visitor writes from a page with the widget installed.</p>
@@ -117,6 +147,7 @@ export function DebugPanel({ conversationId, refreshKey }: { conversationId: str
   const shown = onlyIssues ? data.events.filter(isIssue) : data.events;
   return (
     <aside className="debug-panel">
+      <CustomerCard workspaceId={workspaceId} contact={contact} />
       <AiActions actions={actions} />
       <h3>Customer context</h3>
       <dl className="env small">

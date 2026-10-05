@@ -91,7 +91,59 @@ function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: 
         <input type="checkbox" checked={proactive} disabled={!canEdit} onChange={(e) => void toggleProactive(e.target.checked)} />
         Offer help when something breaks on the page (e.g. "Looks like your payment didn't go through. Want a hand?")
       </label>
+      <p className="muted small">
+        Cookie banner? Add <code>data-consent="required"</code>: the widget then stores nothing and doesn't show the visitor on your live list until you call <code>JunDesk.consent(true)</code>.
+      </p>
+      {canEdit && <IdentityPanel workspaceId={workspaceId} />}
     </section>
+  );
+}
+
+/** V-03: the secret the customer's backend signs identity tokens with. */
+function IdentityPanel({ workspaceId }: { workspaceId: string }) {
+  const base = `/workspaces/${workspaceId}/identity`;
+  const [secret, setSecret] = useState<string | null | undefined>(undefined);
+  const [shown, setShown] = useState(false);
+  const { busy, error, run } = useAction();
+  useEffect(() => {
+    api<{ secret: string | null }>(base).then((r) => setSecret(r.secret), () => setSecret(null));
+  }, [base]);
+  if (secret === undefined) return null;
+  const example = `// On your server, for the signed-in user (any JWT library; HS256):
+const userToken = jwt.sign(
+  { sub: user.id, email: user.email, name: user.name, attributes: { plan: user.plan } },
+  process.env.JUN_IDENTITY_SECRET,
+  { algorithm: "HS256", expiresIn: "1h" },
+);
+// In the page: data-user-token="<userToken>" on the script tag, or
+JunDesk.identify(userToken);   // and JunDesk.logout() when they sign out`;
+  return (
+    <div className="identity">
+      <h3>Identify signed-in customers</h3>
+      <p className="muted small">
+        Your backend signs a short-lived token saying who the user is. Agents then see a verified name, email and attributes, the AI can greet them and look up <em>their</em> account
+        ({"{user.id}"} in tools), and their chats follow them across devices. Without a valid token, visitors stay anonymous.
+      </p>
+      {secret ? (
+        <>
+          <div className="invite">
+            <div className="row">
+              <code className="small">{shown ? secret : `${secret.slice(0, 8)}${"•".repeat(24)}`}</code>
+              <button className="ghost small" onClick={() => setShown(!shown)}>{shown ? "Hide" : "Show"}</button>
+              <button className="ghost small" onClick={() => void navigator.clipboard?.writeText(secret)}>Copy</button>
+            </div>
+          </div>
+          <pre className="code small">{example}</pre>
+          <div className="row">
+            <button className="ghost small" disabled={busy} onClick={() => { if (confirm("Rotate the secret? Tokens signed with the old one stop working right away.")) run(async () => setSecret((await api<{ secret: string }>(base, { body: {} })).secret)); }}>Rotate secret</button>
+            <button className="ghost small" disabled={busy} onClick={() => { if (confirm("Turn off identity verification? Everyone becomes anonymous.")) run(async () => { await api(base, { method: "DELETE" }); setSecret(null); }); }}>Turn off</button>
+          </div>
+        </>
+      ) : (
+        <button className="small" disabled={busy} onClick={() => run(async () => { setSecret((await api<{ secret: string }>(base, { body: {} })).secret); setShown(true); })}>Create identity secret</button>
+      )}
+      {error && <p className="error small">{error}</p>}
+    </div>
   );
 }
 

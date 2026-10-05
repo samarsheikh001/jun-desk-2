@@ -104,6 +104,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
                 >
                   <span className="row">
                     <strong>{contactLabel(c.contact)}</strong>
+                    {c.contact.verified && <span className="verified" title="Identity verified by your site">✓</span>}
                     {c.handling === "ai" && <em className="tag ai-tag" title="The AI assistant is answering">AI</em>}
                     {c.debugIssueCount > 0 && <em className="tag issue-tag" title="Errors or failed requests in the visitor's browser">⚠ {c.debugIssueCount}</em>}
                     <span className="spacer" />
@@ -182,6 +183,7 @@ function Thread({ conversationId, workspaceId, me, members }: { conversationId: 
       <header className="thread-head">
         <div>
           <strong>{contactLabel(conversation.contact)}</strong>
+          {conversation.contact.verified && <span className="verified" title="Identity verified by your site">✓</span>}
           <div className="muted small">
             {thread.state === "open" ? "Live" : thread.state === "connecting" ? "Connecting…" : "Reconnecting…"} · started {formatTime(conversation.createdAt)}
           </div>
@@ -240,7 +242,7 @@ function Thread({ conversationId, workspaceId, me, members }: { conversationId: 
         }}
       />
     </section>
-    <DebugPanel conversationId={conversationId} refreshKey={visitorMessages + conversation.debugIssueCount * 1000} />
+    <DebugPanel conversationId={conversationId} workspaceId={workspaceId} contact={conversation.contact} refreshKey={visitorMessages + conversation.debugIssueCount * 1000} />
     </div>
   );
 }

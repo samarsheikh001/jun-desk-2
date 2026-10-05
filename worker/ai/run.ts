@@ -1,7 +1,7 @@
 import { isStepCount, jsonSchema, streamText, tool, type ToolSet } from "ai";
 import type { Message } from "../../shared/protocol.ts";
 import { INLINE_SKILLS_MAX_CHARS, parseReply, searchQuery, streamVisible, systemPrompt, toChatMessages, type ReplyOutcome } from "./agent.ts";
-import type { AgentConfig } from "./config.ts";
+import type { AgentConfig, ToolUser } from "./config.ts";
 import type { AgentModel } from "./providers.ts";
 import { searchKnowledge, type SearchHit } from "./search.ts";
 import { httpTools, secretsFromEnv, type ToolAction } from "./tools.ts";
@@ -27,6 +27,8 @@ export interface RunInput {
   timezone?: string;
   /** Evals use 0 so a diff reflects the config change, not sampling noise. */
   temperature?: number;
+  /** The customer, when the host app verified who they are (V-03). */
+  user?: ToolUser | null;
 }
 
 export interface RunResult {
@@ -54,7 +56,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     input.onAction?.(action);
   };
 
-  const tools: ToolSet = httpTools(config.tools, { secrets: secretsFromEnv(input.env), mock: Boolean(input.mockTools), onAction });
+  const tools: ToolSet = httpTools(config.tools, { secrets: secretsFromEnv(input.env), mock: Boolean(input.mockTools), onAction, user: input.user ?? null });
   const skillChars = config.skills.reduce((n, s) => n + s.instructions.length + s.description.length, 0);
   const skillCatalog = skillChars > INLINE_SKILLS_MAX_CHARS;
   if (skillCatalog) {
@@ -84,6 +86,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     hits,
     technical: input.technical ?? [],
     today: today(input.timezone),
+    ...(input.user ? { customer: input.user } : {}),
   });
 
   const result = streamText({

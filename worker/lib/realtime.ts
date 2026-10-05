@@ -1,6 +1,6 @@
 import { SOCKET_PROTOCOL } from "../../shared/protocol.ts";
 import { FORWARD_HEADERS, type ConversationRef, type Participant, type SendInput, type SendResult } from "../conversation.ts";
-import { HUB_USER_HEADER } from "../hub.ts";
+import { HUB_USER_HEADER, HUB_VISITOR_HEADER, type VisitorConnect } from "../hub.ts";
 import { HttpError } from "../types.ts";
 
 /** Subprotocols the client offered, e.g. `["jun", "<visitor token>"]`. */
@@ -24,6 +24,8 @@ export function assertWebSocketUpgrade(request: Request): void {
 
 function forward(request: Request, headers: Record<string, string>): Request {
   const forwarded = new Headers(request.headers);
+  // Identity headers only ever come from the Worker, never from the client.
+  for (const name of [HUB_USER_HEADER, HUB_VISITOR_HEADER]) forwarded.delete(name);
   for (const [k, v] of Object.entries(headers)) forwarded.set(k, v);
   return new Request(request.url, { method: "GET", headers: forwarded });
 }
@@ -43,6 +45,12 @@ export function connectConversation(env: Env, request: Request, ref: Conversatio
 export function connectHub(env: Env, request: Request, workspaceId: string, user: { userId: string; name: string }): Promise<Response> {
   assertWebSocketUpgrade(request);
   return env.WORKSPACE_HUB.getByName(workspaceId).fetch(forward(request, { [HUB_USER_HEADER]: JSON.stringify(user) }));
+}
+
+/** V-01: the loader's live socket from a customer's site (any origin; the widget key was checked). */
+export function connectVisitorLive(env: Env, request: Request, workspaceId: string, info: VisitorConnect): Promise<Response> {
+  if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") throw new HttpError(400, "websocket_required", "Expected a WebSocket upgrade.");
+  return env.WORKSPACE_HUB.getByName(workspaceId).fetch(forward(request, { [HUB_VISITOR_HEADER]: JSON.stringify(info) }));
 }
 
 export async function sendMessage(env: Env, ref: ConversationRef, participant: Participant, input: SendInput) {

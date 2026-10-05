@@ -1,5 +1,5 @@
 import { jsonSchema, tool, type ToolSet } from "ai";
-import { fillTemplate, type ToolSpec } from "./config.ts";
+import { fillTemplate, type ToolSpec, type ToolUser } from "./config.ts";
 
 // HTTP tools (AI-05): each tools/<name>.yaml becomes a tool the model can call.
 // Every call is reported through onAction for the audit log (AI-11).
@@ -24,6 +24,8 @@ export interface ToolRunOptions {
   mock?: boolean;
   fetch?: typeof fetch;
   onAction?: (action: ToolAction) => void;
+  /** The verified customer for {user.*}; null when they aren't signed in. */
+  user?: ToolUser | null;
 }
 
 export function secretsFromEnv(env: object): (name: string) => string | undefined {
@@ -47,30 +49,30 @@ function inputSchema(spec: ToolSpec) {
   return jsonSchema<Record<string, unknown>>({ type: "object", properties, required, additionalProperties: false });
 }
 
-function fillDeep(value: unknown, input: Record<string, unknown>, secrets: ToolRunOptions["secrets"]): unknown {
+function fillDeep(value: unknown, input: Record<string, unknown>, secrets: ToolRunOptions["secrets"], user: ToolUser | null): unknown {
   if (typeof value === "string") {
     // A value that is exactly "{param}" keeps the input's type (numbers stay numbers).
     const whole = /^\{([a-zA-Z_][a-zA-Z0-9_]*)\}$/.exec(value);
     if (whole?.[1] && whole[1] in input) return input[whole[1]];
-    return fillTemplate(value, input, secrets);
+    return fillTemplate(value, input, secrets, undefined, user);
   }
-  if (Array.isArray(value)) return value.map((v) => fillDeep(v, input, secrets));
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, fillDeep(v, input, secrets)]));
+  if (Array.isArray(value)) return value.map((v) => fillDeep(v, input, secrets, user));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, fillDeep(v, input, secrets, user)]));
   return value;
 }
 
 /** Builds the request for a call. Exported for tests. */
-export function buildRequest(spec: ToolSpec, input: Record<string, unknown>, secrets: ToolRunOptions["secrets"]): Request {
-  const url = new URL(fillTemplate(spec.url, input, secrets, encodeURIComponent));
+export function buildRequest(spec: ToolSpec, input: Record<string, unknown>, secrets: ToolRunOptions["secrets"], user: ToolUser | null = null): Request {
+  const url = new URL(fillTemplate(spec.url, input, secrets, encodeURIComponent, user));
   for (const [key, template] of Object.entries(spec.query)) {
-    const value = fillTemplate(template, input, secrets);
+    const value = fillTemplate(template, input, secrets, undefined, user);
     if (value !== "") url.searchParams.set(key, value);
   }
   const headers = new Headers({ accept: "application/json", "user-agent": "JunDesk-Agent/1" });
-  for (const [key, template] of Object.entries(spec.headers)) headers.set(key, fillTemplate(template, input, secrets));
+  for (const [key, template] of Object.entries(spec.headers)) headers.set(key, fillTemplate(template, input, secrets, undefined, user));
   let body: string | undefined;
   if (spec.method === "POST") {
-    body = JSON.stringify(spec.body === undefined ? input : fillDeep(spec.body, input, secrets));
+    body = JSON.stringify(spec.body === undefined ? input : fillDeep(spec.body, input, secrets, user));
     if (!headers.has("content-type")) headers.set("content-type", "application/json");
   }
   return new Request(url, { method: spec.method, headers, ...(body !== undefined ? { body } : {}) });
@@ -108,7 +110,7 @@ async function callTool(spec: ToolSpec, input: Record<string, unknown>, options:
   }
   let request: Request;
   try {
-    request = buildRequest(spec, input, options.secrets);
+    request = buildRequest(spec, input, options.secrets, options.user ?? null);
   } catch (error) {
     return action("error", (error as Error).message, null);
   }

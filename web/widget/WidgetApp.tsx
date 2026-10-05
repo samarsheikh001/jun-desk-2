@@ -6,11 +6,15 @@ import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/threa
 
 // The chat UI inside the widget iframe. The visitor's token is created only when they
 // first send something, so just opening the chat stores nothing in their browser.
+// With consent-aware mode (V-06, `persist=0`) the token lives in memory only until the
+// host page calls JunDesk.consent(true).
 
 const storageKey = (key: string) => `jun:visitor:${key}`;
-let memoryToken: string | null = null; // fallback when storage is blocked
+let memoryToken: string | null = null; // fallback when storage is blocked or not consented
+let persist = new URLSearchParams(window.location.search).get("persist") !== "0";
 
 function readToken(key: string): string | null {
+  if (!persist) return memoryToken;
   try {
     return localStorage.getItem(storageKey(key)) ?? memoryToken;
   } catch {
@@ -18,13 +22,36 @@ function readToken(key: string): string | null {
   }
 }
 
-function writeToken(key: string, token: string): void {
+function writeToken(key: string, token: string | null): void {
   memoryToken = token;
+  if (!persist) return;
   try {
-    localStorage.setItem(storageKey(key), token);
+    if (token) localStorage.setItem(storageKey(key), token);
+    else localStorage.removeItem(storageKey(key));
   } catch {
     // storage blocked: the session still works until the page reloads
   }
+}
+
+/** V-06: consent given (or withdrawn) on the host page. */
+function setPersist(key: string, next: boolean): void {
+  if (next === persist) return;
+  persist = next;
+  if (next) writeToken(key, memoryToken);
+  else {
+    try {
+      localStorage.removeItem(storageKey(key));
+    } catch {
+      // nothing stored
+    }
+  }
+}
+
+/** An opening message shown before the conversation exists: a proactive nudge or an agent's invite (V-07). */
+interface Opener {
+  text: string;
+  inviteId?: string;
+  from?: string;
 }
 
 class WidgetApi {
@@ -44,6 +71,19 @@ class WidgetApi {
     const json = (await response.json().catch(() => ({}))) as { error?: { message: string } };
     if (!response.ok) throw new Error(json.error?.message ?? `Request failed (${response.status})`);
     return json as T;
+  }
+
+  /** V-03/V-04: who the host page says its signed-in user is (a JWT); may switch this browser's token. */
+  async identify(userToken: string): Promise<void> {
+    const { token } = await this.call<{ token: string }>("/identify", { body: { userToken } });
+    writeToken(this.key, token);
+    this.token = token;
+  }
+
+  /** The host app's user signed out: forget this browser's chat identity. */
+  forget(): void {
+    writeToken(this.key, null);
+    this.token = null;
   }
 
   async ensureVisitor(): Promise<string> {
@@ -89,34 +129,72 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const api = useMemo(() => new WidgetApi(widgetKey), [widgetKey]);
   const [config, setConfig] = useState<{ workspaceName: string; greeting: string; ai: boolean } | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [view, setView] = useState<{ kind: "home" } | { kind: "thread"; id: string | null; opener?: string }>({ kind: "home" });
+  const [view, setView] = useState<{ kind: "home" } | { kind: "thread"; id: string | null; opener?: Opener }>({ kind: "home" });
   const [open, setOpen] = useState(window.parent === window);
   const [error, setError] = useState<string | null>(null);
+  /** The loader's live session (V-01), sent with a new conversation so the visitor list can show it. */
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  /** Bumped when this browser's identity changes, to reload its conversations. */
+  const [identityVersion, setIdentityVersion] = useState(0);
 
   useEffect(() => {
     api.call<{ workspaceName: string; greeting: string; ai: boolean }>("/config").then(setConfig, (e: Error) => setError(e.message));
-    if (api.token) {
-      api.call<{ conversations: ConversationSummary[] }>("/conversations").then(
-        (r) => {
-          setConversations(r.conversations);
-          // Go straight back into an ongoing conversation.
-          const active = r.conversations.find((c) => c.status !== "resolved");
-          if (active) setView({ kind: "thread", id: active.id });
-        },
-        () => {},
-      );
-    }
   }, [api]);
+
+  useEffect(() => {
+    if (!api.token) {
+      setConversations([]);
+      return;
+    }
+    api.call<{ conversations: ConversationSummary[] }>("/conversations").then(
+      (r) => {
+        setConversations(r.conversations);
+        // Go straight back into an ongoing conversation.
+        const active = r.conversations.find((c) => c.status !== "resolved");
+        setView((v) => (active && !(v.kind === "thread" && v.opener) ? { kind: "thread", id: active.id } : v));
+      },
+      () => {},
+    );
+  }, [api, identityVersion]);
 
   // The loader tells us when the chat is shown or hidden (read receipts only count while shown).
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.source !== window.parent) return;
-      if (e.data?.type === "jun:open") setOpen(true);
-      if (e.data?.type === "jun:close") setOpen(false);
-      // The visitor clicked "Chat with us" on a proactive nudge: start a new chat with that opener.
-      if (e.data?.type === "jun:proactive" && typeof e.data.text === "string") {
-        setView({ kind: "thread", id: null, opener: e.data.text.slice(0, 200) });
+      const data = e.data as Record<string, unknown> | null;
+      if (data?.type === "jun:open") setOpen(true);
+      if (data?.type === "jun:close") setOpen(false);
+      if (data?.type === "jun:session" || data?.type === "jun:consent") {
+        if (typeof data.persist === "boolean") setPersist(api.key, data.persist);
+        if (typeof data.sessionId === "string") setSessionId(data.sessionId);
+      }
+      // Who the host page's signed-in user is (or that they signed out).
+      if ((data?.type === "jun:session" && typeof data.userToken === "string") || data?.type === "jun:identify") {
+        const userToken = typeof data.userToken === "string" ? data.userToken : null;
+        if (userToken) {
+          api.identify(userToken).then(
+            () => setIdentityVersion((n) => n + 1),
+            (err: Error) => console.warn(`[Jun Desk] identify failed: ${err.message}`),
+          );
+        } else {
+          api.forget();
+          setView({ kind: "home" });
+          setIdentityVersion((n) => n + 1);
+        }
+      }
+      // The visitor clicked "Chat with us" on a nudge or an agent's invite: a new chat with that opener.
+      const opener = data?.type === "jun:proactive" ? (data.opener as Opener | undefined) : undefined;
+      if (opener && typeof opener.text === "string") {
+        if (typeof data!.sessionId === "string") setSessionId(data!.sessionId);
+        setView({
+          kind: "thread",
+          id: null,
+          opener: {
+            text: opener.text.slice(0, 1000),
+            ...(typeof opener.inviteId === "string" ? { inviteId: opener.inviteId } : {}),
+            ...(typeof opener.from === "string" ? { from: opener.from.slice(0, 120) } : {}),
+          },
+        });
         postToHost({ type: "jun:proactive-shown" });
       }
     };
@@ -124,7 +202,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     // Only now can we hear the loader's reply, so ask for the current state.
     postToHost({ type: "jun:ready" });
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [api]);
 
   useEffect(() => {
     postToHost({ type: "jun:unread", count: conversations.filter(unread).length });
@@ -177,6 +255,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           conversationId={view.id}
           handling={conversations.find((c) => c.id === view.id)?.handling ?? null}
           opener={view.opener}
+          sessionId={sessionId}
           aiEnabled={config.ai}
           open={open}
           onStarted={(c) => {
@@ -196,6 +275,7 @@ function WidgetThread({
   conversationId,
   handling,
   opener,
+  sessionId,
   aiEnabled,
   open,
   onStarted,
@@ -204,7 +284,8 @@ function WidgetThread({
   api: WidgetApi;
   conversationId: string | null;
   handling: "ai" | "human" | null;
-  opener?: string | undefined;
+  opener?: Opener | undefined;
+  sessionId: string | null;
   aiEnabled: boolean;
   open: boolean;
   onStarted: (c: ConversationSummary) => void;
@@ -237,8 +318,9 @@ function WidgetThread({
   const onTyping = useTypingSignal(thread.setTyping);
 
   const lastMessage = thread.messages.at(-1);
+  // An agent's invite starts a conversation with that agent, not the AI.
   const awaitingAi = Boolean(
-    (handling === "ai" || (!conversationId && starting && aiEnabled)) && !thread.aiStream && (thread.pending.length > 0 || lastMessage?.authorType === "visitor" || starting),
+    (handling === "ai" || (!conversationId && starting && aiEnabled && !opener?.inviteId)) && !thread.aiStream && (thread.pending.length > 0 || lastMessage?.authorType === "visitor" || starting),
   );
 
   const latest = lastMessage?.seq ?? 0;
@@ -260,7 +342,7 @@ function WidgetThread({
     try {
       await api.ensureVisitor();
       const r = await api.call<{ conversation: ConversationSummary; message: Message }>("/conversations", {
-        body: { clientMsgId: crypto.randomUUID(), body, attachments, context },
+        body: { clientMsgId: crypto.randomUUID(), body, attachments, context, ...(opener?.inviteId ? { inviteId: opener.inviteId } : {}), ...(sessionId ? { sessionId } : {}) },
       });
       onStarted(r.conversation);
     } catch (e) {
@@ -273,10 +355,18 @@ function WidgetThread({
   return (
     <>
       <div className="w-body">
-        {opener ? (
-          <div className="msg other ai w-opener">
-            <div className="bubble">{opener} Tell me what you were trying to do and I'll take a look.</div>
-          </div>
+        {/* Once the conversation exists, an invite is its first real message: don't show it twice. */}
+        {opener && !(opener.inviteId && thread.messages.length > 0) ? (
+          opener.inviteId ? (
+            <div className="msg other w-opener">
+              <div className="meta small muted">{opener.from}</div>
+              <div className="bubble">{opener.text}</div>
+            </div>
+          ) : (
+            <div className="msg other ai w-opener">
+              <div className="bubble">{opener.text} Tell me what you were trying to do and I'll take a look.</div>
+            </div>
+          )
         ) : (
           thread.messages.length === 0 && thread.pending.length === 0 && <p className="muted small pad">Ask anything. A teammate will reply here.</p>
         )}

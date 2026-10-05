@@ -1,6 +1,6 @@
 import type { ChatMessage } from "@jun/llm";
 import type { Message, Source } from "../../shared/protocol.ts";
-import type { Skill } from "./config.ts";
+import type { Skill, ToolUser } from "./config.ts";
 import type { SearchHit } from "./query.ts";
 
 // Prompting and post-processing for the support agent. Pure functions.
@@ -31,6 +31,13 @@ export interface PromptOptions {
   technical?: string[];
   /** e.g. "Monday 5 October 2026" so the model can do date maths (refund windows). */
   today?: string;
+  /** The signed-in customer, verified by the website (V-03). */
+  customer?: ToolUser;
+}
+
+function describeCustomer(c: ToolUser): string {
+  const attrs = Object.entries(c.attributes).map(([k, v]) => `${k}: ${String(v)}`);
+  return [c.name && `name: ${c.name}`, c.email && `email: ${c.email}`, `user id: ${c.id}`, ...attrs].filter(Boolean).join("; ");
 }
 
 export function systemPrompt(options: PromptOptions): string {
@@ -50,7 +57,11 @@ export function systemPrompt(options: PromptOptions): string {
       ? `\n\nProcedures (call activate_skill with the name to load the steps before you follow one):\n${skills.map((s) => `- ${s.name}: ${s.description}`).join("\n")}`
       : `\n\nProcedures (follow the matching one step by step):\n${skills.map((s) => `## ${s.name}\nWhen: ${s.description}\n${s.instructions}`).join("\n\n")}`;
 
-  return `You are the customer support assistant for ${name}, chatting with a customer on their website.${options.today ? ` Today is ${options.today}.` : ""}
+  return `You are the customer support assistant for ${name}, chatting with a customer on their website.${options.today ? ` Today is ${options.today}.` : ""}${
+    options.customer
+      ? `\nThe customer is signed in; ${name}'s website verified who they are (${describeCustomer(options.customer)}). Use their name naturally, and their account details when relevant.`
+      : ""
+  }
 ${options.persona ? `\nGuidance from the ${name} team:\n${options.persona}\n` : ""}
 Rules:
 - Facts about ${name} (features, prices, plans, policies, how-to steps, URLs) come ONLY from the numbered sources below${skills.length ? ", the procedures" : ""}${tools.length ? " and tool results" : ""}. Cite sources inline like [1] right after the facts they support. Never invent such facts.${

@@ -52,6 +52,8 @@
         s.src = "/widget.js";
         s.async = true;
         s.setAttribute("data-key", key);
+        // ?consent=required tries consent-aware mode (call JunDesk.consent(true) in the console).
+        if (new URLSearchParams(location.search).get("consent")) s.setAttribute("data-consent", "required");
         document.body.appendChild(s);
       } else {
         document.getElementById("missing").hidden = false;

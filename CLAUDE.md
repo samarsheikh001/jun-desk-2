@@ -2,7 +2,7 @@
 
 An open-source, AI-first customer support desk for B2B SaaS, deployable to your own Cloudflare account in one click: an embeddable website widget, live visitor tracking, an AI agent that answers and takes actions, and a real-time inbox for human agents. Think Intercom/Fin, Chatbase, Crisp — rebuilt for 2026.
 
-## Current phase: building v1 (M0–M2 and M4 deployed; M5 built locally; M6 next)
+## Current phase: building v1 (M0–M2, M4 and M5 deployed; M6 built locally; M7 next)
 
 Plan: `docs/build-plan.md`. Build milestone by milestone; keep the Deploy button working at every step.
 
@@ -18,14 +18,15 @@ npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stri
 | `worker/` | Hono API under `/api`. Durable Objects: `Conversation` (one per conversation: sockets, seq, write-through to D1) and `WorkspaceHub` (one per workspace: inbox events, presence). Routes: `auth`, `workspaces`, `conversations` (agents), `widget` (public, visitor token), `files` (R2). |
 | `worker/ai/` | M2 AI: `knowledge.ts` (sources, Queue crawl jobs, indexing), `extract.ts` (HTMLRewriter), `chunk.ts`, `embeddings.ts` (bge-m3), `knowledge-index.ts` (KnowledgeIndex DO: int8 vectors, in-memory search), `search.ts` (hybrid + rerank), `providers.ts` (`createModel`: AI SDK models for Workers AI / OpenAI / dev ChatGPT), `agent.ts` (prompt, citations, handoff rules). AI turns run from the Conversation DO's alarm |
 | `worker/ai/` (M5) | Support agent as code: `config.ts` (parse/validate AGENTS.md, skills, tools, evals; pure), `config-store.ts` (versions in D1), `tools.ts` (HTTP tools → AI SDK tools, audit callback), `run.ts` (**one AI reply**, shared by the Conversation DO and evals), `eval.ts` (`jun eval`: cases + replay, NDJSON), `workers-ai.ts` (binding wrapper that drops Workers AI's duplicate stream fields). Routes: `routes/agent.ts` (config, eval, API tokens) |
+| `worker/lib/identity.ts`, `worker/lib/contacts.ts` (M6) | HS256 identity JWT verify (V-03); visitor tokens (`visitor_tokens`, many per contact), identify + merge rules (V-04). Routes: `routes/visitors.ts` (identity secret, invites, contact details); widget `/identify`, `/live` (loader socket → `WorkspaceHub`, which keeps live visitors in socket attachments, tags `visitor` / `s:<session>` / `agent`) |
 | `shared/debug.ts` | P1 debug context: types, `redact`/`cleanUrl`/`sanitizeContext` (server-side masking; `public/widget.js` mirrors the rules in plain JS, keep them in sync), `describeEvents` for prompts |
 | `shared/protocol.ts` | Types and constants shared by Worker, dashboard and widget (socket events, message/conversation shapes) |
 | `web/widget/`, `widget.html` | The chat UI inside the widget iframe (served at `/widget?key=`) |
-| `public/widget.js` | Embeddable loader (MIT, plain JS, keep under 5 KB); `public/demo.html?key=` is a test page |
+| `public/widget.js` | Embeddable loader (MIT, plain JS, readable in the repo; the build minifies it, budget 5 KB gzipped served). Debug capture, nudges, live visitor socket, identify/logout/consent API. `public/demo.html?key=` is a test page (`&consent=required` for consent mode) |
 | `web/` | React dashboard (Vite), served as the Worker's static assets |
 | `migrations/` | D1 migrations (`NNNN_name.sql`); applied by `npm run dev` (local) and `npm run deploy` (remote) |
 | `scripts/bench-models.ts` | Latency/behaviour comparison of Workers AI chat models on five support questions, incl. a tool call (run against the e2e server after `npm run test:e2e`) |
-| `scripts/e2e-*.ts` | E2E on a separate dev server + DB (`JUN_STATE_DIR=.wrangler/e2e-state`, port 5174, see README) so your own local desk isn't wiped: `e2e-auth`, `e2e-chat`, `e2e-ai`, `e2e-debug`, `e2e-agent` (real Workers AI; `e2e-agent` uses httpbin.org as the "order API" and runs the `jun` CLI). Helpers in `e2e-lib.ts` |
+| `scripts/e2e-*.ts` | E2E on a separate dev server + DB (`JUN_STATE_DIR=.wrangler/e2e-state`, port 5174, see README) so your own local desk isn't wiped: `e2e-auth`, `e2e-chat`, `e2e-ai`, `e2e-debug`, `e2e-agent`, `e2e-visitors` (real Workers AI; `e2e-agent`/`e2e-visitors` use httpbin.org as the customer's API; `e2e-agent` runs the `jun` CLI). Helpers in `e2e-lib.ts` |
 
 | Package | What |
 |---|---|
@@ -37,6 +38,8 @@ Commands: `npm run dev` · `npm test` · `npm run test:e2e` · `npm run typechec
 AI conventions: the AI only answers when `conversations.handling = 'ai'`; any agent reply, the visitor's "Talk to a person", a HANDOFF line from the model, the turn limit, the monthly cap or an AI error flips it to `human` with a public notice + internal brief. AI replies are idempotent per visitor message (`clientMsgId = ai:<seq>`). Internal messages (`internal = 1`) must never reach visitors (socket broadcast uses the `agent` tag; widget queries exclude them). Local dev: Workers AI always calls Cloudflare (needs `CLOUDFLARE_ACCOUNT_ID` in a gitignored `.env` when the login has several accounts); the dev server binds 127.0.0.1 for the ChatGPT loopback callback; workerd can't fetch its own dev server, so crawl tests use a public URL.
 
 Agent-as-code conventions (M5, D-22): models and the tool loop go through the AI SDK (`createModel` in `providers.ts`; `model.prompt(system)` because ChatGPT plan usage takes the system prompt as `instructions`). Never call Workers AI through `workers-ai-provider` without `dedupedAi`. Live chats and evals must both go through `runAgent`, so evals test what visitors get. Tool calls are recorded in `ai_actions` (agents only); tool secrets come only from Worker secrets named `JUN_SECRET_<NAME>`, in headers. API tokens (`jun_…`) work only on `/workspaces/:id/agent*` and `/cli/whoami`, for their own workspace. Keep `packages/cli/src/template.ts` AGENTS.md in sync with `DEFAULT_AGENTS_MD`.
+
+Visitor conventions (M6, D-23): identity only ever comes from a verified JWT (never from page JavaScript); identified contacts never merge with each other; visitor sockets on the hub receive only `LiveServerEvent`s (invites, identify results), never inbox events (`#broadcast` goes to the `agent` tag). Consent mode means no storage and no live socket before consent. Check the served loader size after loader changes (`gzip -c dist/client/widget.js | wc -c` after `npm run build`).
 
 P1 conventions: never capture request/response bodies or storage; mask in the browser *and* on the server; debug context only reaches agents (`/api/conversations/:id/context`) and the AI prompt, never other visitors. The model's control lines (`HANDOFF:` at the start, `ESCALATE:` as the last line) are stripped from what streams to visitors (`streamVisible`).
 

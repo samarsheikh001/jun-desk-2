@@ -30,6 +30,19 @@ Turn it on in **Settings → AI assistant** and add your docs under **Knowledge*
 - **OpenAI**: `npx wrangler secret put OPENAI_API_KEY`. Optional `OPENAI_BASE_URL` to route through Cloudflare AI Gateway.
 - **ChatGPT sign-in** (local development only): add `JUN_DEV_CHATGPT=1` to `.dev.vars`, then use "Sign in with ChatGPT" in Settings. OpenAI allows ChatGPT plan usage for open-source apps running on your own machine; deployed desks must use an API key or Workers AI.
 
+## Know who you're talking to
+
+- **Live visitors:** the **Visitors** page lists everyone on pages with the widget, with page, referrer, location, device and time on site. "Start chat" pops a message up on their page.
+- **Signed-in customers:** create an identity secret in Settings → Install, have your backend sign a short-lived HS256 JWT for the logged-in user (`sub`, `exp`, optional `email`, `name`, `attributes`), and pass it to the widget:
+
+  ```html
+  <script src="https://your-desk.example.com/widget.js" data-key="wk_…" data-user-token="<signed JWT>" async></script>
+  <!-- or later: JunDesk.identify(jwt), and JunDesk.logout() on sign-out -->
+  ```
+
+  Agents see a verified name, email and attributes; chats follow the user across devices; the AI greets them and tools can look up their account with `{user.id}`.
+- **Consent:** add `data-consent="required"` and the widget stores nothing and stays off the visitor list until you call `JunDesk.consent(true)`.
+
 ## Support agent as code
 
 The AI's persona, procedures, tools and test cases are plain files. Edit them on the **Agent** page, or keep them in git and use the `jun` CLI (from a checkout of this repo; create a token in Settings → API tokens):
@@ -65,7 +78,7 @@ npm run dev                      # dashboard + Worker on http://localhost:5173
 | `npm run dev` | Applies local D1 migrations, then runs Vite with the Worker in the Workers runtime |
 | `npm run build` then `npm run deploy` | Build; then deploy to your Cloudflare account with remote D1 migrations (handles first install and upgrades). Set the secret once with `npx wrangler secret put SETUP_TOKEN` |
 | `npm test` | Unit tests (`packages/`, `worker/`, `shared/`) |
-| `npm run test:e2e` | Auth, chat, AI, debug context and agent-as-code end to end against a dev server on a fresh DB: run `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then `BASE_URL=http://localhost:5174 npm run test:e2e`. Uses real Workers AI |
+| `npm run test:e2e` | Auth, chat, AI, debug context, agent-as-code and visitors/identity end to end against a dev server on a fresh DB: run `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then `BASE_URL=http://localhost:5174 npm run test:e2e`. Uses real Workers AI |
 | `npm run typecheck` | Packages, Worker and dashboard |
 | `npm run jun -- <command>` | `jun` CLI: `login <desk-url>`, `init`, `pull`, `push`, `eval`; dev LLM: `login chatgpt`, `ask`, `chat`, `models` |
 

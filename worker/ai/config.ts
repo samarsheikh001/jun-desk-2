@@ -246,8 +246,11 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     for (const [, ref] of source.matchAll(PLACEHOLDER)) {
       if (ref!.startsWith("secrets.")) {
         if (!/^secrets\.[A-Z][A-Z0-9_]*$/.test(ref!)) issues.push({ path, message: `{${ref}}: secret names are UPPER_SNAKE_CASE.` });
+      } else if (ref!.startsWith("user.")) {
+        // The signed-in customer, verified by the host app's identity token (V-03).
+        if (!/^user\.[a-zA-Z_][a-zA-Z0-9_]*$/.test(ref!)) issues.push({ path, message: `{${ref}}: use {user.id}, {user.email}, {user.name} or {user.<attribute>}.` });
       } else if (!input[ref!]) {
-        issues.push({ path, message: `{${ref}} isn't an input. Add it under input:, or use {secrets.NAME}.` });
+        issues.push({ path, message: `{${ref}} isn't an input. Add it under input:, {user.id} (signed-in customer), or {secrets.NAME}.` });
       }
     }
   }
@@ -364,9 +367,36 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
   return { config, issues };
 }
 
-/** Values for {placeholders}: tool inputs, and secrets from Worker env vars named JUN_SECRET_<NAME>. */
-export function fillTemplate(template: string, input: Record<string, unknown>, secrets: (name: string) => string | undefined, encode: (s: string) => string = (s) => s): string {
+/** The customer as verified by the host app (V-03), for {user.*} placeholders. */
+export interface ToolUser {
+  id: string;
+  email: string | null;
+  name: string | null;
+  attributes: Record<string, string | number | boolean>;
+}
+
+export class NotSignedInError extends Error {
+  constructor() {
+    super("The customer isn't signed in (no verified identity), so their account can't be looked up. Ask them to sign in, or hand off.");
+  }
+}
+
+/** Values for {placeholders}: tool inputs, the verified customer, and secrets from Worker env vars JUN_SECRET_<NAME>. */
+export function fillTemplate(
+  template: string,
+  input: Record<string, unknown>,
+  secrets: (name: string) => string | undefined,
+  encode: (s: string) => string = (s) => s,
+  user: ToolUser | null = null,
+): string {
   return template.replace(PLACEHOLDER, (_, ref: string) => {
+    if (ref.startsWith("user.")) {
+      if (!user) throw new NotSignedInError();
+      const field = ref.slice("user.".length);
+      const value = field === "id" ? user.id : field === "email" ? user.email : field === "name" ? user.name : user.attributes[field];
+      if (value === undefined || value === null) throw new Error(`The signed-in customer has no ${field}.`);
+      return encode(String(value));
+    }
     if (ref.startsWith("secrets.")) {
       const value = secrets(ref.slice("secrets.".length));
       if (value === undefined) throw new Error(`Secret ${ref.slice(8)} isn't set (Worker secret JUN_SECRET_${ref.slice(8)}).`);

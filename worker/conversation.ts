@@ -13,6 +13,7 @@ import {
   type MessageMeta,
 } from "../shared/protocol.ts";
 import { asksForHuman, briefPrompt, HANDOFF_MESSAGES, resolveCitations } from "./ai/agent.ts";
+import type { ToolUser } from "./ai/config.ts";
 import { loadAgentConfig } from "./ai/config-store.ts";
 import { AiUnavailableError, createModel, loadAiSettings, type AgentModel } from "./ai/providers.ts";
 import { runAgent } from "./ai/run.ts";
@@ -426,9 +427,10 @@ export class Conversation extends DurableObject<Env> {
         throw error;
       }
 
-      const [workspace, technical] = await Promise.all([
+      const [workspace, technical, user] = await Promise.all([
         this.env.DB.prepare("SELECT name FROM workspaces WHERE id = ?").bind(ref.workspaceId).first<{ name: string }>(),
         this.#technicalContext(ref),
+        this.#verifiedCustomer(ref),
       ]);
 
       // Stream what the visitor may see: nothing that could be a HANDOFF line, never an ESCALATE line.
@@ -444,6 +446,7 @@ export class Conversation extends DurableObject<Env> {
         history,
         technical: technical.lines,
         ...(technical.timezone ? { timezone: technical.timezone } : {}),
+        user,
         onVisible: (visible) => {
           if (shown && visible.startsWith(shown)) {
             this.#broadcast({ type: "ai_delta", streamId, text: visible.slice(shown.length) });
@@ -492,6 +495,17 @@ export class Conversation extends DurableObject<Env> {
       this.#streaming = undefined;
       this.#broadcast({ type: "ai_status", state: "idle" });
     }
+  }
+
+  /** The customer as the host app verified them (V-03), or null for anonymous visitors. */
+  async #verifiedCustomer(ref: ConversationRef): Promise<ToolUser | null> {
+    const row = await this.env.DB.prepare(
+      `SELECT ct.external_id, ct.name, ct.email, ct.attributes FROM conversations c JOIN contacts ct ON ct.id = c.contact_id
+       WHERE c.id = ? AND ct.external_id IS NOT NULL AND ct.verified_at IS NOT NULL`,
+    )
+      .bind(ref.conversationId)
+      .first<{ external_id: string; name: string | null; email: string | null; attributes: string }>();
+    return row ? { id: row.external_id, name: row.name, email: row.email, attributes: JSON.parse(row.attributes) as ToolUser["attributes"] } : null;
   }
 
   /** Hands an AI conversation to the team: tells the visitor, and leaves agents a brief (AI-04). */

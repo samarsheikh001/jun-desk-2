@@ -48,7 +48,7 @@ export interface ConversationSummary {
   status: ConversationStatus;
   handling: Handling;
   assigneeId: string | null;
-  contact: { id: string; name: string | null; email: string | null };
+  contact: { id: string; name: string | null; email: string | null; verified: boolean };
   lastSeq: number;
   lastMessageAt: number;
   lastMessagePreview: string | null;
@@ -84,6 +84,25 @@ export type ConversationEvent =
   | { type: "ai_action"; tool: string; status: "ok" | "error" }
   | { type: "error"; code: string; message: string; clientMsgId?: string };
 
+/** V-01: a visitor on the customer's site right now (from the loader's live connection). */
+export interface LiveVisitor {
+  sessionId: string;
+  /** Known once they identify (verified) or start a chat. */
+  contact: { id: string; name: string | null; email: string | null; verified: boolean } | null;
+  page: { url: string; title: string };
+  referrer: string | null;
+  /** Pages viewed this session. */
+  pages: number;
+  /** When the session started (first page), per the visitor's browser. */
+  startedAt: number;
+  country: string | null;
+  city: string | null;
+  userAgent: string;
+  language: string | null;
+  timezone: string | null;
+  inChat: boolean;
+}
+
 export interface PresenceEntry {
   userId: string;
   name: string;
@@ -92,7 +111,21 @@ export interface PresenceEntry {
 /** Messages the workspace hub socket sends to agents. */
 export type HubEvent =
   | { type: "conversation"; conversation: ConversationSummary }
-  | { type: "presence"; online: PresenceEntry[] };
+  | { type: "presence"; online: PresenceEntry[] }
+  /** V-01: full list on connect, then one event per change. */
+  | { type: "visitors"; visitors: LiveVisitor[] }
+  | { type: "visitor"; visitor: LiveVisitor }
+  | { type: "visitor_left"; sessionId: string };
+
+/** Loader → hub on the live connection. Short keys: this travels from every page view. */
+export type LiveClientEvent =
+  | { t: "page"; url: string; title?: string; ref?: string; start?: number; lang?: string; tz?: string }
+  | { t: "id"; token: string };
+
+/** Hub → loader. */
+export type LiveServerEvent =
+  | { t: "invite"; id: string; body: string; from: string }
+  | { t: "id"; ok: boolean; error?: string };
 
 /** WebSocket subprotocol. Visitors send their token as a second subprotocol value. */
 export const SOCKET_PROTOCOL = "jun";

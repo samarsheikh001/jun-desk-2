@@ -2,8 +2,10 @@ import { Hono } from "hono";
 import { SOCKET_PROTOCOL, type Attachment } from "../../shared/protocol.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
 import { loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
-import { newId, randomToken, sha256 } from "../lib/crypto.ts";
-import { connectConversation, offeredProtocols, sendMessage } from "../lib/realtime.ts";
+import { createVisitor, findVisitor, identify } from "../lib/contacts.ts";
+import { newId } from "../lib/crypto.ts";
+import { IdentityError, verifyIdentityToken } from "../lib/identity.ts";
+import { connectConversation, connectVisitorLive, notifyConversationChanged, offeredProtocols, sendMessage } from "../lib/realtime.ts";
 import { readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
 import { loadAiSettings } from "../ai/providers.ts";
@@ -18,26 +20,25 @@ interface WidgetInbox {
   workspaceId: string;
   workspaceName: string;
   settings: Record<string, unknown>;
+  identitySecret: string | null;
 }
 
 async function widgetInbox(c: AppContext): Promise<WidgetInbox> {
   const row = await c.env.DB.prepare(
-    `SELECT i.id AS inboxId, i.workspace_id AS workspaceId, w.name AS workspaceName, i.settings
+    `SELECT i.id AS inboxId, i.workspace_id AS workspaceId, w.name AS workspaceName, i.settings, i.identity_secret AS identitySecret
      FROM inboxes i JOIN workspaces w ON w.id = i.workspace_id WHERE i.widget_key = ?`,
   )
     .bind(c.req.param("key"))
-    .first<{ inboxId: string; workspaceId: string; workspaceName: string; settings: string }>();
+    .first<{ inboxId: string; workspaceId: string; workspaceName: string; settings: string; identitySecret: string | null }>();
   if (!row) throw new HttpError(404, "unknown_widget", "Unknown widget key.");
   return { ...row, settings: JSON.parse(row.settings) as Record<string, unknown> };
 }
 
 async function visitor(c: AppContext, inbox: WidgetInbox, token = c.req.header("x-visitor-token")): Promise<{ contactId: string }> {
   if (!token) throw new HttpError(401, "no_visitor", "Missing visitor token.");
-  const row = await c.env.DB.prepare("SELECT id FROM contacts WHERE visitor_token_hash = ? AND workspace_id = ?")
-    .bind(await sha256(token), inbox.workspaceId)
-    .first<{ id: string }>();
-  if (!row) throw new HttpError(401, "unknown_visitor", "Unknown visitor.");
-  return { contactId: row.id };
+  const found = await findVisitor(c.env.DB, inbox.workspaceId, token);
+  if (!found) throw new HttpError(401, "unknown_visitor", "Unknown visitor.");
+  return { contactId: found.contactId };
 }
 
 async function visitorConversation(c: AppContext, inbox: WidgetInbox, contactId: string): Promise<ConversationRef> {
@@ -75,13 +76,44 @@ widget.get("/widget/:key/config", async (c) => {
 
 widget.post("/widget/:key/visitor", async (c) => {
   const inbox = await widgetInbox(c);
-  const token = randomToken();
-  const contactId = newId("ct");
-  const now = Date.now();
-  await c.env.DB.prepare("INSERT INTO contacts (id, workspace_id, visitor_token_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)")
-    .bind(contactId, inbox.workspaceId, await sha256(token), now, now)
-    .run();
-  return c.json({ token, contactId });
+  return c.json(await createVisitor(c.env.DB, inbox.workspaceId));
+});
+
+// V-03/V-04: the host page's signed-in user, proven by a JWT from the host app's backend.
+// Returns the browser's visitor token for that user (it may change; the frame stores it).
+widget.post("/widget/:key/identify", async (c) => {
+  const inbox = await widgetInbox(c);
+  if (!inbox.identitySecret) throw new HttpError(400, "identity_not_configured", "Identity verification isn't set up for this desk (Settings → Install).");
+  const body = await readJson(c.req);
+  if (typeof body.userToken !== "string") throw new HttpError(400, "invalid_field", "userToken is required.");
+  let identity;
+  try {
+    identity = await verifyIdentityToken(body.userToken, inbox.identitySecret);
+  } catch (error) {
+    if (error instanceof IdentityError) throw new HttpError(401, "bad_identity", error.message);
+    throw error;
+  }
+  const result = await identify(c.env.DB, inbox.workspaceId, identity, c.req.header("x-visitor-token") ?? null);
+  // Merged conversations now belong to the user: refresh them in agents' inboxes.
+  c.executionCtx.waitUntil(Promise.all(result.movedConversations.map((id) => notifyConversationChanged(c.env, { conversationId: id, workspaceId: inbox.workspaceId }))));
+  return c.json({ token: result.token, contactId: result.contactId });
+});
+
+// V-01: the loader's live connection (page views, identity) to the workspace hub. Unlike the
+// frame's sockets this comes from the customer's site, so any origin may connect; it can only
+// report itself and receive invites addressed to its own session.
+widget.get("/widget/:key/live", async (c) => {
+  const inbox = await widgetInbox(c);
+  const sessionId = c.req.query("s") ?? "";
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(sessionId)) throw new HttpError(400, "invalid_field", "Bad session id.");
+  const cf = (c.req.raw as Request & { cf?: { country?: string; city?: string } }).cf;
+  return connectVisitorLive(c.env, c.req.raw, inbox.workspaceId, {
+    sessionId,
+    inboxId: inbox.inboxId,
+    country: cf?.country ?? null,
+    city: cf?.city ?? null,
+    userAgent: (c.req.header("user-agent") ?? "").slice(0, 300),
+  });
 });
 
 widget.get("/widget/:key/conversations", async (c) => {
@@ -93,32 +125,55 @@ widget.get("/widget/:key/conversations", async (c) => {
   return c.json({ conversations: rows.results.map(toSummary) });
 });
 
-// Starts a conversation with its first message.
+// Starts a conversation with its first message. With `inviteId` (V-07), the agent's invite
+// becomes the first message and the conversation goes to that agent instead of the AI.
 widget.post("/widget/:key/conversations", async (c) => {
   const inbox = await widgetInbox(c);
   const { contactId } = await visitor(c, inbox);
-  const input = sendInput(await readJson(c.req));
+  const body = await readJson(c.req);
+  const input = sendInput(body);
   if (!input.body.trim() && input.attachments.length === 0) throw new HttpError(400, "empty", "Message is empty.");
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId.slice(0, 64) : null;
 
   const now = Date.now();
+  let invite: { id: string; user_id: string; name: string; body: string } | null = null;
+  if (typeof body.inviteId === "string") {
+    invite = await c.env.DB.prepare(
+      `SELECT v.id, v.user_id, u.name, v.body FROM visitor_invites v JOIN users u ON u.id = v.user_id
+       WHERE v.id = ? AND v.workspace_id = ? AND v.used_at IS NULL AND v.expires_at > ? AND (? IS NULL OR v.session_id = ?)`,
+    )
+      .bind(body.inviteId, inbox.workspaceId, now, sessionId, sessionId)
+      .first();
+    // A stale or foreign invite just starts a normal conversation.
+    if (invite) {
+      const claimed = await c.env.DB.prepare("UPDATE visitor_invites SET used_at = ? WHERE id = ? AND used_at IS NULL").bind(now, invite.id).run();
+      if (claimed.meta.changes === 0) invite = null;
+    }
+  }
+
   const ref: ConversationRef = { conversationId: newId("cv"), workspaceId: inbox.workspaceId };
-  // The AI answers first when it's enabled; otherwise the team does.
-  const handling = (await loadAiSettings(c.env, inbox.workspaceId)).enabled ? "ai" : "human";
+  // The AI answers first when it's enabled; otherwise (or after an agent's invite) the team does.
+  const handling = !invite && (await loadAiSettings(c.env, inbox.workspaceId)).enabled ? "ai" : "human";
   await c.env.DB.prepare(
-    `INSERT INTO conversations (id, workspace_id, inbox_id, contact_id, handling, last_message_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO conversations (id, workspace_id, inbox_id, contact_id, handling, assignee_id, last_message_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(ref.conversationId, inbox.workspaceId, inbox.inboxId, contactId, handling, now, now, now)
+    .bind(ref.conversationId, inbox.workspaceId, inbox.inboxId, contactId, handling, invite?.user_id ?? null, now, now, now)
     .run();
   const participant: Participant = { role: "visitor", contactId };
   let message;
   try {
+    if (invite) {
+      await sendMessage(c.env, ref, { role: "agent", userId: invite.user_id, name: invite.name }, { clientMsgId: `invite:${invite.id}`, body: invite.body, attachments: [] });
+    }
     message = await sendMessage(c.env, ref, participant, input);
   } catch (error) {
     // Don't leave an empty conversation behind if the first message was rejected.
     await c.env.DB.prepare("DELETE FROM conversations WHERE id = ? AND last_seq = 0").bind(ref.conversationId).run();
     throw error;
   }
+  // The visitor list shows who is in a chat.
+  if (sessionId) c.executionCtx.waitUntil(c.env.WORKSPACE_HUB.getByName(inbox.workspaceId).linkSession(sessionId, contactId));
   return c.json({ conversation: await loadSummary(c.env.DB, ref.conversationId), message });
 });
 

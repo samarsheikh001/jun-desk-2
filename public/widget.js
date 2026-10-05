@@ -4,7 +4,10 @@
  * Shows a chat button; the chat itself (an iframe from the desk) loads on first open.
  * Captures recent JS errors, failed requests and page navigation in memory only, masked,
  * and shares them with support only when the visitor sends a message. data-capture="off"
- * disables capture. API: window.JunDesk.open() / .close() / .toggle()
+ * disables capture. Shows the visitor on the desk's live visitor list (data-consent="required"
+ * waits for JunDesk.consent(true) and stores nothing before it).
+ * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt) / .logout() / .consent(bool)
+ * identify() takes a JWT your backend signs with the desk's identity secret (data-user-token works too).
  */
 (function () {
   var script = document.currentScript;
@@ -92,15 +95,49 @@
         return send.apply(this, arguments);
       };
 
-      var nav = function () { push({ kind: "navigation", url: cleanUrl(location.href) }); };
-      ["pushState", "replaceState"].forEach(function (name) {
-        var orig = history[name];
-        history[name] = function () { var r = orig.apply(this, arguments); nav(); return r; };
-      });
-      window.addEventListener("popstate", nav);
-      nav();
     } catch (e) { /* never break the host page */ }
   }
+
+  // Page changes feed both the debug trail and the live visitor list.
+  function nav() {
+    if (capture) push({ kind: "navigation", url: cleanUrl(location.href) });
+    sendPage();
+  }
+  try {
+    ["pushState", "replaceState"].forEach(function (name) {
+      var orig = history[name];
+      history[name] = function () { var r = orig.apply(this, arguments); nav(); return r; };
+    });
+    window.addEventListener("popstate", nav);
+  } catch (e) {}
+
+  // ---------- live visitor (V-01), identity (V-03), consent (V-06) ----------
+  // data-consent="required": store nothing and stay off the visitor list until JunDesk.consent(true).
+  var consented = script.getAttribute("data-consent") !== "required";
+  var userToken = script.getAttribute("data-user-token") || null;
+  var sid, started, live, liveTries = 0;
+  function store(k, v) { try { if (!consented) return null; if (v != null) sessionStorage.setItem(k, v); return sessionStorage.getItem(k); } catch (e) { return null; } }
+  function rid() { var a = new Uint8Array(12); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (b) { return ("0" + b.toString(16)).slice(-2); }).join(""); }
+  function liveSend(m) { if (live && live.readyState === 1) live.send(JSON.stringify(m)); }
+  function sendPage() {
+    var tz = ""; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
+    liveSend({ t: "page", url: location.origin + cleanUrl(location.href), title: redact(document.title, 120), ref: document.referrer ? cleanUrl(document.referrer) : "", start: started, lang: navigator.language, tz: tz });
+  }
+  function connect() {
+    if (!consented || live || !window.WebSocket) return;
+    sid = sid || store("jun:s") || store("jun:s", rid()) || rid();
+    started = started || Number(store("jun:t") || store("jun:t", String(Date.now()))) || Date.now();
+    var ws = live = new WebSocket(origin.replace(/^http/, "ws") + "/api/widget/" + encodeURIComponent(key) + "/live?s=" + sid);
+    ws.onopen = function () { liveTries = 0; if (userToken) liveSend({ t: "id", token: userToken }); sendPage(); };
+    ws.onmessage = function (e) {
+      var m; try { m = JSON.parse(e.data); } catch (x) { return; }
+      if (m.t === "invite" && !open) showInvite(m);
+    };
+    // Reconnect with backoff, unless this socket was replaced or dropped on purpose.
+    ws.onclose = function () { if (live !== ws) return; live = null; if (liveTries < 8) setTimeout(connect, 1000 * Math.pow(2, liveTries++)); };
+  }
+  function disconnect() { var ws = live; live = null; if (ws) ws.close(); }
+  setInterval(function () { if (live && live.readyState === 1) live.send("ping"); }, 30000);
 
   function snapshot() {
     var tz = "";
@@ -132,15 +169,27 @@
     clearTimeout(nudgeTimer);
     nudgeTimer = setTimeout(showNudge, 1200); // errors come in bursts; wait for things to settle
   }
+  function showCard(text, from) {
+    var card = root.querySelector(".nudge");
+    card.querySelector(".nudge-text").textContent = text;
+    card.querySelector(".nudge-from").textContent = from || "";
+    card.style.display = "block";
+  }
   function showNudge() {
     if (nudged || open) return;
     (nativeFetch || fetch)(origin + "/api/widget/" + encodeURIComponent(key) + "/config").then(function (r) { return r.json(); }).then(function (cfg) {
       if (!cfg.proactive || nudged || open) return;
       nudged = true;
-      var card = root.querySelector(".nudge");
-      card.querySelector(".nudge-text").textContent = nudgeText;
-      card.style.display = "block";
+      cardOpener = { text: nudgeText };
+      showCard(nudgeText);
     }).catch(function () {});
+  }
+  // V-07: a teammate started a chat from the desk's visitor list.
+  var cardOpener = null;
+  function showInvite(m) {
+    nudged = true;
+    cardOpener = { text: String(m.body).slice(0, 1000), inviteId: m.id, from: m.from };
+    showCard(cardOpener.text, m.from);
   }
   function hideNudge() { var card = root.querySelector(".nudge"); if (card) card.style.display = "none"; }
 
@@ -161,11 +210,11 @@
     "@media (max-width:480px){.frame{right:0;bottom:0;width:100vw;height:100vh;border-radius:0}}" +
     ".nudge{position:fixed;right:20px;bottom:88px;max-width:280px;padding:14px 16px;border-radius:14px;background:#fff;color:#1c1c1a;" +
     "box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:2147483000;font:14px/1.45 system-ui,sans-serif;display:none}" +
-    ".nudge p{margin:0 18px 10px 0}.nudge .go{border:0;border-radius:8px;padding:7px 12px;background:" + color + ";color:#fff;font:600 13px system-ui,sans-serif;cursor:pointer}" +
+    ".nudge p{margin:0 18px 10px 0}.nudge-from{font-size:12px;color:#6b6b66;margin-bottom:4px}.nudge .go{border:0;border-radius:8px;padding:7px 12px;background:" + color + ";color:#fff;font:600 13px system-ui,sans-serif;cursor:pointer}" +
     ".nudge .x{position:absolute;top:6px;right:8px;border:0;background:none;font-size:18px;line-height:1;color:#6b6b66;cursor:pointer}" +
     "</style>" +
     '<div class="nudge" role="dialog" aria-label="Need help?"><button class="x" aria-label="Dismiss">×</button>' +
-    '<p class="nudge-text"></p><button class="go">Chat with us</button></div>' +
+    '<div class="nudge-from"></div><p class="nudge-text"></p><button class="go">Chat with us</button></div>' +
     '<button class="btn" aria-label="Open chat" aria-expanded="false">' +
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="badge"></span></button>';
@@ -179,7 +228,7 @@
     if (frame && frame.contentWindow) frame.contentWindow.postMessage(message, origin);
   }
 
-  var pendingOpener = "";
+  var pendingOpener = null;
   function setOpen(next) {
     open = next;
     if (open) hideNudge();
@@ -188,20 +237,20 @@
       frame.className = "frame";
       frame.title = "Chat";
       frame.allow = "clipboard-write";
-      frame.src = origin + "/widget?key=" + encodeURIComponent(key);
+      frame.src = origin + "/widget?key=" + encodeURIComponent(key) + (consented ? "" : "&persist=0");
       root.appendChild(frame);
     }
     if (frame) frame.style.display = open ? "block" : "none";
     button.setAttribute("aria-expanded", String(open));
     button.setAttribute("aria-label", open ? "Close chat" : "Open chat");
     post({ type: open ? "jun:open" : "jun:close" });
-    if (open && pendingOpener && frame && frame.contentWindow) post({ type: "jun:proactive", text: pendingOpener });
+    if (open && pendingOpener && frame && frame.contentWindow) post({ type: "jun:proactive", opener: pendingOpener, sessionId: sid });
   }
 
   button.addEventListener("click", function () { setOpen(!open); });
   root.querySelector(".nudge .x").addEventListener("click", hideNudge);
   root.querySelector(".nudge .go").addEventListener("click", function () {
-    pendingOpener = nudgeText;
+    pendingOpener = cardOpener;
     setOpen(true);
   });
 
@@ -210,10 +259,11 @@
     var type = e.data.type;
     // The frame says when it's listening; tell it whether it's currently shown.
     if (type === "jun:ready") {
+      post({ type: "jun:session", sessionId: sid || null, userToken: userToken, persist: consented });
       post({ type: open ? "jun:open" : "jun:close" });
-      if (pendingOpener) post({ type: "jun:proactive", text: pendingOpener });
+      if (pendingOpener) post({ type: "jun:proactive", opener: pendingOpener, sessionId: sid });
     }
-    if (type === "jun:proactive-shown") pendingOpener = "";
+    if (type === "jun:proactive-shown") pendingOpener = null;
     if (type === "jun:close") setOpen(false);
     if (type === "jun:context-request") post({ type: "jun:context", id: e.data.id, context: snapshot() });
     if (type === "jun:unread") {
@@ -227,7 +277,29 @@
     open: function () { setOpen(true); },
     close: function () { setOpen(false); },
     toggle: function () { setOpen(!open); },
+    // Signed-in user: a JWT from your backend. The chat and the visitor list then know who it is.
+    identify: function (token) {
+      userToken = token || null;
+      if (userToken) liveSend({ t: "id", token: userToken });
+      post({ type: "jun:identify", userToken: userToken });
+    },
+    // On sign-out: forget this browser's chat identity so the next person starts fresh.
+    logout: function () {
+      userToken = null;
+      post({ type: "jun:identify", userToken: null });
+      disconnect();
+      sid = null; started = null;
+      store("jun:s", rid()); store("jun:t", String(Date.now()));
+      connect();
+    },
+    consent: function (yes) {
+      consented = Boolean(yes);
+      post({ type: "jun:consent", persist: consented });
+      if (consented) connect();
+      else disconnect();
+    },
   };
+  connect();
 
   // Loaded from <head> (recommended, for early error capture) there's no body yet.
   if (document.body) document.body.appendChild(host);

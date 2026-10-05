@@ -3,7 +3,7 @@ import type { Attachment, AuthorType, ConversationStatus, ConversationSummary, H
 export const SUMMARY_SELECT = `
   SELECT c.id, c.status, c.handling, c.assignee_id, c.last_seq, c.last_message_at, c.last_message_preview,
          c.last_message_author, c.agent_read_seq, c.visitor_read_seq, c.created_at, c.debug_issue_count,
-         ct.id AS contact_id, ct.name AS contact_name, ct.email AS contact_email
+         ct.id AS contact_id, ct.name AS contact_name, ct.email AS contact_email, ct.verified_at AS contact_verified_at
   FROM conversations c JOIN contacts ct ON ct.id = c.contact_id`;
 
 export interface SummaryRow {
@@ -22,6 +22,7 @@ export interface SummaryRow {
   contact_id: string;
   contact_name: string | null;
   contact_email: string | null;
+  contact_verified_at: number | null;
 }
 
 export function toSummary(row: SummaryRow): ConversationSummary {
@@ -30,7 +31,7 @@ export function toSummary(row: SummaryRow): ConversationSummary {
     status: row.status,
     handling: row.handling,
     assigneeId: row.assignee_id,
-    contact: { id: row.contact_id, name: row.contact_name, email: row.contact_email },
+    contact: { id: row.contact_id, name: row.contact_name, email: row.contact_email, verified: row.contact_verified_at !== null },
     lastSeq: row.last_seq,
     lastMessageAt: row.last_message_at,
     lastMessagePreview: row.last_message_preview,

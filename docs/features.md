@@ -41,13 +41,13 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
-| V-01 | Live visitor list: current page, referrer, geo, device, time on site | v1 | agreed | Table stakes (Crisp MagicMap) | 02 |
+| V-01 | Live visitor list: current page, referrer, geo, device, time on site | v1 | shipped | Shipped M6: Visitors page, live over the loader's hibernating WebSocket to the workspace hub: page, referrer, location (Cloudflare), device, time on site, pages, verified identity, "in a chat" | 02 |
 | V-02 | Page-view trail per visitor session | v1 | shipped | Shipped M4: navigation (incl. pushState/popstate) is part of the captured timeline | 02 |
-| V-03 | Identity verification via signed JWT (expiry, revocation) | v1 | agreed | Intercom moved off HMAC; do it right from day one | 02 |
-| V-04 | Anonymous visitor merged into contact on identify | v1 | agreed | | 03 |
-| V-05 | Custom attributes passed from host app (plan, MRR, user id…) | v1 | agreed | Needed for AI actions and routing | |
-| V-06 | Consent-aware mode: no cookies or tracking before consent | v1 | agreed | Intercom's 9-month cookie is an EU problem; privacy as a feature | 02 |
-| V-07 | Agent starts a chat with a live visitor | v1 | agreed | | 02 |
+| V-03 | Identity verification via signed JWT (expiry, revocation) | v1 | shipped | Shipped M6: HS256 JWT (sub, exp, email, name, attributes) signed with a per-workspace identity secret; rotate = revoke; data-user-token or JunDesk.identify(); D-23 | 02 |
+| V-04 | Anonymous visitor merged into contact on identify | v1 | shipped | Shipped M6: anonymous visitor merges into the identified contact (conversations + browser tokens); identified users never merge (shared computers get a fresh token) | 03 |
+| V-05 | Custom attributes passed from host app (plan, MRR, user id…) | v1 | shipped | Shipped M6: verified `attributes` claim on the contact, shown to agents, given to the AI, usable in tools as {user.<attribute>} | |
+| V-06 | Consent-aware mode: no cookies or tracking before consent | v1 | shipped | Shipped M6: data-consent="required" stores nothing and stays off the live list until JunDesk.consent(true) | 02 |
+| V-07 | Agent starts a chat with a live visitor | v1 | shipped | Shipped M6: "Start chat" on a live visitor shows a card on their page; replying starts a conversation with the agent's message, assigned to them | 02 |
 | V-08 | Pluggable enrichment providers (Clay, Apollo, Cognism…) | v3 | proposed | No single-vendor dependency | 02 |
 | V-09 | Company and lead scoring / intent | later | proposed | B2B sales use case | 02 |
 | V-11 | Companies/accounts: contacts grouped by company, account-level attributes (plan, MRR) and history | v2 | proposed | New for B2B (D-01); Plain/Pylon are account-centric | 01 |

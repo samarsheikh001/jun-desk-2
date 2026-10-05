@@ -293,3 +293,24 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .ai-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .ai-actions li { display: grid; gap: 2px; padding: 6px 8px; border-radius: 8px; background: var(--bg); font-size: 0.85rem; }
 .ai-actions pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 0.75rem; max-height: 120px; overflow: auto; }
+
+/* Visitors and identity (M6) */
+.content.wide { max-width: 1100px; }
+.nav-count { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--accent-text); font-size: 0.75rem; }
+.visitors { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.visitors th { text-align: left; font-size: 0.8rem; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.visitors td { padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.visitors code { font-size: 0.8rem; word-break: break-all; }
+.visitor-action { text-align: right; white-space: nowrap; }
+.visitor-invite { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.visitor-invite input { flex: 1; min-width: 240px; }
+.verified { margin-left: 6px; color: #1a7f37; font-size: 0.8rem; font-weight: 600; }
+.identity { display: grid; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.identity h3 { margin: 0; }
+pre.code { margin: 0; padding: 10px 12px; background: var(--bg); border-radius: 8px; white-space: pre-wrap; overflow: auto; }
+@media (max-width: 700px) {
+  .visitors thead { display: none; }
+  .visitors tr { display: grid; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .visitors td { border: none; padding: 2px 0; }
+  .visitor-action { text-align: left; }
+}
