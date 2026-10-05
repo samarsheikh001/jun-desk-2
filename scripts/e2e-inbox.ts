@@ -1,7 +1,9 @@
 // End-to-end test of M7's inbox basics: internal notes and @mentions (I-05), saved replies
-// (I-06) and tags (I-07). Notes and tags must never reach the visitor. Run after e2e-polish.
+// (I-06), tags (I-07) and offline email capture (W-08). Notes and tags must never reach the
+// visitor. Run after e2e-polish.
 
 import assert from "node:assert/strict";
+import { signIdentityToken } from "../worker/lib/identity.ts";
 import { Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const owner = new Client();
@@ -145,6 +147,34 @@ await step("I-07: tags are set per conversation, deduped, filterable, and hidden
   const cleared = await owner.call(`/conversations/${conversationId}/tags`, { method: "PUT", body: { tags: [] } });
   assert.deepEqual(cleared.json.conversation.tags, []);
   visitorSocket.close();
+});
+
+await step("W-08: a visitor waiting for the team leaves an email; agents get it as a note", async () => {
+  const path = `/widget/${widgetKey}/conversations/${conversationId}/email`;
+  assert.equal((await visitor.call(path, { body: { email: "not-an-email" }, headers: vh() })).status, 400);
+  assert.equal((await new Client().call(path, { body: { email: "a@b.co" } })).status, 401);
+  for (let i = 0; i < 2; i++) {
+    const saved = await visitor.call(path, { body: { email: " Dana@Northwind.test " }, headers: vh() });
+    assert.equal(saved.status, 200, JSON.stringify(saved.json));
+    assert.equal(saved.json.email, "dana@northwind.test");
+  }
+  const agentView = (await owner.call(`/conversations/${conversationId}`)).json;
+  assert.equal(agentView.conversation.contact.email, "dana@northwind.test");
+  const notes = (agentView.messages as { body: string; internal: boolean }[]).filter((m) => m.internal && /left their email/.test(m.body));
+  assert.equal(notes.length, 1, "saving the same email twice adds one note");
+  const transcript = (await visitor.call(`/widget/${widgetKey}/conversations/${conversationId}`, { headers: vh() })).json.messages as { body: string }[];
+  assert.ok(!transcript.some((m) => /left their email/.test(m.body)));
+
+  // Verified customers' email comes from the host app.
+  let secret = (await owner.call(`/workspaces/${workspaceId}/identity`)).json.secret as string | null;
+  secret ??= (await owner.call(`/workspaces/${workspaceId}/identity`, { body: {} })).json.secret as string;
+  const jwt = await signIdentityToken({ sub: `inbox-${run}`, email: `vic-${run}@acme.test`, exp: Math.floor(Date.now() / 1000) + 600 }, secret);
+  const vic = new Client();
+  const vicToken = (await vic.call(`/widget/${widgetKey}/identify`, { body: { userToken: jwt } })).json.token as string;
+  const vicConv = (await vic.call(`/widget/${widgetKey}/conversations`, { body: { clientMsgId: crypto.randomUUID(), body: "hello" }, headers: { "X-Visitor-Token": vicToken } })).json.conversation;
+  const blocked = await vic.call(`/widget/${widgetKey}/conversations/${vicConv.id}/email`, { body: { email: "other@x.test" }, headers: { "X-Visitor-Token": vicToken } });
+  assert.equal(blocked.status, 409);
+  assert.equal((await owner.call(`/conversations/${vicConv.id}`)).json.conversation.contact.email, `vic-${run}@acme.test`);
 });
 
 summary();

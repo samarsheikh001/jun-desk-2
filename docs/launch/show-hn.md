@@ -28,7 +28,7 @@ The server is AGPL-3.0; the embeddable widget and the config format are MIT. I'd
 
 First release. Deploy with the button in the README; upgrades from any earlier commit are `git pull` + `npm run deploy` (migrations run first).
 
-- Widget (about 4 KB loader): live chat, files, read receipts, branding, business hours, consent mode, allowed websites.
+- Widget (about 4 KB loader): live chat, files, read receipts, branding, business hours with email capture, consent mode, allowed websites.
 - AI agent on Workers AI or OpenAI: answers from your docs with citations, hands off with a brief, follows procedures, calls your HTTP tools, logs every call.
 - Debug context: masked errors, failed requests and page trail for agents and the AI; AI-worded proactive help when something breaks.
 - Agent as code: AGENTS.md, skills, tools and evals in git; `jun pull/push/eval`; versions and restore in the dashboard.

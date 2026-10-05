@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { Attachment, ConversationSummary, Message } from "../../shared/protocol.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList } from "../components/MessageList.tsx";
@@ -284,6 +284,8 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           api={api}
           conversationId={view.id}
           handling={conversations.find((c) => c.id === view.id)?.handling ?? null}
+          contact={conversations.find((c) => c.id === view.id)?.contact ?? null}
+          away={Boolean(config.hours && !config.hours.open)}
           opener={view.opener}
           sessionId={sessionId}
           aiEnabled={config.ai}
@@ -304,6 +306,8 @@ function WidgetThread({
   api,
   conversationId,
   handling,
+  contact,
+  away,
   opener,
   sessionId,
   aiEnabled,
@@ -314,6 +318,8 @@ function WidgetThread({
   api: WidgetApi;
   conversationId: string | null;
   handling: "ai" | "human" | null;
+  contact: ConversationSummary["contact"] | null;
+  away: boolean;
   opener?: Opener | undefined;
   sessionId: string | null;
   aiEnabled: boolean;
@@ -421,7 +427,83 @@ function WidgetThread({
           <button className="link small" onClick={() => thread.requestHuman()}>Talk to a person</button>
         </div>
       )}
+      {conversationId && (
+        <EmailAsk api={api} conversationId={conversationId} contact={contact} away={away} waiting={handling === "human" ? lastVisitorWaiting(thread.messages) : null} />
+      )}
       <Composer placeholder="Write a message…" upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} />
     </>
+  );
+}
+
+/** The visitor's last message has no team reply after it yet (system notices don't count). */
+function lastVisitorWaiting(messages: Message[]): Message | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.authorType === "visitor") return m;
+    if (m.authorType === "agent" || m.authorType === "ai") return null;
+  }
+  return null;
+}
+
+/** W-08: ask for an email when the team is away, or nobody has replied for this long. */
+const EMAIL_ASK_AFTER_MS = 60_000;
+
+function EmailAsk({
+  api,
+  conversationId,
+  contact,
+  away,
+  waiting,
+}: {
+  api: WidgetApi;
+  conversationId: string;
+  contact: ConversationSummary["contact"] | null;
+  away: boolean;
+  waiting: Message | null;
+}) {
+  const [now, setNow] = useState(Date.now());
+  const [dismissed, setDismissed] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const due = waiting ? waiting.createdAt + EMAIL_ASK_AFTER_MS : 0;
+  useEffect(() => {
+    if (!waiting || away || Date.now() >= due) return;
+    const timer = setTimeout(() => setNow(Date.now()), due - Date.now() + 50);
+    return () => clearTimeout(timer);
+  }, [waiting, away, due]);
+
+  if (saved) return <div className="w-email small"><span>Thanks. If you've gone by the time we reply, we'll email you at <strong>{saved}</strong>.</span></div>;
+  if (dismissed || !waiting || !contact || contact.verified || contact.email) return null;
+  if (!away && now < due) return null;
+
+  const submit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const email = String(new FormData(e.currentTarget).get("email") ?? "");
+    setBusy(true);
+    setError(null);
+    try {
+      setSaved((await api.call<{ email: string }>(`/conversations/${conversationId}/email`, { body: { email } })).email);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="w-email" onSubmit={submit}>
+      <div className="row">
+        <span className="small strong">{away ? "We're away right now." : "Sorry for the wait."} Get the reply by email?</span>
+        <span className="spacer" />
+        <button type="button" className="ghost icon small" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
+      </div>
+      <div className="row">
+        <input name="email" type="email" required maxLength={320} placeholder="you@company.com" aria-label="Your email" autoComplete="email" />
+        <button disabled={busy}>Save</button>
+      </div>
+      {error && <p className="error small">{error}</p>}
+    </form>
   );
 }

@@ -192,6 +192,12 @@ export class Conversation extends DurableObject<Env> {
     }
   }
 
+  /** An internal system note for agents (idempotent per clientMsgId), e.g. W-08's captured email. */
+  async addNote(refIn: ConversationRef, body: string, clientMsgId: string): Promise<void> {
+    const ref = this.#bind(refIn);
+    await this.#insert(ref, { authorType: "system", authorId: null, authorName: null, body, clientMsgId, internal: true });
+  }
+
   /** After a status/assignment/handling change: update open threads, and let the AI pick up if handed back. */
   async conversationChanged(refIn: ConversationRef): Promise<void> {
     const ref = this.#bind(refIn);

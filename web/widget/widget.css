@@ -17,3 +17,7 @@ body { background: var(--surface); }
 .w-body .msg { max-width: 85%; }
 .w-opener { margin: 16px 16px 0; }
 .w-logo { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; background: #fff; }
+
+/* W-08: offline email capture in the widget. */
+.w-email { display: grid; gap: 6px; padding: 8px 12px; background: var(--tag); border-top: 1px solid var(--border); }
+.w-email input { flex: 1; min-width: 0; }

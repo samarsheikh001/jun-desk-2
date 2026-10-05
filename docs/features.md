@@ -29,7 +29,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | W-05 | Conversation history for returning visitors | v1 | shipped | Shipped M1: returning visitors see past conversations; reopens the active one | |
 | W-06 | File and image attachments | v1 | shipped | Shipped M1: R2; images inline, other types forced to download (nosniff + CSP sandbox) | |
 | W-07 | "Talk to a human" always visible | v1 | shipped | Shipped M2: "Talk to a person" while the AI is answering | 01 |
-| W-08 | Offline mode: collect email and promise a reply outside business hours | v1 | agreed | Depends on business hours (I-10) | |
+| W-08 | Offline mode: collect email and promise a reply outside business hours | v1 | shipped | Shipped M7 (collect only): when a chat waits for the team (outside hours, or no reply within a minute) the widget asks for an email; it's saved on the (anonymous) contact with a note for agents, who reply from their own mail client ("Reply by email" in the sidebar). Sending replies by email automatically needs an email provider: later, opt-in | |
 | W-09 | AI-rendered UI: allow-listed cards, forms, buttons, choice chips | v2 | proposed | Declarative (A2UI/ChatKit-style), not arbitrary HTML | 02 |
 | W-10 | Help-centre search and articles inside the widget | v2 | proposed | Pairs with K-05 | |
 | W-11 | Multilingual UI plus auto-translation of messages | v2 | proposed | | |

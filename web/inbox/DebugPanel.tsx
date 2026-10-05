@@ -163,7 +163,13 @@ function ContactCard({ workspaceId, contact, conversationId, refreshKey }: { wor
       ) : (
         <dl className="env small">
           {details.name && (<><dt>Name</dt><dd>{details.name}</dd></>)}
-          {details.email && (<><dt>Email</dt><dd>{details.email}</dd></>)}
+          {details.email && (
+            <>
+              <dt>Email</dt>
+              {/* W-08: the desk doesn't send email; reply from your own mail client if they've left. */}
+              <dd>{details.email} · <a href={`mailto:${details.email}?subject=${encodeURIComponent("Re: your chat with us")}`}>Reply by email</a></dd>
+            </>
+          )}
           {details.externalId && (<><dt>User ID</dt><dd><code>{details.externalId}</code></dd></>)}
           {Object.entries(details.attributes).map(([k, v]) => (
             <span key={k} style={{ display: "contents" }}><dt>{k}</dt><dd>{String(v)}</dd></span>

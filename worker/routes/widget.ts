@@ -316,6 +316,24 @@ widget.post("/widget/:key/conversations/:cid/messages", async (c) => {
   return c.json({ message });
 });
 
+// W-08: nobody's around, so the visitor leaves an email for the reply. Stored on their contact
+// (verified contacts already have theirs from the host app) and noted in the conversation.
+widget.post("/widget/:key/conversations/:cid/email", async (c) => {
+  const inbox = await widgetInbox(c);
+  const { contactId } = await visitor(c, inbox);
+  const ref = await visitorConversation(c, inbox, contactId);
+  const raw = (await readJson(c.req)).email;
+  const email = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "invalid_field", "That doesn't look like an email address.");
+  const updated = await c.env.DB.prepare("UPDATE contacts SET email = ? WHERE id = ? AND verified_at IS NULL").bind(email, contactId).run();
+  if (updated.meta.changes === 0) throw new HttpError(409, "verified", "Your email comes from your account.");
+  await c.env.CONVERSATION.getByName(ref.conversationId).addNote(ref, `The customer left their email for a reply: ${email}`, `email:${await sha256(email)}`);
+  // Inbox lists show the contact's email: refresh their other conversations too.
+  const others = await c.env.DB.prepare("SELECT id FROM conversations WHERE contact_id = ? AND id != ? LIMIT 50").bind(contactId, ref.conversationId).all<{ id: string }>();
+  c.executionCtx.waitUntil(Promise.all(others.results.map((r) => notifyConversationChanged(c.env, { conversationId: r.id, workspaceId: inbox.workspaceId }))));
+  return c.json({ ok: true, email });
+});
+
 widget.get("/widget/:key/conversations/:cid/ws", async (c) => {
   const inbox = await widgetInbox(c);
   // Browsers can't set headers on WebSockets, so the token rides as a subprotocol.
