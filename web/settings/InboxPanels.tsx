@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
 
@@ -106,6 +106,120 @@ export function TagsPanel({ workspaceId, canEdit }: { workspaceId: string; canEd
                   </button>
                   <button className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); })}>Delete</button>
                 </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+interface TopicRow { id: string; name: string; conversations: number }
+
+/**
+ * A-02: the AI's topic labels. Owners and admins rename, merge (move the conversations, delete
+ * the source) and delete them (those conversations get labelled again later), or label now.
+ */
+export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
+  const base = `/workspaces/${workspaceId}/topics`;
+  const [topics, setTopics] = useState<TopicRow[] | null>(null);
+  const [max, setMax] = useState(40);
+  const [merging, setMerging] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
+  const ref = useRef<HTMLElement>(null);
+  const load = useCallback(async () => {
+    const r = await api<{ topics: TopicRow[]; max: number }>(base);
+    setTopics(r.topics);
+    setMax(r.max);
+  }, [base]);
+  useEffect(() => {
+    load().catch(() => setTopics([]));
+  }, [load]);
+  const loaded = topics !== null;
+  useEffect(() => {
+    if (loaded && window.location.hash === "#topics") ref.current?.scrollIntoView({ block: "start" });
+  }, [loaded]);
+
+  const labelNow = () =>
+    run(async () => {
+      setNotice(null);
+      const r = await api<{ labeled: number; unlabeled: number; skipped?: "ai_off" | "cap_reached" }>(`${base}/label`, { body: {} });
+      setNotice(
+        r.skipped === "ai_off"
+          ? "AI replies are off, so nothing was labelled."
+          : r.skipped === "cap_reached"
+            ? "The monthly AI cap is reached, so nothing was labelled."
+            : r.labeled === 0 && r.unlabeled === 0
+              ? "Nothing to label: every quiet chat has a topic."
+              : `Labelled ${r.labeled} conversation${r.labeled === 1 ? "" : "s"}.`,
+      );
+      await load();
+    });
+
+  return (
+    <section className="panel" id="topics" ref={ref}>
+      <div className="row">
+        <h2>Topics</h2>
+        <span className="spacer" />
+        {canEdit && <button className="ghost small" disabled={busy} onClick={labelNow}>{busy ? "Working…" : "Label now"}</button>}
+      </div>
+      <p className="muted small">
+        The AI gives each chat a short topic once it's resolved or quiet for 10 minutes, reusing these when one fits (up to {max}). See them in Reports and filter the inbox by them. Visitors never see topics.
+      </p>
+      {notice && <p className="ok-text small">{notice}</p>}
+      {error && <p className="error small">{error}</p>}
+      {topics === null ? null : topics.length === 0 ? (
+        <p className="muted small">No topics yet.</p>
+      ) : (
+        <ul className="list">
+          {topics.map((t) => (
+            <li key={t.id}>
+              <span>
+                <span className="strong">{t.name}</span> <span className="muted small nums">· {t.conversations} conversation{t.conversations === 1 ? "" : "s"}</span>
+              </span>
+              {canEdit && merging === t.id ? (
+                <span className="topic-actions">
+                  <select
+                    aria-label={`Merge ${t.name} into`}
+                    defaultValue=""
+                    disabled={busy}
+                    onChange={(e) => {
+                      const into = e.target.value;
+                      if (into) run(async () => { await api(`${base}/${t.id}/merge`, { body: { into } }); setMerging(null); await load(); });
+                    }}
+                  >
+                    <option value="" disabled>Merge into…</option>
+                    {topics.filter((o) => o.id !== t.id).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                  <button className="ghost small" onClick={() => setMerging(null)}>Cancel</button>
+                </span>
+              ) : canEdit && (
+                <span className="topic-actions">
+                  <button
+                    className="ghost small"
+                    disabled={busy}
+                    onClick={() => {
+                      const name = window.prompt("Rename topic", t.name);
+                      if (name && name !== t.name) run(async () => { await api(`${base}/${t.id}`, { method: "PATCH", body: { name } }); await load(); });
+                    }}
+                  >
+                    Rename
+                  </button>
+                  {topics.length > 1 && <button className="ghost small" disabled={busy} onClick={() => setMerging(t.id)}>Merge</button>}
+                  <button
+                    className="ghost small"
+                    disabled={busy}
+                    onClick={() => {
+                      if (window.confirm(`Delete "${t.name}"? Its ${t.conversations} conversation${t.conversations === 1 ? "" : "s"} will be labelled again later.`)) {
+                        run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); });
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
+                </span>
               )}
             </li>
           ))}

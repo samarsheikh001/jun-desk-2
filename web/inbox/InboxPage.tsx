@@ -16,6 +16,7 @@ type AssigneeFilter = "all" | "me" | "unassigned" | "mentions";
 type RatingFilter = CsatRating | "";
 interface Member { id: string; name: string }
 interface Tag { id: string; name: string; conversations: number }
+interface Topic { id: string; name: string; conversations: number }
 interface MentionToast { conversationId: string; by: string; preview: string }
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
@@ -41,14 +42,19 @@ function CsatBadge({ rating }: { rating: CsatRating | null }) {
   return <em className={`tag csat-tag ${rating}`} title={rating === "good" ? "The customer rated this Good" : "The customer rated this Bad"}>{rating === "good" ? "👍" : "👎"}</em>;
 }
 
+/** A-02: Reports links to /inbox?topic=<id>; the topic's chats are mostly resolved, so show all. */
+const initialTopic = () => new URLSearchParams(window.location.search).get("topic") ?? "";
+
 export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceId: string; me: { id: string; name: string }; hub: Hub; conversationId: string | null }) {
-  const [status, setStatus] = useState<StatusFilter>("open");
+  const [topicFilter, setTopicFilter] = useState(initialTopic);
+  const [status, setStatus] = useState<StatusFilter>(() => (initialTopic() ? "all" : "open"));
   const [assignee, setAssignee] = useState<AssigneeFilter>("all");
   const [tagFilter, setTagFilter] = useState("");
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>("");
   const [list, setList] = useState<ConversationSummary[] | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
   const [unreadMentions, setUnreadMentions] = useState(0);
   const [toast, setToast] = useState<MentionToast | null>(null);
   const [trackers, setTrackers] = useState<TrackerStatus | null>(null);
@@ -57,20 +63,21 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
     (c: ConversationSummary) =>
       (status === "all" || c.status === status) &&
       (tagFilter === "" || c.tags.some((t) => t.toLowerCase() === tagFilter.toLowerCase())) &&
+      (topicFilter === "" || c.topic?.id === topicFilter) &&
       (ratingFilter === "" || c.csat.rating === ratingFilter) &&
       (assignee === "all" || assignee === "mentions" || (assignee === "me" ? c.assigneeId === me.id : c.assigneeId === null)),
-    [status, assignee, tagFilter, ratingFilter, me.id],
+    [status, assignee, tagFilter, topicFilter, ratingFilter, me.id],
   );
 
   useEffect(() => {
     let cancelled = false;
     setList(null);
-    const query = new URLSearchParams({ status, ...(assignee !== "all" ? { assignee } : {}), ...(tagFilter ? { tag: tagFilter } : {}), ...(ratingFilter ? { rating: ratingFilter } : {}) });
+    const query = new URLSearchParams({ status, ...(assignee !== "all" ? { assignee } : {}), ...(tagFilter ? { tag: tagFilter } : {}), ...(topicFilter ? { topic: topicFilter } : {}), ...(ratingFilter ? { rating: ratingFilter } : {}) });
     api<{ conversations: ConversationSummary[] }>(`/workspaces/${workspaceId}/conversations?${query}`).then((r) => !cancelled && setList(r.conversations));
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, status, assignee, tagFilter, ratingFilter]);
+  }, [workspaceId, status, assignee, tagFilter, topicFilter, ratingFilter]);
 
   const loadTags = useCallback(() => api<{ tags: Tag[] }>(`/workspaces/${workspaceId}/tags`).then((r) => setTags(r.tags)), [workspaceId]);
   const loadMentions = useCallback(() => api<{ unread: number }>(`/workspaces/${workspaceId}/mentions`).then((r) => setUnreadMentions(r.unread)), [workspaceId]);
@@ -79,6 +86,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
     api<TrackerStatus>(`/workspaces/${workspaceId}/trackers`).then(setTrackers, () => setTrackers(null));
     void loadTags();
     void loadMentions();
+    api<{ topics: Topic[] }>(`/workspaces/${workspaceId}/topics`).then((r) => setTopics(r.topics), () => setTopics([]));
   }, [workspaceId, loadTags, loadMentions]);
 
   // Live updates: upsert conversations that match the current filters, drop ones that don't.
@@ -138,6 +146,15 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
             ))}
           </select>
         )}
+        {(topics.length > 0 || topicFilter) && (
+          <select className="filter" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} aria-label="Topic filter">
+            <option value="">Any topic</option>
+            {topics.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+            {topicFilter && !topics.some((t) => t.id === topicFilter) && <option value={topicFilter}>Topic not found</option>}
+          </select>
+        )}
         <select
           className="filter"
           value={ratingFilter}
@@ -156,7 +173,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
         {list === null ? (
           <p className="muted small pad">Loading…</p>
         ) : list.length === 0 ? (
-          <p className="muted small pad">{ratingFilter ? "No conversations with this rating." : "No conversations here. Install the widget from Settings to start receiving chats."}</p>
+          <p className="muted small pad">{ratingFilter ? "No conversations with this rating." : topicFilter || tagFilter ? "No conversations match these filters." : "No conversations here. Install the widget from Settings to start receiving chats."}</p>
         ) : (
           <ul>
             {list.map((c) => (
@@ -175,6 +192,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
                     <span className="spacer" />
                     <span className="muted small">{formatTime(c.lastMessageAt)}</span>
                   </span>
+                  {c.topic && <span className="conv-topic small" title="Topic, labelled by the AI">{c.topic.name}</span>}
                   {c.tags.length > 0 && (
                     <span className="conv-tags">{c.tags.map((t) => <span key={t} className="chip tag-chip">{t}</span>)}</span>
                   )}
@@ -310,6 +328,7 @@ function Thread({
           <CsatBadge rating={conversation.csat.rating} />
           <div className="muted small">
             {thread.state === "open" ? "Live" : thread.state === "connecting" ? "Connecting…" : "Reconnecting…"} · started {formatTime(conversation.createdAt)}
+            {conversation.topic && <> · <span title="Topic, labelled by the AI">{conversation.topic.name}</span></>}
           </div>
         </div>
         <span className="spacer" />

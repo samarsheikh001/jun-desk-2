@@ -403,6 +403,7 @@ mark.mention { background: var(--mention); color: inherit; border-radius: 4px; p
 .tag-bar input { padding: 2px 8px; font-size: 0.85rem; width: 140px; }
 .tag-chip { background: var(--tag); border-color: transparent; font-size: 0.78rem; padding: 1px 8px; }
 .conv-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0; }
+.conv-topic { color: var(--muted); font-size: 0.78rem; }
 .toast { position: fixed; right: 16px; bottom: 16px; z-index: 20; display: flex; gap: 10px; align-items: center; max-width: min(420px, calc(100vw - 32px)); padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.15); }
 .toast > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .clip { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -451,6 +452,14 @@ mark.mention { background: var(--mention); color: inherit; border-radius: 4px; p
 .bad-comments a { display: grid; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--bg); color: var(--text); text-decoration: none; }
 .bad-comments a:hover { background: var(--tag); }
 .bad-comment { overflow-wrap: anywhere; }
+/* A-02 topics: each row opens the inbox filtered by it. */
+.reasons.topics { gap: 2px; }
+.reasons.topics a { display: block; padding: 6px 8px; margin: 0 -8px; border-radius: 8px; color: var(--text); text-decoration: none; }
+.reasons.topics a:hover, .reasons.topics a:focus-visible { background: var(--bg); }
+.reasons.topics .row { gap: 10px; }
+.topic-count { min-width: 4.5em; text-align: right; }
+.topic-actions { display: inline-flex; gap: 6px; margin-left: auto; }
+.topic-actions select { max-width: 180px; }
 .team-table { width: 100%; border-collapse: collapse; margin: 10px 0 8px; font-variant-numeric: tabular-nums; }
 .team-table th { text-align: left; font-size: 0.8rem; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .team-table td { padding: 8px; border-bottom: 1px solid var(--border); }

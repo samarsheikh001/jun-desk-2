@@ -108,6 +108,59 @@ function StartPages({ pages }: { pages: MetricsReport["pages"] }) {
   );
 }
 
+/** Most topics "Top topics" lists. */
+const MAX_TOPICS_SHOWN = 8;
+
+/** A-02: what visitors ask about, from the AI's topic labels. A topic opens the inbox filtered by it. */
+function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topics"]; showAi: boolean; aiEnabled: boolean }) {
+  const top = topics.list.slice(0, MAX_TOPICS_SHOWN);
+  const rest = topics.list.length - top.length;
+  return (
+    <section className="panel">
+      <div className="row panel-head">
+        <h2>Top topics</h2>
+        <span className="spacer" />
+        <a className="small" href="/settings#topics" onClick={goTo("/settings#topics")}>Manage</a>
+      </div>
+      {top.length === 0 ? (
+        <p className="muted small">
+          {!aiEnabled ? (
+            <>
+              The AI assistant labels each chat with a short topic, like Billing or Login, and AI replies are off.{" "}
+              <a href="/settings#ai-assistant" onClick={goTo("/settings#ai-assistant")}>Turn it on</a>
+            </>
+          ) : topics.unlabeled > 0
+            ? "Topics appear after chats go quiet for a few minutes: the AI gives each one a short label, like Billing or Login."
+            : "No chats in this period yet. Topics appear after chats go quiet for a few minutes."}
+        </p>
+      ) : (
+        <>
+          <ul className="reasons topics">
+            {top.map((t) => (
+              <li key={t.id}>
+                <a href={`/inbox?topic=${t.id}`} onClick={goTo(`/inbox?topic=${encodeURIComponent(t.id)}`)} title={`Open the ${t.name} conversations in the inbox`}>
+                  <div className="row">
+                    <span className="reason-text">{t.name}</span>
+                    {showAi && t.aiResolutionRate !== null && <span className="muted small nums" title="Resolved by the AI alone, of this topic's AI chats">AI {percent(t.aiResolutionRate)}</span>}
+                    <span className="muted small nums topic-count">{t.count} · {percent(t.share)}</span>
+                  </div>
+                  <div className="meter"><span style={{ width: `${t.share * 100}%` }} /></div>
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">
+            Share of the {topics.labeled.toLocaleString()} labelled chats{rest > 0 ? ` (${rest} more topic${rest === 1 ? "" : "s"} not listed)` : ""}.
+            {showAi && top.some((t) => t.aiResolutionRate !== null) && " AI % is how many of the topic's AI chats the AI resolved alone."}
+            {!aiEnabled && " New chats aren't labelled while AI replies are off."}
+            {aiEnabled && topics.unlabeled > 0 && ` ${topics.unlabeled} chat${topics.unlabeled === 1 ? " isn't" : "s aren't"} labelled yet (still going, or quiet for less than a few minutes).`}
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
 /** Conversations per day, stacked: resolved by the AI alone at the bottom, the rest above. */
 function DayChart({ series, showAi }: { series: DayPoint[]; showAi: boolean }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -235,6 +288,8 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
             <h2>Conversations per day</h2>
             <DayChart series={r.conversations.series} showAi={!r.ai.off} />
           </section>
+
+          <TopTopics topics={r.topics} showAi={!r.ai.off} aiEnabled={r.ai.enabled} />
 
           <StartPages pages={r.pages} />
 

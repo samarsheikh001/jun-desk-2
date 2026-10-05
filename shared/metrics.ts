@@ -25,6 +25,9 @@ export interface ConversationFacts {
   aiOffHandoff: boolean;
   /** Page of the conversation's first debug snapshot, sent with the visitor's first message (A-06). */
   startUrl: string | null;
+  /** A-02: the conversation's topic label (null while unlabeled). Optional for older callers. */
+  topicId?: string | null;
+  topicName?: string | null;
 }
 
 export interface RatingRow {
@@ -76,6 +79,16 @@ export interface PageCount {
   share: number;
 }
 
+export interface TopicCount {
+  id: string;
+  name: string;
+  count: number;
+  /** Of the labelled conversations in the period. */
+  share: number;
+  /** AI resolved / AI conversations within this topic (same definitions as the headline), or null. */
+  aiResolutionRate: number | null;
+}
+
 export interface MetricsReport {
   days: MetricPeriod;
   timezone: string;
@@ -105,6 +118,8 @@ export interface MetricsReport {
   teammates: { userId: string; name: string; replies: number; conversations: number; firstResponse: DurationStat }[];
   /** A-06: the pages chats started on, most first; `withoutPage` had no snapshot (e.g. the widget opened outside a site). */
   pages: { top: PageCount[]; withPage: number; withoutPage: number };
+  /** A-02: every topic with conversations in the period, most first; `unlabeled`: chats with a visitor message and no topic yet. */
+  topics: { list: TopicCount[]; labeled: number; unlabeled: number };
 }
 
 /** Most pages "Pages where chats start" lists. */
@@ -267,6 +282,8 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
   let passedWhileOff = 0;
   const pages = new Map<string, number>();
   let withoutPage = 0;
+  const topics = new Map<string, { id: string; name: string; count: number; ai: number; aiResolved: number }>();
+  let unlabeled = 0;
 
   for (const c of input.conversations) {
     const i = dayIndex(c.createdAt);
@@ -285,8 +302,14 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
     const aiOff = c.aiOffHandoff || isAiOffHandoff(c.handoffReason);
     if (aiOff) passedWhileOff++;
     const handed = c.handoffReason !== null && !isAiOffHandoff(c.handoffReason);
+    const topic = c.topicId && c.topicName ? (topics.get(c.topicId) ?? { id: c.topicId, name: c.topicName, count: 0, ai: 0, aiResolved: 0 }) : null;
+    if (topic) {
+      topic.count++;
+      topics.set(topic.id, topic);
+    } else if (c.firstVisitorAt !== null) unlabeled++;
     if (c.firstAiAt !== null || handed) {
       aiConversations++;
+      if (topic) topic.ai++;
       if (handed) {
         handedOff++;
         const label = handoffReasonLabel(c.handoffReason!);
@@ -297,6 +320,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
       } else if (c.firstAgentAt === null && !aiOff) {
         aiResolved++;
         series[i]!.aiResolved++;
+        if (topic) topic.aiResolved++;
       }
     }
     if (c.firstVisitorAt !== null && c.firstAiAt !== null && c.firstAiAt >= c.firstVisitorAt) aiTimes.push(c.firstAiAt - c.firstVisitorAt);
@@ -368,5 +392,15 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
       withPage: total - withoutPage,
       withoutPage,
     },
+    topics: (() => {
+      const labeled = [...topics.values()].reduce((s, t) => s + t.count, 0);
+      return {
+        list: [...topics.values()]
+          .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+          .map((t) => ({ id: t.id, name: t.name, count: t.count, share: t.count / labeled, aiResolutionRate: rate(t.aiResolved, t.ai) })),
+        labeled,
+        unlabeled,
+      };
+    })(),
   };
 }

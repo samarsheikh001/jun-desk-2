@@ -86,6 +86,8 @@ export interface ConversationSummary {
   debugIssueCount: number;
   /** I-07: agents only; always [] for visitors. */
   tags: string[];
+  /** A-02: the AI's topic label, agents only; always null for visitors. */
+  topic: { id: string; name: string } | null;
   /**
    * W-12: the latest rating (null if never rated), and whether it was given since the conversation
    * was last resolved (always false while it isn't resolved). The widget asks while a resolved
