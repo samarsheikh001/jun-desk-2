@@ -20,8 +20,8 @@ export const DEFAULT_MODELS: Record<ProviderId, string> = {
   openai: "gpt-6.1-sol",
   // Fast, follows the rules and calls tools well (scripts/bench-models.ts, 2026-10-05).
   "workers-ai": "@cf/mistralai/mistral-small-3.1-24b-instruct",
-  // The plan's small, fast model (`jun models` lists what the plan offers; user's pick, 2026-10-05).
-  chatgpt: "gpt-5.6-luna",
+  // Small and fast (user's pick, 2026-10-05). Not in `jun models`' list, but the plan serves it.
+  chatgpt: "gpt-6-luna",
 };
 
 export async function loadAiSettings(env: Env, workspaceId: string): Promise<AiSettings> {
