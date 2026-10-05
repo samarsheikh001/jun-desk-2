@@ -187,7 +187,9 @@ pick: [args, url]
 
   const { token } = await newVisitor();
   await identify(token, await userToken(ADA, { name: "Ada Lovelace", email: "ada@acme.test", attributes: { plan: "pro", seats: 12 } }));
-  const conversation = await startConversation(token, "Which plan am I on, and how many seats do I have?");
+  // Plan and seats are also in the prompt (verified attributes), so ask for the account record
+  // itself: only the tool has it.
+  const conversation = await startConversation(token, "Can you pull up my account record and tell me which plan it shows?");
   const socket = new TestSocket(`/api/widget/${widgetKey}/conversations/${conversation.id}/ws?since=1`, { protocols: [token] });
   await socket.opened;
   const event = await socket.next(
