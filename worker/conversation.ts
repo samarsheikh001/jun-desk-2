@@ -24,6 +24,7 @@ import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessa
 import { findMentions } from "../shared/inbox.ts";
 import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
 import { newId } from "./lib/crypto.ts";
+import { notifyTeam } from "./lib/notify.ts";
 
 /** Who is on the other end of a socket or RPC call. The Worker authenticates before forwarding. */
 export type Participant =
@@ -243,7 +244,7 @@ export class Conversation extends DurableObject<Env> {
     }
 
     const mentions = note ? await this.#mentioned(ref, participant, body) : [];
-    const message = await this.#insert(ref, {
+    const { message, created } = await this.#insertMessage(ref, {
       authorType: participant.role,
       authorId: participant.role === "agent" ? participant.userId : participant.contactId,
       authorName: participant.role === "agent" ? participant.name : null,
@@ -252,14 +253,22 @@ export class Conversation extends DurableObject<Env> {
       clientMsgId: input.clientMsgId,
       ...(note ? { internal: true, meta: mentions.length ? { mentions } : {} } : {}),
     });
-    if (participant.role === "agent" && mentions.length) await this.#notifyMentions(ref, participant.name, message);
+    if (participant.role === "agent" && mentions.length) await this.#notifyMentions(ref, participant, message);
 
     if (participant.role === "visitor" && input.context !== undefined) await this.#storeContext(ref, message.seq, input.context);
+    // I-14: the visitor wrote in a chat a teammate has: tell them (not on retries).
+    if (participant.role === "visitor" && created) this.ctx.waitUntil(this.#notifyAssignee(ref));
 
     // The AI answers visitor messages in AI-handled conversations, from an alarm so the
     // sender isn't kept waiting (and so it's retried if the object restarts).
     if (participant.role === "visitor") await this.ctx.storage.setAlarm(Date.now());
     return message;
+  }
+
+  /** I-14: "Ana replied" to the assignee of a chat the team is handling. */
+  async #notifyAssignee(ref: ConversationRef): Promise<void> {
+    const row = await this.env.DB.prepare("SELECT assignee_id FROM conversations WHERE id = ? AND handling = 'human'").bind(ref.conversationId).first<{ assignee_id: string | null }>();
+    if (row?.assignee_id) await notifyTeam(this.env, ref, { kind: "visitor_reply", actorId: null, targets: [row.assignee_id] });
   }
 
   /** Teammates @mentioned in a note, not counting the author. */
@@ -272,7 +281,8 @@ export class Conversation extends DurableObject<Env> {
   }
 
   /** Records mentions once per note (retries are no-ops) and pings the mentioned agents' dashboards. */
-  async #notifyMentions(ref: ConversationRef, by: string, message: Message): Promise<void> {
+  async #notifyMentions(ref: ConversationRef, author: Participant & { role: "agent" }, message: Message): Promise<void> {
+    const by = author.name;
     const userIds = message.meta.mentions ?? [];
     const results = await this.env.DB.batch(
       userIds.map((userId) =>
@@ -294,6 +304,8 @@ export class Conversation extends DurableObject<Env> {
       by,
       preview: preview(message.body, message.attachments),
     });
+    // I-14: also as a notification (members only; the note's text is fine for them).
+    this.ctx.waitUntil(notifyTeam(this.env, ref, { kind: "mention", actorId: author.userId, targets: fresh }, { by, note: message.body }));
   }
 
   /** Stores the visitor's browser snapshot (re-sanitized: never trust the client) for agents and the AI. */
@@ -318,6 +330,11 @@ export class Conversation extends DurableObject<Env> {
 
   /** Stores a message (idempotent per clientMsgId), broadcasts it and updates inbox lists. */
   async #insert(ref: ConversationRef, input: NewMessage): Promise<Message> {
+    return (await this.#insertMessage(ref, input)).message;
+  }
+
+  /** Like #insert; `created` is false when it was a retry of a message stored before. */
+  async #insertMessage(ref: ConversationRef, input: NewMessage): Promise<{ message: Message; created: boolean }> {
     const db = this.env.DB;
     const findExisting = async () => {
       const row = await db
@@ -327,7 +344,7 @@ export class Conversation extends DurableObject<Env> {
       return row ? toMessage(row) : null;
     };
     const existing = await findExisting();
-    if (existing) return existing;
+    if (existing) return { message: existing, created: false };
 
     const seq = await this.#nextSeq(ref.conversationId);
     const now = Date.now();
@@ -367,7 +384,7 @@ export class Conversation extends DurableObject<Env> {
     } catch (error) {
       // A concurrent retry with the same clientMsgId won the race: return its message.
       const raced = await findExisting();
-      if (raced) return raced;
+      if (raced) return { message: raced, created: false };
       throw error;
     }
 
@@ -386,7 +403,7 @@ export class Conversation extends DurableObject<Env> {
     };
     this.#broadcast({ type: "message", message }, { agentsOnly: internal });
     this.ctx.waitUntil(this.#publish(ref));
-    return message;
+    return { message, created: true };
   }
 
   async #markRead(ref: ConversationRef, participant: Participant, seq: number): Promise<void> {
@@ -639,23 +656,33 @@ export class Conversation extends DurableObject<Env> {
     await this.#autoAssign(ref);
   }
 
-  /** I-02: round robin to an online teammate, with a note so the team sees why. */
+  /**
+   * The chat just started needing a person (handoff, or a new chat while the AI is off).
+   * I-02: round robin to an online teammate, with a note so the team sees why.
+   * I-14: notify the assignee, or, if it's still unassigned, everyone who wants to know.
+   */
   async #autoAssign(ref: ConversationRef): Promise<void> {
     try {
       const picked = await autoAssign(this.env, ref);
-      if (!picked) return;
-      await this.#insert(ref, {
-        authorType: "system",
-        authorId: null,
-        authorName: null,
-        body: `Assigned to ${picked.name} automatically (round robin).`,
-        clientMsgId: newId("assign"),
-        internal: true,
-      });
+      if (picked) {
+        await this.#insert(ref, {
+          authorType: "system",
+          authorId: null,
+          authorName: null,
+          body: `Assigned to ${picked.name} automatically (round robin).`,
+          clientMsgId: newId("assign"),
+          internal: true,
+        });
+        this.ctx.waitUntil(notifyTeam(this.env, ref, { kind: "assigned", actorId: null, targets: [picked.userId], auto: true }));
+        return;
+      }
     } catch (error) {
       // Assignment is a convenience: the chat is still in the shared inbox.
       console.error("auto-assignment failed:", error);
     }
+    const row = await this.env.DB.prepare("SELECT assignee_id FROM conversations WHERE id = ? AND status = 'open' AND handling = 'human'").bind(ref.conversationId).first<{ assignee_id: string | null }>();
+    // Someone may have taken it in the meantime; then they don't need telling.
+    if (row && row.assignee_id === null) this.ctx.waitUntil(notifyTeam(this.env, ref, { kind: "needs_person", actorId: null }));
   }
 
   async #recordUsage(workspaceId: string, month: string, usage: { inputTokens: number; outputTokens: number }): Promise<void> {

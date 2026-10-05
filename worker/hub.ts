@@ -1,9 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
 import { ChatGPTAuth, type ChatGPTCredentials, type CredentialStore } from "@jun/llm";
 import { pickAssignee } from "../shared/inbox.ts";
-import { SOCKET_PROTOCOL, type HubEvent, type LiveClientEvent, type LiveServerEvent, type LiveVisitor, type PresenceEntry } from "../shared/protocol.ts";
+import { notificationPayload, notificationRecipients, readNotificationPrefs, type NotificationEvent, type NotificationPayload } from "../shared/notifications.ts";
+import { SOCKET_PROTOCOL, type HubClientEvent, type HubEvent, type LiveClientEvent, type LiveServerEvent, type LiveVisitor, type PresenceEntry } from "../shared/protocol.ts";
 import { upsertIdentified } from "./lib/contacts.ts";
+import { newId } from "./lib/crypto.ts";
 import { IdentityError, verifyIdentityToken } from "./lib/identity.ts";
+import { generateVapidKeys, pushTopic, sendPush, type PushOutcome, type VapidKeys } from "./lib/webpush.ts";
 
 export const HUB_USER_HEADER = "x-jun-user";
 export const HUB_VISITOR_HEADER = "x-jun-visitor";
@@ -26,7 +29,24 @@ interface VisitorAttachment {
   connectedAt: number;
 }
 
-type AgentAttachment = PresenceEntry & { kind?: "agent"; connectedAt: number };
+/** `focused`: the tab is visible and focused (the dashboard reports changes), I-14. */
+type AgentAttachment = PresenceEntry & { kind?: "agent"; connectedAt: number; focused?: boolean };
+
+/** I-14: what a Conversation object or route asks the hub to notify about. */
+export interface NotifyInput extends NotificationEvent {
+  workspaceId: string;
+  /** "Ana Lima", "ana@acme.test" or "Visitor #1234". */
+  contact: string;
+  /** The visitor's latest message, or the note for a mention. */
+  text: string;
+  /** The teammate who assigned or mentioned. */
+  by?: string | null;
+}
+
+interface SubscriptionRow { id: string; user_id: string; endpoint: string; p256dh: string; auth: string }
+
+/** Push messages wait up to a day for a device that's offline. */
+const PUSH_TTL = 24 * 3600;
 
 /**
  * The loader and the dashboard ping every 30 s (answered automatically, even while this object
@@ -48,6 +68,7 @@ const clip = (value: unknown, max: number): string => (typeof value === "string"
  */
 export class WorkspaceHub extends DurableObject<Env> {
   #chatgpt: ChatGPTAuth | undefined;
+  #vapid: Promise<VapidKeys> | undefined;
   /** The sweep alarm is set (saves a storage read per connect; after eviction, setting it again is harmless). */
   #sweepArmed = false;
   constructor(ctx: DurableObjectState, env: Env) {
@@ -136,6 +157,108 @@ export class WorkspaceHub extends DurableObject<Env> {
     else await this.ctx.storage.delete(`tracker-secret:${name}`);
   }
 
+  /**
+   * I-14: this workspace's VAPID key pair (RFC 8292), created on first use. The private key never
+   * leaves this object's storage (not D1, not the API), like the tracker secrets above.
+   */
+  #vapidKeys(): Promise<VapidKeys> {
+    if (!this.#vapid) {
+      const loading = (async () => {
+        const stored = await this.ctx.storage.get<VapidKeys>("push:vapid");
+        if (stored) return stored;
+        const keys = await generateVapidKeys();
+        // Another call may have stored one while we generated: keep the first.
+        const raced = await this.ctx.storage.get<VapidKeys>("push:vapid");
+        if (raced) return raced;
+        await this.ctx.storage.put("push:vapid", keys);
+        return keys;
+      })();
+      this.#vapid = loading;
+      loading.catch(() => {
+        if (this.#vapid === loading) this.#vapid = undefined;
+      });
+    }
+    return this.#vapid;
+  }
+
+  /**
+   * RPC (I-14): the public key browsers subscribe with. `origin` is the desk's URL, remembered as
+   * the VAPID contact ("sub") push services may use to reach whoever runs this desk.
+   */
+  async vapidPublicKey(origin: string): Promise<string> {
+    if ((await this.ctx.storage.get<string>("push:subject")) !== origin) await this.ctx.storage.put("push:subject", origin);
+    return (await this.#vapidKeys()).publicKey;
+  }
+
+  /**
+   * RPC (I-14): notify the teammates an event concerns. Each gets a `notify` event on their own
+   * sockets; those without a focused desk tab also get Web Push on every device they turned it on.
+   * Callers run this with waitUntil: nothing user-facing waits for push services.
+   */
+  async notify(input: NotifyInput): Promise<void> {
+    const members = await this.env.DB.prepare("SELECT user_id, notification_prefs FROM members WHERE workspace_id = ?")
+      .bind(input.workspaceId)
+      .all<{ user_id: string; notification_prefs: string }>();
+    const recipients = notificationRecipients(input, members.results.map((m) => ({ userId: m.user_id, prefs: readNotificationPrefs(m.notification_prefs) })));
+    if (recipients.length === 0) return;
+    const payload = notificationPayload({
+      id: newId("ntf"),
+      kind: input.kind,
+      conversationId: input.conversationId,
+      contact: input.contact,
+      text: input.text,
+      by: input.by ?? null,
+      ...(input.auto ? { auto: true } : {}),
+    });
+
+    // Only the recipient's own sockets hear about it (other teammates get the usual inbox events).
+    const sockets = this.#live<AgentAttachment>("agent").filter(([, a]) => recipients.includes(a.userId));
+    const focused = new Set(sockets.filter(([, a]) => a.focused).map(([, a]) => a.userId));
+    for (const [ws, a] of sockets) this.#send(ws, { type: "notify", notification: payload, mode: focused.has(a.userId) ? "toast" : "system" });
+    await this.#push(input.workspaceId, recipients.filter((id) => !focused.has(id)), payload);
+  }
+
+  /** RPC (I-14): "Send a test notification" to one of the user's own devices. Null if it isn't theirs. */
+  async testPush(workspaceId: string, userId: string, subscriptionId: string): Promise<{ status: number; outcome: PushOutcome } | null> {
+    const row = await this.env.DB.prepare("SELECT id, user_id, endpoint, p256dh, auth FROM push_subscriptions WHERE id = ? AND workspace_id = ? AND user_id = ?")
+      .bind(subscriptionId, workspaceId, userId)
+      .first<SubscriptionRow>();
+    if (!row) return null;
+    const payload: NotificationPayload = { id: newId("ntf"), kind: "test", title: "Notifications are on", body: "This device will tell you when a chat needs you.", url: "/settings", tag: "jun-test" };
+    const [result] = await this.#sendAll([row], payload);
+    return result!;
+  }
+
+  async #push(workspaceId: string, userIds: string[], payload: NotificationPayload): Promise<void> {
+    if (userIds.length === 0) return;
+    const rows = await this.env.DB.prepare(`SELECT id, user_id, endpoint, p256dh, auth FROM push_subscriptions WHERE workspace_id = ? AND user_id IN (${userIds.map(() => "?").join(",")})`)
+      .bind(workspaceId, ...userIds)
+      .all<SubscriptionRow>();
+    if (rows.results.length) await this.#sendAll(rows.results, payload);
+  }
+
+  /** Sends to each subscription in parallel and records the outcome: 404/410 forget it, other failures count. */
+  async #sendAll(rows: SubscriptionRow[], payload: NotificationPayload): Promise<{ status: number; outcome: PushOutcome }[]> {
+    const keys = await this.#vapidKeys();
+    const subject = (await this.ctx.storage.get<string>("push:subject")) ?? "mailto:admin@localhost";
+    // A newer undelivered push for the same conversation replaces the older one at the push service.
+    const topic = await pushTopic(payload.tag);
+    const body = JSON.stringify(payload);
+    const results = await Promise.all(rows.map((row) => sendPush(row, body, { keys, subject }, { ttl: PUSH_TTL, urgency: "high", topic })));
+    const now = Date.now();
+    const db = this.env.DB;
+    await db.batch(
+      rows.map((row, i) => {
+        const { outcome, status } = results[i]!;
+        if (outcome !== "ok") console.warn(`push to ${new URL(row.endpoint).host} failed: ${status || "network error"}`);
+        return outcome === "ok" ? db.prepare("UPDATE push_subscriptions SET last_success_at = ?, failures = 0 WHERE id = ?").bind(now, row.id)
+          : outcome === "gone" ? db.prepare("DELETE FROM push_subscriptions WHERE id = ?").bind(row.id)
+          : db.prepare("UPDATE push_subscriptions SET failures = failures + 1 WHERE id = ?").bind(row.id);
+      }),
+    );
+    return results;
+  }
+
   /** RPC: fan an event out to every connected agent. */
   async publish(event: HubEvent): Promise<void> {
     this.#broadcast(JSON.stringify(event));
@@ -193,9 +316,19 @@ export class WorkspaceHub extends DurableObject<Env> {
   }
 
   override async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    // Agents send nothing besides pings (auto-answered); only visitors talk here.
     const a = ws.deserializeAttachment() as VisitorAttachment | AgentAttachment | null;
-    if (!a || a.kind !== "visitor" || typeof raw !== "string" || raw.length > 8000) return;
+    if (!a || typeof raw !== "string" || raw.length > 8000) return;
+    if (a.kind !== "visitor") {
+      // Agents only say whether their tab is focused (I-14); pings are auto-answered.
+      let event: HubClientEvent;
+      try {
+        event = JSON.parse(raw) as HubClientEvent;
+      } catch {
+        return;
+      }
+      if (event?.type === "focus" && typeof event.focused === "boolean" && a.focused !== event.focused) ws.serializeAttachment({ ...a, focused: event.focused });
+      return;
+    }
     let event: LiveClientEvent;
     try {
       event = JSON.parse(raw) as LiveClientEvent;

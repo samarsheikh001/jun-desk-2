@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
+import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
 import { api, type Me } from "./api.ts";
 import { InboxPage } from "./inbox/InboxPage.tsx";
 import { AgentPage } from "./agent/AgentPage.tsx";
 import { KnowledgePage } from "./knowledge/KnowledgePage.tsx";
+import { deskServiceWorker, listenForNotificationClicks, notificationPermission, showInPageNotification, tabFocused } from "./lib/notifications.ts";
 import { LiveSocket } from "./lib/socket.ts";
 import { ReportsPage } from "./reports/ReportsPage.tsx";
 import { navigate, usePath } from "./lib/router.ts";
@@ -36,9 +37,16 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
 
   useEffect(() => {
     if (!workspace) return;
+    // I-14: the hub skips Web Push for you while a desk tab is in front of you.
+    const reportFocus = () => socket.send({ type: "focus", focused: tabFocused() } satisfies HubClientEvent);
     const socket = new LiveSocket<HubEvent>({
       url: () => `/api/workspaces/${workspace.workspaceId}/ws`,
+      onState: (state) => {
+        if (state === "open") reportFocus();
+      },
       onEvent: (event) => {
+        // Not in front of you: a system notification (in front: the inbox's own toasts and lists).
+        if (event.type === "notify" && event.mode === "system" && !tabFocused()) void showInPageNotification(event.notification).catch(() => {});
         if (event.type === "presence") setOnline(event.online);
         if (event.type === "visitors") setVisitors(event.visitors);
         if (event.type === "visitor") setVisitors((list) => [...list.filter((v) => v.sessionId !== event.visitor.sessionId), event.visitor]);
@@ -46,7 +54,19 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         for (const listener of listeners.current) listener(event);
       },
     });
-    return () => socket.close();
+    window.addEventListener("focus", reportFocus);
+    window.addEventListener("blur", reportFocus);
+    document.addEventListener("visibilitychange", reportFocus);
+    // The service worker shows notifications (in-page ones too) and routes clicks to this tab.
+    if (notificationPermission() === "granted") void deskServiceWorker().catch(() => {});
+    const stopClicks = listenForNotificationClicks();
+    return () => {
+      socket.close();
+      window.removeEventListener("focus", reportFocus);
+      window.removeEventListener("blur", reportFocus);
+      document.removeEventListener("visibilitychange", reportFocus);
+      stopClicks();
+    };
   }, [workspace]);
 
   const hub = useMemo<Hub>(

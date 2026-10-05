@@ -127,7 +127,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | I-11 | SLA policies with breach alerts | v2 | proposed | DO alarms fit timers well | 03 |
 | I-12 | Copilot: draft reply, summarise, translate, rephrase | v2 | proposed | Table stakes in 2026, but v1 is about the autonomous agent | 01 |
 | I-13 | Keyboard-first UI and command palette | v1.1 | agreed | Pushed to v1.1 to make room for pillar slices (D-12) | |
-| I-14 | Desktop and mobile push notifications for agents | v1.1 | agreed | Pushed to v1.1 (D-12). Slack notifications (C-09) cover most of this in v1 | |
+| I-14 | Desktop and mobile push notifications for agents | v1 | shipped | Pushed to v1.1 (D-12), then shipped before launch, so v1 (D-29). **Shipped 2026-10-06:** Settings → Notifications per teammate: turn on per device, four toggles (chat needs a person, assigned to you, customer replied in your chat, @mention; all on by default), test notification, device list. Unassigned handoffs (and new chats while the AI is off) go to everyone who opted in; round-robin chats only to the assignee; never to whoever caused it. A desk tab you're not looking at shows a system notification; otherwise Web Push (VAPID + aes128gcm with WebCrypto, no dependencies; the key lives in the workspace hub's Durable Object storage). Nothing is pushed while you have the desk focused. iPhone/iPad need the desk added to the Home Screen | |
 | I-15 | Agent mobile app | later | proposed | | |
 | I-16 | Tickets: async work items, conversation → ticket | v2 | proposed | Separate entity or type flag? See D-05 | 03 |
 | I-17 | Automations / workflow rules (if X then assign/tag/close) | v2 | proposed | | |

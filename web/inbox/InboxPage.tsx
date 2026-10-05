@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ConversationIssue, ConversationStatus, ConversationSummary, CsatRating, Message } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { fillSavedReply } from "../../shared/inbox.ts";
+import { contactLabel } from "../../shared/notifications.ts";
 import { Composer, type SavedReply } from "../components/Composer.tsx";
 import { MessageList } from "../components/MessageList.tsx";
 import { navigate } from "../lib/router.ts";
@@ -26,14 +27,6 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-/** Stable short number for anonymous visitors, e.g. "Visitor #4821". */
-function visitorNumber(id: string): string {
-  let hash = 2166136261;
-  for (let i = 0; i < id.length; i++) hash = Math.imul(hash ^ id.charCodeAt(i), 16777619);
-  return String((hash >>> 0) % 10000).padStart(4, "0");
-}
-
-export const contactLabel = (c: ConversationSummary["contact"]) => c.name ?? c.email ?? `Visitor #${visitorNumber(c.id)}`;
 const isUnread = (c: ConversationSummary) => c.lastMessageAuthor === "visitor" && c.lastSeq > c.agentReadSeq;
 
 /** W-12: the customer's latest rating as a small badge. */

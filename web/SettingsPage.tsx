@@ -3,6 +3,7 @@ import { api, registerPasskey, type Me } from "./api.ts";
 import { AiPanel } from "./AiPanel.tsx";
 import { IssueTrackersPanel } from "./settings/IssueTrackersPanel.tsx";
 import { AssignmentPanel, SavedRepliesPanel, TagsPanel, TopicsPanel } from "./settings/InboxPanels.tsx";
+import { NotificationsPanel } from "./settings/NotificationsPanel.tsx";
 import { AppearancePanel, HoursPanel, type InboxSettings } from "./settings/WidgetPanels.tsx";
 import { useAction } from "./useAction.ts";
 
@@ -38,6 +39,8 @@ export function SettingsPage({ me }: { me: Me }) {
       {workspace && <IssueTrackersPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
 
       {error && <p className="error">{error}</p>}
+
+      {workspace && <NotificationsPanel workspaceId={workspace.workspaceId} />}
 
       <section className="panel">
         <div className="row">

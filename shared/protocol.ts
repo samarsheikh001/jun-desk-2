@@ -1,6 +1,8 @@
 // Shared by the Worker, the dashboard and the widget. Plain TypeScript with no Worker,
 // DOM or Node APIs, so every tsconfig can include this file.
 
+import type { NotificationPayload } from "./notifications.ts";
+
 export type ConversationStatus = "open" | "pending" | "snoozed" | "resolved";
 export type AuthorType = "visitor" | "agent" | "ai" | "system";
 /** Who is answering right now: the AI agent, or a human after handoff/takeover. */
@@ -154,7 +156,16 @@ export type HubEvent =
   | { type: "visitor"; visitor: LiveVisitor }
   | { type: "visitor_left"; sessionId: string }
   /** I-05: someone was @mentioned in a note; each dashboard checks whether it's them. */
-  | { type: "mention"; conversationId: string; userIds: string[]; by: string; preview: string };
+  | { type: "mention"; conversationId: string; userIds: string[]; by: string; preview: string }
+  /**
+   * I-14: sent only to the recipient's own sockets. `toast`: one of their desk tabs is focused, so
+   * no push was sent and the visible tab handles it in-app. `system`: no focused tab; a hidden tab
+   * shows a system notification (a push of the same event, same tag and id, replaces it silently).
+   */
+  | { type: "notify"; notification: NotificationPayload; mode: "toast" | "system" };
+
+/** Dashboard → hub: whether this tab is visible and focused (I-14: no push while you're looking). */
+export type HubClientEvent = { type: "focus"; focused: boolean };
 
 /** Loader → hub on the live connection. Short keys: this travels from every page view. */
 export type LiveClientEvent =

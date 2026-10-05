@@ -83,6 +83,12 @@ Turn it on in **Settings** (or from Get started) and add your docs under **Knowl
 
 It hands a conversation to your team when it can't answer from your docs, when the customer asks for a person, after a set number of replies, or when it hits the monthly cap you set. Your team gets a short brief with what was asked and what failed. Outside business hours the AI keeps answering, and chats waiting for a person get your away message.
 
+## Notifications
+
+Each teammate turns them on in **Settings → Notifications** ("Turn on notifications on this device", once per browser or phone) and picks what they want: a chat needs a person, a chat is assigned to them, a customer replies in their chat, or someone @mentions them. With the desk open in a tab you're not looking at, that tab shows the notification; with it closed, your devices get a Web Push (standard VAPID, nothing to configure: the key is created on first use). Nothing is sent while you're looking at the desk. Clicking one opens the conversation.
+
+**iPhone and iPad:** Safari only allows push for web apps on the Home Screen. Open the desk in Safari, tap Share → **Add to Home Screen**, open Jun Desk from there and turn notifications on.
+
 ## Issue trackers
 
 An agent's "Create issue" files to GitHub, Linear, or either (they pick when both are set up). Set them up in **Settings → Issue trackers**:

@@ -6,6 +6,7 @@ import { loadDebugContext, loadIssues, loadMessages, loadSummary, SUMMARY_SELECT
 import { connectConversation, connectHub, notifyConversationChanged, sendMessage } from "../lib/realtime.ts";
 import { parseHours } from "../../shared/hours.ts";
 import { parseAssignment } from "../../shared/inbox.ts";
+import { notifyTeam } from "../lib/notify.ts";
 import { normalizeDomains } from "../lib/origins.ts";
 import { object, readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
@@ -220,10 +221,14 @@ conversations.patch("/conversations/:cid", async (c) => {
     );
     params.push(body.status, body.status);
   }
+  let newAssignee: string | null = null;
   if (body.assigneeId !== undefined) {
     if (body.assigneeId !== null) {
       const member = await c.env.DB.prepare("SELECT 1 FROM members WHERE workspace_id = ? AND user_id = ?").bind(ref.workspaceId, String(body.assigneeId)).first();
       if (!member) throw new HttpError(400, "invalid_field", "Assignee must be a member of this workspace.");
+      // I-14: tell them, unless it was already theirs (or they assigned themselves: the actor is never notified).
+      const current = await c.env.DB.prepare("SELECT assignee_id FROM conversations WHERE id = ?").bind(ref.conversationId).first<{ assignee_id: string | null }>();
+      if (current?.assignee_id !== body.assigneeId) newAssignee = String(body.assigneeId);
     }
     sets.push("assignee_id = ?");
     params.push(body.assigneeId);
@@ -240,6 +245,10 @@ conversations.patch("/conversations/:cid", async (c) => {
     .bind(...params, Date.now(), ref.conversationId)
     .run();
   await notifyConversationChanged(c.env, ref);
+  if (newAssignee) {
+    const me = c.get("user");
+    c.executionCtx.waitUntil(notifyTeam(c.env, ref, { kind: "assigned", actorId: me.id, targets: [newAssignee] }, { by: me.name }));
+  }
   return c.json({ conversation: await loadSummary(c.env.DB, ref.conversationId) });
 });
 

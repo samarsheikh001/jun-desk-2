@@ -8,6 +8,7 @@ import { files } from "./routes/files.ts";
 import { inbox } from "./routes/inbox.ts";
 import { issues } from "./routes/issues.ts";
 import { metrics } from "./routes/metrics.ts";
+import { notifications } from "./routes/notifications.ts";
 import { topics } from "./routes/topics.ts";
 import { widget } from "./routes/widget.ts";
 import { onboarding } from "./routes/onboarding.ts";
@@ -60,6 +61,7 @@ app.route("/", inbox);
 app.route("/", metrics);
 app.route("/", topics);
 app.route("/", issues);
+app.route("/", notifications);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "No such API route." } }, 404));
 

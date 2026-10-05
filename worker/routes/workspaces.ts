@@ -89,6 +89,8 @@ workspaces.delete("/workspaces/:id/members/:userId", requireUser, async (c) => {
   // (cascades to passkeys and sessions, so they're signed out everywhere).
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, userId),
+    // I-14: their devices stop getting this workspace's notifications.
+    c.env.DB.prepare("DELETE FROM push_subscriptions WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, userId),
     c.env.DB.prepare("DELETE FROM users WHERE id = ? AND NOT EXISTS (SELECT 1 FROM members WHERE user_id = ?)").bind(userId, userId),
   ]);
   return c.json({ ok: true });
