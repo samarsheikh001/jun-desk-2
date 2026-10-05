@@ -262,3 +262,34 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .hits { padding-left: 18px; display: grid; gap: 10px; margin-top: 12px; }
 .hits p { margin: 4px 0 0; }
 .w-human { padding: 6px 12px; text-align: center; background: var(--surface); border-top: 1px solid var(--border); }
+
+/* Agent config (AI-18) */
+.agent-page { flex: 1; display: grid; grid-template-columns: 240px minmax(0, 1fr) 260px; min-height: 0; }
+.agent-files, .agent-history { background: var(--surface); overflow: auto; padding: 12px; display: grid; gap: 12px; align-content: start; }
+.agent-files { border-right: 1px solid var(--border); }
+.agent-history { border-left: 1px solid var(--border); }
+.agent-group { display: grid; gap: 2px; }
+.agent-group-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
+.agent-file { display: flex; gap: 6px; align-items: center; background: none; color: var(--text); text-align: left; padding: 5px 8px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+.agent-file.active { background: var(--tag); }
+.agent-empty { padding: 2px 8px; }
+.agent-add { display: grid; gap: 6px; }
+.agent-git { display: grid; gap: 6px; padding: 10px; background: var(--bg); border-radius: 8px; }
+.agent-git pre { margin: 0; font-size: 0.75rem; white-space: pre-wrap; word-break: break-all; }
+.agent-editor { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 12px 16px; gap: 8px; }
+.agent-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.agent-text { flex: 1; min-height: 240px; resize: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; line-height: 1.5; padding: 12px; tab-size: 2; }
+.agent-issues { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
+.agent-save { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.agent-save input { flex: 1; min-width: 200px; }
+.agent-conflict { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.agent-summary { margin: 0; padding-left: 18px; }
+.agent-versions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.agent-versions li { display: grid; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+@media (max-width: 900px) {
+  .agent-page { grid-template-columns: 1fr; overflow: auto; }
+  .agent-files, .agent-history { border: none; }
+}
+.ai-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ai-actions li { display: grid; gap: 2px; padding: 6px 8px; border-radius: 8px; background: var(--bg); font-size: 0.85rem; }
+.ai-actions pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 0.75rem; max-height: 120px; overflow: auto; }

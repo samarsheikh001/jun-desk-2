@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import type { LlmProvider } from "@jun/llm";
+import { generateText } from "ai";
 import {
   MAX_ATTACHMENTS,
   MAX_MESSAGE_LENGTH,
@@ -12,20 +12,11 @@ import {
   type Message,
   type MessageMeta,
 } from "../shared/protocol.ts";
-import {
-  asksForHuman,
-  briefPrompt,
-  HANDOFF_MESSAGES,
-  MAX_AI_TURNS,
-  parseReply,
-  resolveCitations,
-  searchQuery,
-  streamVisible,
-  systemPrompt,
-  toChatMessages,
-} from "./ai/agent.ts";
-import { AiUnavailableError, createProvider, loadAiSettings } from "./ai/providers.ts";
-import { searchKnowledge } from "./ai/search.ts";
+import { asksForHuman, briefPrompt, HANDOFF_MESSAGES, resolveCitations } from "./ai/agent.ts";
+import { loadAgentConfig } from "./ai/config-store.ts";
+import { AiUnavailableError, createModel, loadAiSettings, type AgentModel } from "./ai/providers.ts";
+import { runAgent } from "./ai/run.ts";
+import type { ToolAction } from "./ai/tools.ts";
 import { describeEvents, isIssue, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { newId } from "./lib/crypto.ts";
@@ -392,11 +383,12 @@ export class Conversation extends DurableObject<Env> {
   async #aiTurn(ref: ConversationRef): Promise<boolean> {
     const month = new Date().toISOString().slice(0, 7);
     // Independent lookups in parallel: every round trip here delays the first word.
-    const [handling, history, settings, usage] = await Promise.all([
+    const [handling, history, settings, usage, config] = await Promise.all([
       this.#handling(ref),
       loadMessages(this.env.DB, ref.conversationId, { includeInternal: false, limit: 40 }),
       loadAiSettings(this.env, ref.workspaceId),
       this.env.DB.prepare("SELECT replies FROM ai_usage WHERE workspace_id = ? AND month = ?").bind(ref.workspaceId, month).first<{ replies: number }>(),
+      loadAgentConfig(this.env, ref.workspaceId),
     ]);
     if (handling !== "ai") return false;
     const last = history.at(-1);
@@ -410,8 +402,8 @@ export class Conversation extends DurableObject<Env> {
       await this.#handoff(ref, "The customer asked for a person.", HANDOFF_MESSAGES.default);
       return false;
     }
-    if (history.filter((m) => m.authorType === "ai").length >= MAX_AI_TURNS) {
-      await this.#handoff(ref, `The AI has answered ${MAX_AI_TURNS} times without resolving it.`, HANDOFF_MESSAGES.default);
+    if (history.filter((m) => m.authorType === "ai").length >= config.maxReplies) {
+      await this.#handoff(ref, `The AI has answered ${config.maxReplies} times without resolving it.`, HANDOFF_MESSAGES.default);
       return false;
     }
     if ((usage?.replies ?? 0) >= settings.monthlyReplyCap) {
@@ -423,9 +415,9 @@ export class Conversation extends DurableObject<Env> {
     this.#thinking = true;
     this.#broadcast({ type: "ai_status", state: "thinking" });
     try {
-      let provider: LlmProvider;
+      let model: AgentModel;
       try {
-        provider = createProvider(this.env, ref.workspaceId, settings);
+        model = createModel(this.env, ref.workspaceId, settings);
       } catch (error) {
         if (error instanceof AiUnavailableError) {
           await this.#handoff(ref, `AI unavailable: ${error.message}`, HANDOFF_MESSAGES.error);
@@ -434,42 +426,43 @@ export class Conversation extends DurableObject<Env> {
         throw error;
       }
 
-      const [workspace, hits, technical] = await Promise.all([
+      const [workspace, technical] = await Promise.all([
         this.env.DB.prepare("SELECT name FROM workspaces WHERE id = ?").bind(ref.workspaceId).first<{ name: string }>(),
-        searchKnowledge(this.env, ref.workspaceId, searchQuery(history)),
         this.#technicalContext(ref),
       ]);
-      const instructions = systemPrompt({ workspaceName: workspace?.name ?? "this company", instructions: settings.instructions, hits, technical });
 
       // Stream what the visitor may see: nothing that could be a HANDOFF line, never an ESCALATE line.
       const streamId = newId("str");
-      let text = "";
       let shown = "";
-      let usageInfo: unknown;
-      for await (const event of provider.stream({ instructions, messages: toChatMessages(history) })) {
-        if (event.type === "done") {
-          usageInfo = event.usage;
-          break;
-        }
-        text += event.text;
-        const visible = streamVisible(text);
-        if (visible.length === 0 || visible === shown) continue;
-        if (shown && visible.startsWith(shown)) {
-          this.#broadcast({ type: "ai_delta", streamId, text: visible.slice(shown.length) });
-        } else {
-          this.#broadcast({ type: "ai_delta", streamId, text: visible, replace: true });
-        }
-        shown = visible;
-        this.#streaming = { streamId, text: visible };
-      }
-      await this.#recordUsage(ref.workspaceId, month, usageInfo);
+      const actions: Promise<void>[] = [];
+      const result = await runAgent({
+        env: this.env,
+        workspaceId: ref.workspaceId,
+        workspaceName: workspace?.name ?? "this company",
+        model,
+        config,
+        history,
+        technical: technical.lines,
+        ...(technical.timezone ? { timezone: technical.timezone } : {}),
+        onVisible: (visible) => {
+          if (shown && visible.startsWith(shown)) {
+            this.#broadcast({ type: "ai_delta", streamId, text: visible.slice(shown.length) });
+          } else {
+            this.#broadcast({ type: "ai_delta", streamId, text: visible, replace: true });
+          }
+          shown = visible;
+          this.#streaming = { streamId, text: visible };
+        },
+        onAction: (action) => actions.push(this.#recordAction(ref, last.seq, config.version, action)),
+      });
+      await Promise.all([...actions, this.#recordUsage(ref.workspaceId, month, result.usage)]);
+      const { outcome, hits } = result;
 
       // A teammate may have taken over while we were writing: drop the answer.
       if ((await this.#handling(ref)) !== "ai") return false;
 
-      const outcome = parseReply(text);
       if (outcome.kind === "handoff") {
-        await this.#handoff(ref, outcome.reason, HANDOFF_MESSAGES.default, provider, history, technical);
+        await this.#handoff(ref, outcome.reason, HANDOFF_MESSAGES.default, model, history, technical.lines);
         return false;
       }
       const { text: body, sources } = resolveCitations(outcome.text, hits);
@@ -479,14 +472,14 @@ export class Conversation extends DurableObject<Env> {
         authorName: null,
         body,
         clientMsgId: `ai:${last.seq}`, // one answer per visitor message, even if this turn is retried
-        meta: sources.length ? { sources } : {},
+        meta: { ...(sources.length ? { sources } : {}), ...(config.version !== null ? { configVersion: config.version } : {}) },
       });
       this.#streaming = undefined;
       this.#thinking = false;
       this.#broadcast({ type: "ai_status", state: "idle" });
       if (outcome.escalate) {
         // P1: the AI explained what broke; now the team gets it with the technical details.
-        await this.#handoff(ref, `Bug flagged by the AI: ${outcome.escalate}`, HANDOFF_MESSAGES.escalated, provider, [...history, answer], technical);
+        await this.#handoff(ref, `Bug flagged by the AI: ${outcome.escalate}`, HANDOFF_MESSAGES.escalated, model, [...history, answer], technical.lines);
         return false;
       }
       return true;
@@ -503,16 +496,19 @@ export class Conversation extends DurableObject<Env> {
 
   /** Hands an AI conversation to the team: tells the visitor, and leaves agents a brief (AI-04). */
   /** The visitor's latest browser snapshot as prompt lines (P1). */
-  async #technicalContext(ref: ConversationRef): Promise<string[]> {
+  async #technicalContext(ref: ConversationRef): Promise<{ lines: string[]; timezone: string | null }> {
     const row = await this.env.DB.prepare("SELECT context FROM debug_snapshots WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1")
       .bind(ref.conversationId)
       .first<{ context: string }>();
-    if (!row) return [];
+    if (!row) return { lines: [], timezone: null };
     const context = JSON.parse(row.context) as DebugContext;
-    return [`Page: ${context.page.url}${context.page.title ? ` ("${context.page.title}")` : ""}`, ...describeEvents(context).slice(-25)];
+    return {
+      lines: [`Page: ${context.page.url}${context.page.title ? ` ("${context.page.title}")` : ""}`, ...describeEvents(context).slice(-25)],
+      timezone: context.timezone || null,
+    };
   }
 
-  async #handoff(ref: ConversationRef, reason: string, visitorText: string, provider?: LlmProvider, history?: Message[], technical: string[] = []): Promise<void> {
+  async #handoff(ref: ConversationRef, reason: string, visitorText: string, model?: AgentModel, history?: Message[], technical: string[] = []): Promise<void> {
     const changed = await this.env.DB.prepare("UPDATE conversations SET handling = 'human', status = 'open' WHERE id = ? AND handling = 'ai'")
       .bind(ref.conversationId)
       .run();
@@ -521,19 +517,19 @@ export class Conversation extends DurableObject<Env> {
     await this.#insert(ref, { authorType: "system", authorId: null, authorName: null, body: visitorText, clientMsgId: `${key}:visitor`, meta: { handoffReason: reason } });
 
     let brief = "";
-    if (provider && history) {
+    if (model && history) {
       try {
         const transcript =
           history.map((m) => `${m.authorType === "visitor" ? "Customer" : m.authorType === "ai" ? "AI" : "Agent"}: ${m.body}`).join("\n") +
           (technical.length ? `\n\nTechnical context from the customer's browser:\n${technical.join("\n")}` : "");
-        let out = "";
-        const work = (async () => {
-          for await (const e of provider.stream({ instructions: briefPrompt(), messages: [{ role: "user", content: transcript.slice(-6000) }] })) {
-            if (e.type === "text-delta") out += e.text;
-          }
-        })();
-        await Promise.race([work, new Promise((resolve) => setTimeout(resolve, 20_000))]);
-        brief = out.trim();
+        const { text } = await generateText({
+          model: model.model,
+          ...model.prompt(briefPrompt()),
+          messages: [{ role: "user", content: transcript.slice(-6000) }],
+          maxOutputTokens: 400,
+          abortSignal: AbortSignal.timeout(20_000),
+        });
+        brief = text.trim();
       } catch (error) {
         console.error("handoff brief failed:", error);
       }
@@ -549,14 +545,28 @@ export class Conversation extends DurableObject<Env> {
     });
   }
 
-  async #recordUsage(workspaceId: string, month: string, usage: unknown): Promise<void> {
-    const u = (usage ?? {}) as { input_tokens?: number; output_tokens?: number; prompt_tokens?: number; completion_tokens?: number };
+  async #recordUsage(workspaceId: string, month: string, usage: { inputTokens: number; outputTokens: number }): Promise<void> {
     await this.env.DB.prepare(
       `INSERT INTO ai_usage (workspace_id, month, replies, input_tokens, output_tokens) VALUES (?1, ?2, 1, ?3, ?4)
        ON CONFLICT (workspace_id, month) DO UPDATE SET replies = replies + 1, input_tokens = input_tokens + ?3, output_tokens = output_tokens + ?4`,
     )
-      .bind(workspaceId, month, u.input_tokens ?? u.prompt_tokens ?? 0, u.output_tokens ?? u.completion_tokens ?? 0)
+      .bind(workspaceId, month, usage.inputTokens, usage.outputTokens)
       .run();
+  }
+
+  /** AI-11: one row per tool call; agents see them next to the conversation. */
+  async #recordAction(ref: ConversationRef, messageSeq: number, configVersion: number | null, action: ToolAction): Promise<void> {
+    try {
+      await this.env.DB.prepare(
+        `INSERT INTO ai_actions (id, workspace_id, conversation_id, message_seq, config_version, tool, input, output, status, http_status, duration_ms, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(newId("act"), ref.workspaceId, ref.conversationId, messageSeq, configVersion, action.tool, JSON.stringify(action.input), action.output, action.status, action.httpStatus, action.durationMs, Date.now())
+        .run();
+      this.#broadcast({ type: "ai_action", tool: action.tool, status: action.status }, { agentsOnly: true });
+    } catch (error) {
+      console.error("recording AI action failed:", error);
+    }
   }
 
   // ---------- fan-out ----------

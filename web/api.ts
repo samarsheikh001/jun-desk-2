@@ -7,9 +7,14 @@ import {
 
 export class ApiError extends Error {
   readonly code: string;
-  constructor(code: string, message: string) {
+  readonly status: number;
+  /** The whole `error` object, for endpoints that add fields (e.g. config `issues`). */
+  readonly detail: Record<string, unknown>;
+  constructor(code: string, message: string, status = 0, detail: Record<string, unknown> = {}) {
     super(message);
     this.code = code;
+    this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -21,7 +26,7 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
     credentials: "same-origin",
   });
   const json = (await response.json().catch(() => ({}))) as { error?: { code: string; message: string } };
-  if (!response.ok) throw new ApiError(json.error?.code ?? "http_error", json.error?.message ?? `Request failed (${response.status})`);
+  if (!response.ok) throw new ApiError(json.error?.code ?? "http_error", json.error?.message ?? `Request failed (${response.status})`, response.status, json.error ?? {});
   return json as T;
 }
 

@@ -6,6 +6,7 @@ import { conversations } from "./routes/conversations.ts";
 import { files } from "./routes/files.ts";
 import { widget } from "./routes/widget.ts";
 import { workspaces } from "./routes/workspaces.ts";
+import { agent } from "./routes/agent.ts";
 import { HttpError, type AppEnv } from "./types.ts";
 
 export { Conversation } from "./conversation.ts";
@@ -40,6 +41,7 @@ app.route("/", conversations);
 app.route("/", widget);
 app.route("/", files);
 app.route("/", ai);
+app.route("/", agent);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "No such API route." } }, 404));
 

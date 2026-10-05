@@ -30,6 +30,26 @@ Turn it on in **Settings → AI assistant** and add your docs under **Knowledge*
 - **OpenAI**: `npx wrangler secret put OPENAI_API_KEY`. Optional `OPENAI_BASE_URL` to route through Cloudflare AI Gateway.
 - **ChatGPT sign-in** (local development only): add `JUN_DEV_CHATGPT=1` to `.dev.vars`, then use "Sign in with ChatGPT" in Settings. OpenAI allows ChatGPT plan usage for open-source apps running on your own machine; deployed desks must use an API key or Workers AI.
 
+## Support agent as code
+
+The AI's persona, procedures, tools and test cases are plain files. Edit them on the **Agent** page, or keep them in git and use the `jun` CLI (from a checkout of this repo; create a token in Settings → API tokens):
+
+```sh
+npm run jun -- login https://your-desk.example.com
+npm run jun -- init support-agent     # or: pull support-agent (the desk's live config)
+npm run jun -- eval support-agent     # run evals/*.yaml and replay recent real chats against your edits
+npm run jun -- push support-agent -m "Refund window is now 30 days"
+```
+
+| File | What |
+|---|---|
+| `AGENTS.md` | Persona and rules. Frontmatter: `maxReplies`, `handoffTopics` |
+| `skills/<name>/SKILL.md` | Procedures in plain language ([Agent Skills](https://agentskills.io) format: `name`, `description`) |
+| `tools/<name>.yaml` | HTTP lookups the AI may call. Secrets: `{secrets.NAME}` in headers, set with `npx wrangler secret put JUN_SECRET_NAME` |
+| `evals/<name>.yaml` | Test cases: a customer message and the expected outcome, tools, or criteria |
+
+Every save is a version (the Agent page shows history and can restore). In CI, set `JUN_DESK_URL` and `JUN_DESK_TOKEN` and run `jun eval --fail-on-change`.
+
 ## Develop
 
 Requires Node 22.18+.
@@ -44,10 +64,10 @@ npm run dev                      # dashboard + Worker on http://localhost:5173
 |---|---|
 | `npm run dev` | Applies local D1 migrations, then runs Vite with the Worker in the Workers runtime |
 | `npm run build` then `npm run deploy` | Build; then deploy to your Cloudflare account with remote D1 migrations (handles first install and upgrades). Set the secret once with `npx wrangler secret put SETUP_TOKEN` |
-| `npm test` | Unit tests (`packages/`) |
-| `npm run test:e2e` | Auth, chat and AI end to end against a dev server on a fresh DB: run `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then `BASE_URL=http://localhost:5174 npm run test:e2e`. Uses real Workers AI |
+| `npm test` | Unit tests (`packages/`, `worker/`, `shared/`) |
+| `npm run test:e2e` | Auth, chat, AI, debug context and agent-as-code end to end against a dev server on a fresh DB: run `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then `BASE_URL=http://localhost:5174 npm run test:e2e`. Uses real Workers AI |
 | `npm run typecheck` | Packages, Worker and dashboard |
-| `npm run jun -- <command>` | Developer CLI (`login chatgpt`, `ask`, `chat`, `models`) |
+| `npm run jun -- <command>` | `jun` CLI: `login <desk-url>`, `init`, `pull`, `push`, `eval`; dev LLM: `login chatgpt`, `ask`, `chat`, `models` |
 
 Layout: `worker/` (API, Durable Objects), `web/` (dashboard), `migrations/` (D1), `packages/` (`llm`, `cli`), `docs/` (research, backlog, decisions, build plan).
 

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
-import type { ConversationStatus } from "../../shared/protocol.ts";
+import type { AiAction, ConversationStatus } from "../../shared/protocol.ts";
 import { requireUser } from "../auth/session.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
 import { loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
@@ -126,6 +126,30 @@ conversations.get("/conversations/:cid/context", async (c) => {
   events.sort((a, b) => b.t - a.t);
   const { events: _latestEvents, ...latest } = snapshots[0]!;
   return c.json({ context: latest, events: events.slice(0, 100), issueCount: events.filter(isIssue).length });
+});
+
+// AI-11: tool calls the AI made in this conversation, newest last.
+conversations.get("/conversations/:cid/actions", async (c) => {
+  const ref = await requireConversation(c, c.req.param("cid"));
+  const rows = await c.env.DB.prepare(
+    `SELECT id, message_seq, config_version, tool, input, output, status, http_status, duration_ms, created_at
+     FROM ai_actions WHERE conversation_id = ? ORDER BY created_at LIMIT 200`,
+  )
+    .bind(ref.conversationId)
+    .all<{ id: string; message_seq: number; config_version: number | null; tool: string; input: string; output: string | null; status: "ok" | "error"; http_status: number | null; duration_ms: number; created_at: number }>();
+  const actions: AiAction[] = rows.results.map((r) => ({
+    id: r.id,
+    messageSeq: r.message_seq,
+    configVersion: r.config_version,
+    tool: r.tool,
+    input: JSON.parse(r.input) as Record<string, unknown>,
+    output: r.output,
+    status: r.status,
+    httpStatus: r.http_status,
+    durationMs: r.duration_ms,
+    createdAt: r.created_at,
+  }));
+  return c.json({ actions });
 });
 
 conversations.patch("/conversations/:cid", async (c) => {

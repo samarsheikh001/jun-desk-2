@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatEventTime, isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
+import type { AiAction } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 
 interface ContextResponse {
@@ -63,18 +64,50 @@ function EventRow({ event, timezone }: { event: DebugEvent; timezone: string }) 
  * P1: what the visitor's browser saw (errors, failed requests, pages visited) next to the
  * conversation, so agents don't have to ask "what browser are you on?".
  */
+/** AI-11: what the AI looked up while answering, with what it sent and got back. */
+function AiActions({ actions }: { actions: AiAction[] }) {
+  if (!actions.length) return null;
+  return (
+    <>
+      <h3>AI actions</h3>
+      <ul className="ai-actions">
+        {actions.map((a) => (
+          <li key={a.id}>
+            <div className="row">
+              <code className="strong">{a.tool}</code>
+              <span className={a.status === "ok" ? "muted" : "error"}>{a.status === "ok" ? "✓" : "failed"}{a.httpStatus ? ` · ${a.httpStatus}` : ""}</span>
+              <span className="spacer" />
+              <span className="muted">{a.durationMs} ms</span>
+            </div>
+            <div className="muted">{Object.entries(a.input).map(([k, v]) => `${k}: ${String(v)}`).join(", ") || "no input"}</div>
+            {a.output && (
+              <details>
+                <summary className="small">Result{a.configVersion ? ` (config v${a.configVersion})` : ""}</summary>
+                <pre>{a.output}</pre>
+              </details>
+            )}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 export function DebugPanel({ conversationId, refreshKey }: { conversationId: string; refreshKey: number }) {
   const [data, setData] = useState<ContextResponse | null>(null);
+  const [actions, setActions] = useState<AiAction[]>([]);
   const [onlyIssues, setOnlyIssues] = useState(false);
 
   useEffect(() => {
     api<ContextResponse>(`/conversations/${conversationId}/context`).then(setData, () => setData(null));
+    api<{ actions: AiAction[] }>(`/conversations/${conversationId}/actions`).then((r) => setActions(r.actions), () => setActions([]));
   }, [conversationId, refreshKey]);
 
   if (!data) return <aside className="debug-panel muted small pad">Loading…</aside>;
   if (!data.context) {
     return (
       <aside className="debug-panel">
+        <AiActions actions={actions} />
         <h3>Customer context</h3>
         <p className="muted small">No browser details for this conversation. They appear when the visitor writes from a page with the widget installed.</p>
       </aside>
@@ -84,6 +117,7 @@ export function DebugPanel({ conversationId, refreshKey }: { conversationId: str
   const shown = onlyIssues ? data.events.filter(isIssue) : data.events;
   return (
     <aside className="debug-panel">
+      <AiActions actions={actions} />
       <h3>Customer context</h3>
       <dl className="env small">
         <dt>Page</dt>

@@ -75,21 +75,21 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | AI-02 | "I don't know" + handoff when confidence is low (no guessing) | v1 | shipped | Shipped M2: prompt requires HANDOFF when sources lack the answer; verified it hands off rather than guessing | 03 |
 | AI-03 | Escalation rules: asks for human, N turns unresolved, negative sentiment, deny-listed intents | v1 | shipped | Shipped M2: asks for a person (regex + model), 8 AI turns, monthly cap, AI errors. Sentiment-based escalation not yet | 03 |
 | AI-04 | Structured handoff brief: identity, intent, what was tried, suggested next step | v1 | shipped | Shipped M2: internal note with reason + AI-written Issue/Tried/Next brief (facts from transcript only) | 03 |
-| AI-05 | Custom tools / actions via HTTP endpoints (lookups) | v1 | agreed | E.g. order status, account info | 01, 03 |
+| AI-05 | Custom tools / actions via HTTP endpoints (lookups) | v1 | shipped | Shipped M5: `tools/<name>.yaml` (GET/POST, input placeholders, Worker-secret headers, `pick` fields, 10 s timeout, 4 KB to the model). Failures are explained, not guessed | 01, 03 |
 | AI-06 | Approval gate for risky actions (refund, cancel): human or customer confirms | v2 | proposed | AI SDK `needsApproval` pattern | 03 |
 | AI-07 | Persona, tone and guidance instructions per workspace | v1 | shipped | Shipped M2: guidance text in Settings → AI assistant | |
 | AI-08 | Prompt-injection and abuse guardrails | v1 | shipped | Shipped M2 (prompt-level): ignores instructions in sources/messages; no dedicated classifier yet | 03 |
-| AI-09 | Procedures: plain-language multi-step workflows with per-step policy | v2 | proposed | Decagon AOPs / Fin Procedures | 01 |
+| AI-09 | Procedures: plain-language multi-step workflows with per-step policy | v2 | proposed | Decagon AOPs / Fin Procedures. Basic version shipped with AI-18 (plain-language procedures as SKILL.md files); per-step policy still v2 | 01 |
 | AI-10 | Simulation and regression testing: replay past conversations before publishing changes | v2 | proposed | Fin/Decagon have it; SMB tools don't | 01, 03 |
-| AI-11 | Action audit log (tool, args, approval, result) | v1 | agreed | Needed for trust, debugging and evals | 03 |
+| AI-11 | Action audit log (tool, args, approval, result) | v1 | shipped | Shipped M5: `ai_actions` table (tool, input, output, HTTP status, duration, config version); "AI actions" in the inbox side panel; never sent to visitors. Approval column waits for AI-06 | 03 |
 | AI-12 | Suggested KB articles mined from escalated conversations | v3 | proposed | Chatwoot FAQ suggestions / Duet Apprentice | 01 |
 | AI-13 | Agent builder from SOPs and transcripts ("write my procedure") | later | proposed | Sierra Ghostwriter | 01 |
 | AI-14 | MCP client: connect customer's MCP servers as tools | v2 | proposed | | 03 |
 | AI-15 | Desk exposed as an MCP server (query conversations, KB) | v3 | proposed | | 03 |
 | AI-16 | Model routing: Haiku for triage, Sonnet for answers, Opus for hard cases and eval grading | v1 | agreed | One model per workspace in M2 (configurable). Routing (small model for triage) not yet | 03 |
 | AI-17 | Gateway for customers' own AI agents as a channel | later | proposed | Decagon launched this 2026-10-01; watch adoption | 01 |
-| AI-18 | Agent config as code: procedures, persona, tools and guardrails as files in a git repo; dashboard edits the same config | v1 | agreed | **P3**. Sierra has it (enterprise-only); no OSS desk does | 05 |
-| AI-19 | Eval runner: replay past conversations against a config change, show answer diffs; CLI first, then GitHub Action with PR comment | v1 | agreed | **P3**. Builds on AI-10. v1 = CLI only; GitHub Action in v2 (D-12) | 05 |
+| AI-18 | Agent config as code: procedures, persona, tools and guardrails as files in a git repo; dashboard edits the same config | v1 | shipped | Shipped M5: AGENTS.md + skills/*/SKILL.md + tools/*.yaml + evals/*.yaml; versions in D1; Agent page edits the same files; `jun init/pull/push` with API tokens; conflict rules in D-22 | 05 |
+| AI-19 | Eval runner: replay past conversations against a config change, show answer diffs; CLI first, then GitHub Action with PR comment | v1 | shipped | Shipped M5: `jun eval` runs evals/*.yaml (outcome, tools, LLM-judged criteria) and replays recent real conversations with live vs candidate config (temperature 0, judge for substance); NDJSON stream; `--fail-on-change`, `--mock-tools` for CI. GitHub Action still v2 | 05 |
 
 ## K — Knowledge base
 
@@ -192,7 +192,7 @@ Applies to the paid hosted cloud (D-04). B-03 also applies to self-hosters' own 
 | T-06 | Integrations: HubSpot/Salesforce CRM, Stripe (subscription lookups) | v3 | proposed | Refocused for B2B (D-01); Shopify dropped | |
 | T-07 | Open-source, self-hostable on the user's own Cloudflare account. Server/dashboard AGPL-3.0; widget, SDKs, config format MIT; CLA for contributors | v1 | building | AGPL LICENSE + CONTRIBUTING added (M0). CLA bot and text not set up yet (D-14) | 04 |
 | T-09 | "Deploy to Cloudflare" button: provisions D1, DOs, Vectorize, R2, Workers AI; prompts for secrets | v1 | building | Config + button in README (M0). Deployed via `npm run deploy` to jun-desk.samarsheikh001.workers.dev on 2026-10-04 (auto-provisioned D1). The button itself is untested: the repo is private | 04 |
-| T-10 | LLM provider choice: Claude (BYO key) recommended, Workers AI zero-key fallback | v1 | shipped | Shipped M2: Workers AI (zero-key default), OpenAI API key (OPENAI_API_KEY secret, AI Gateway via OPENAI_BASE_URL), ChatGPT sign-in dev-only | 04 |
+| T-10 | LLM provider choice: Claude (BYO key) recommended, Workers AI zero-key fallback | v1 | shipped | Shipped M2: Workers AI (zero-key default, Mistral Small 3.1 since M5), OpenAI API key (OPENAI_API_KEY secret, AI Gateway via OPENAI_BASE_URL), ChatGPT sign-in dev-only. M5: all providers through the AI SDK | 04 |
 | T-11 | First-run setup wizard: create admin, connect LLM, crawl site, copy widget snippet | v1 | agreed | One-click deploy should end in a working bot in minutes | 04 |
 | T-13 | Slack app manifest + guided setup: self-hoster creates their own Slack app in a few clicks from a bundled manifest | v1 | agreed | Each self-hosted install needs its own Slack app; this keeps one-click feel. D-13 | 04 |
 | T-15 | Sign in with ChatGPT as a **dev-only** LLM provider + `jun` CLI (`login`, `ask`, `chat`, `models`); release builds use an API key | v1 | agreed | D-10. Built 2026-10-04 in `packages/llm`, `packages/cli`. Must never ship enabled for visitor traffic | 06 |

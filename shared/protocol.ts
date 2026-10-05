@@ -16,6 +16,8 @@ export interface MessageMeta {
   sources?: Source[];
   /** Why the AI handed off (on handoff system messages). */
   handoffReason?: string;
+  /** Agent config version that wrote an AI answer (AI-18). */
+  configVersion?: number;
 }
 
 export interface Attachment {
@@ -78,6 +80,8 @@ export type ConversationEvent =
   | { type: "ai_status"; state: "thinking" | "idle" }
   /** `replace`: `text` is the whole reply so far (sent to late joiners), not an increment. */
   | { type: "ai_delta"; streamId: string; text: string; replace?: boolean }
+  /** Agents only: the AI called a tool (AI-11). Details via GET /api/conversations/:id/actions. */
+  | { type: "ai_action"; tool: string; status: "ok" | "error" }
   | { type: "error"; code: string; message: string; clientMsgId?: string };
 
 export interface PresenceEntry {
@@ -96,3 +100,17 @@ export const SOCKET_PROTOCOL = "jun";
 export const MAX_MESSAGE_LENGTH = 10_000;
 export const MAX_ATTACHMENTS = 10;
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** AI-11: one tool call the AI made (agents only). */
+export interface AiAction {
+  id: string;
+  messageSeq: number;
+  configVersion: number | null;
+  tool: string;
+  input: Record<string, unknown>;
+  output: string | null;
+  status: "ok" | "error";
+  httpStatus: number | null;
+  durationMs: number;
+  createdAt: number;
+}

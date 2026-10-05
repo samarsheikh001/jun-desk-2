@@ -74,7 +74,7 @@ test("model input excludes internal notes and system messages", () => {
 });
 
 test("system prompt numbers sources and keeps the handoff rule", () => {
-  const prompt = systemPrompt({ workspaceName: "Acme", instructions: "Be brief.", hits: [hit("Refunds", "https://acme.dev/refunds")] });
+  const prompt = systemPrompt({ workspaceName: "Acme", persona: "Be brief.", hits: [hit("Refunds", "https://acme.dev/refunds")] });
   assert.match(prompt, /\[1\] Refunds \(https:\/\/acme\.dev\/refunds\)/);
   assert.match(prompt, /HANDOFF: <short reason>/);
   assert.match(prompt, /Be brief\./);

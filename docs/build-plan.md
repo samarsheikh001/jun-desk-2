@@ -102,7 +102,9 @@
 
 ## M5 — P3: support agent as code ⭐
 
-*Demo: edit `agent/procedures/refund.md` in git, run `jun eval`, and see which past answers change before deploying.*
+*Demo: edit `support-agent/skills/refund/SKILL.md` in git, run `jun eval`, and see which past answers change before `jun push`.*
+
+**Status (2026-10-05): built locally, all tests pass (unit 53, e2e 50 incl. `e2e-agent` 8). Not deployed yet.** Engine and format: D-22.
 
 | ID | Feature | Size | |
 |---|---|---|---|

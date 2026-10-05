@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, registerPasskey, type Me } from "./api.ts";
 import { AiPanel } from "./AiPanel.tsx";
 import { useAction } from "./useAction.ts";
@@ -50,6 +50,7 @@ export function SettingsPage({ me }: { me: Me }) {
         </ul>
       </section>
 
+      {workspace && <TokensPanel workspaceId={workspace.workspaceId} />}
       {workspace && me.user && <TeamPanel workspaceId={workspace.workspaceId} myRole={workspace.role} myId={me.user.id} />}
     </main>
   );
@@ -206,6 +207,69 @@ function TeamPanel({ workspaceId, myRole, myId }: { workspaceId: string; myRole:
             ))}
           </ul>
         </>
+      )}
+    </section>
+  );
+}
+
+interface TokenRow {
+  id: string;
+  name: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
+/** Personal API tokens for the `jun` CLI (pull, push, eval). */
+function TokensPanel({ workspaceId }: { workspaceId: string }) {
+  const base = `/workspaces/${workspaceId}/tokens`;
+  const [tokens, setTokens] = useState<TokenRow[]>([]);
+  const [created, setCreated] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
+  const load = useCallback(async () => setTokens((await api<{ tokens: TokenRow[] }>(base)).tokens), [base]);
+  useEffect(() => {
+    load().catch(() => {});
+  }, [load]);
+
+  const create = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const name = String(new FormData(form).get("name"));
+    run(async () => {
+      setCreated((await api<{ token: string }>(base, { body: { name } })).token);
+      form.reset();
+      await load();
+    });
+  };
+
+  return (
+    <section className="panel">
+      <h2>API tokens</h2>
+      <p className="muted small">
+        For the <code>jun</code> CLI: keep the agent in git, run evals and push changes (<code>npm run jun -- login {window.location.origin}</code> in your Jun Desk checkout). A token acts as you, for this workspace's agent config only.
+      </p>
+      {created && (
+        <div className="invite">
+          <span className="small strong">Copy it now: it won't be shown again.</span>
+          <code className="small">{created}</code>
+          <button className="ghost small" onClick={() => { void navigator.clipboard?.writeText(created); }}>Copy</button>
+        </div>
+      )}
+      <form className="row" onSubmit={create} style={{ marginTop: 12 }}>
+        <input name="name" placeholder="Token name, e.g. laptop or GitHub Actions" required maxLength={80} style={{ flex: 1 }} />
+        <button disabled={busy}>Create token</button>
+      </form>
+      {error && <p className="error small">{error}</p>}
+      {tokens.length > 0 && (
+        <ul className="list">
+          {tokens.map((t) => (
+            <li key={t.id} className="row">
+              <span className="strong">{t.name}</span>
+              <span className="muted small">created {new Date(t.createdAt).toLocaleDateString()} · {t.lastUsedAt ? `last used ${new Date(t.lastUsedAt).toLocaleDateString()}` : "never used"}</span>
+              <span className="spacer" />
+              <button className="ghost small" disabled={busy} onClick={() => run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); })}>Revoke</button>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );

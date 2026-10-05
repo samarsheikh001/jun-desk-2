@@ -19,7 +19,7 @@
     "jun": "node packages/cli/src/index.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.web.json",
     "test": "node --test \"packages/*/src/**/*.test.ts\" \"worker/**/*.test.ts\" \"shared/**/*.test.ts\"",
-    "test:e2e": "node scripts/e2e-auth.ts && node scripts/e2e-chat.ts && node scripts/e2e-ai.ts && node scripts/e2e-debug.ts"
+    "test:e2e": "node scripts/e2e-auth.ts && node scripts/e2e-chat.ts && node scripts/e2e-ai.ts && node scripts/e2e-debug.ts && node scripts/e2e-agent.ts"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.62.5",
@@ -32,11 +32,16 @@
     "wrangler": "^4.147.0"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.83",
     "@simplewebauthn/browser": "^14.0.0",
     "@simplewebauthn/server": "^14.0.3",
+    "ai": "^7.0.127",
     "hono": "^4.13.13",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "workers-ai-provider": "^4.0.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
   },
   "cloudflare": {
     "bindings": {

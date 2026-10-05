@@ -60,7 +60,8 @@ ai.put("/workspaces/:id/ai", async (c) => {
   const cap = Number(body.monthlyReplyCap ?? 2000);
   if (!Number.isInteger(cap) || cap < 0 || cap > 1_000_000) throw new HttpError(400, "invalid_field", "Monthly cap must be a whole number.");
   const model = typeof body.model === "string" && body.model.trim() ? body.model.trim().slice(0, 100) : null;
-  const instructions = typeof body.instructions === "string" ? body.instructions.slice(0, 4000) : "";
+  // Guidance now lives in the agent config (AGENTS.md); the old field is kept unless sent.
+  const instructions = typeof body.instructions === "string" ? body.instructions.slice(0, 4000) : (await loadAiSettings(c.env, workspaceId)).instructions;
 
   await c.env.DB.prepare(
     `INSERT INTO ai_settings (workspace_id, enabled, provider, model, instructions, monthly_reply_cap, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)

@@ -174,7 +174,8 @@ function Thread({ conversationId, workspaceId, me, members }: { conversationId: 
   if (!conversation || !initial) return <div className="thread empty muted">Loading…</div>;
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "Teammate";
 
-  const visitorMessages = thread.messages.filter((m) => m.authorType === "visitor").length;
+  // Refresh the side panel when the visitor writes (new context) or the AI answers (new actions).
+  const visitorMessages = thread.messages.filter((m) => m.authorType === "visitor" || m.authorType === "ai").length;
   return (
     <div className="thread-wrap">
     <section className="thread">

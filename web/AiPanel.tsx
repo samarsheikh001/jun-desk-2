@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
+import { navigate } from "./lib/router.ts";
 import { useAction } from "./useAction.ts";
 
 type ProviderId = "openai" | "workers-ai" | "chatgpt";
@@ -47,7 +48,6 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
           enabled: data.get("enabled") === "on",
           provider,
           model: data.get("model"),
-          instructions: data.get("instructions"),
           monthlyReplyCap: Number(data.get("cap")),
         },
       });
@@ -108,10 +108,10 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
           <span>Model <span className="muted">(optional)</span></span>
           <input name="model" defaultValue={state.settings.model ?? ""} placeholder={state.defaults[provider]} disabled={!canEdit} />
         </label>
-        <label className="field">
-          <span>Guidance for the assistant <span className="muted">(tone, what to avoid, when to hand off)</span></span>
-          <textarea name="instructions" rows={4} defaultValue={state.settings.instructions} placeholder="Be friendly and brief. Never promise refunds; hand those to the team." disabled={!canEdit} />
-        </label>
+        <p className="small muted">
+          Tone, rules, procedures and tools are in{" "}
+          <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent"); }}>Agent</a>, as files you can also keep in git.
+        </p>
         <label className="field">
           <span>Monthly reply cap</span>
           <input name="cap" type="number" min={0} defaultValue={state.settings.monthlyReplyCap} disabled={!canEdit} />

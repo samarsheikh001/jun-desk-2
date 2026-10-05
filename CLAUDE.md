@@ -2,7 +2,7 @@
 
 An open-source, AI-first customer support desk for B2B SaaS, deployable to your own Cloudflare account in one click: an embeddable website widget, live visitor tracking, an AI agent that answers and takes actions, and a real-time inbox for human agents. Think Intercom/Fin, Chatbase, Crisp — rebuilt for 2026.
 
-## Current phase: building v1 (M0–M2 deployed; M4 built locally; M5 next)
+## Current phase: building v1 (M0–M2 and M4 deployed; M5 built locally; M6 next)
 
 Plan: `docs/build-plan.md`. Build milestone by milestone; keep the Deploy button working at every step.
 
@@ -11,29 +11,32 @@ Plan: `docs/build-plan.md`. Build milestone by milestone; keep the Deploy button
 npm workspaces. `packages/` TypeScript runs directly on Node ≥22.18 (type stripping, no build step); `worker/` and `web/` are bundled by Vite:
 - Only erasable TS syntax (no enums, namespaces or constructor parameter properties); relative imports use `.ts` extensions.
 - `packages/llm` uses web-standard APIs only (fetch, crypto.subtle, web streams) so it runs on Node and Cloudflare Workers. Node-only code goes in `packages/cli`.
-- `packages/` has zero runtime dependencies; the app uses Hono, React and SimpleWebAuthn. Add dependencies only with a clear reason.
+- `packages/` has zero runtime dependencies; the app uses Hono, React, SimpleWebAuthn, the AI SDK (`ai`, `workers-ai-provider`, `@ai-sdk/openai`, `zod` peer) and `yaml` (D-22). Add dependencies only with a clear reason.
 
 | Path | What |
 |---|---|
 | `worker/` | Hono API under `/api`. Durable Objects: `Conversation` (one per conversation: sockets, seq, write-through to D1) and `WorkspaceHub` (one per workspace: inbox events, presence). Routes: `auth`, `workspaces`, `conversations` (agents), `widget` (public, visitor token), `files` (R2). |
-| `worker/ai/` | M2 AI: `knowledge.ts` (sources, Queue crawl jobs, indexing), `extract.ts` (HTMLRewriter), `chunk.ts`, `embeddings.ts` (bge-m3), `knowledge-index.ts` (KnowledgeIndex DO: int8 vectors, in-memory search), `search.ts` (hybrid + rerank), `providers.ts` (Workers AI / OpenAI / dev ChatGPT), `agent.ts` (prompt, citations, handoff rules). AI turns run from the Conversation DO's alarm |
+| `worker/ai/` | M2 AI: `knowledge.ts` (sources, Queue crawl jobs, indexing), `extract.ts` (HTMLRewriter), `chunk.ts`, `embeddings.ts` (bge-m3), `knowledge-index.ts` (KnowledgeIndex DO: int8 vectors, in-memory search), `search.ts` (hybrid + rerank), `providers.ts` (`createModel`: AI SDK models for Workers AI / OpenAI / dev ChatGPT), `agent.ts` (prompt, citations, handoff rules). AI turns run from the Conversation DO's alarm |
+| `worker/ai/` (M5) | Support agent as code: `config.ts` (parse/validate AGENTS.md, skills, tools, evals; pure), `config-store.ts` (versions in D1), `tools.ts` (HTTP tools → AI SDK tools, audit callback), `run.ts` (**one AI reply**, shared by the Conversation DO and evals), `eval.ts` (`jun eval`: cases + replay, NDJSON), `workers-ai.ts` (binding wrapper that drops Workers AI's duplicate stream fields). Routes: `routes/agent.ts` (config, eval, API tokens) |
 | `shared/debug.ts` | P1 debug context: types, `redact`/`cleanUrl`/`sanitizeContext` (server-side masking; `public/widget.js` mirrors the rules in plain JS, keep them in sync), `describeEvents` for prompts |
 | `shared/protocol.ts` | Types and constants shared by Worker, dashboard and widget (socket events, message/conversation shapes) |
 | `web/widget/`, `widget.html` | The chat UI inside the widget iframe (served at `/widget?key=`) |
 | `public/widget.js` | Embeddable loader (MIT, plain JS, keep under 5 KB); `public/demo.html?key=` is a test page |
 | `web/` | React dashboard (Vite), served as the Worker's static assets |
 | `migrations/` | D1 migrations (`NNNN_name.sql`); applied by `npm run dev` (local) and `npm run deploy` (remote) |
-| `scripts/bench-models.ts` | Latency/behaviour comparison of Workers AI chat models on three support questions (run against the e2e server) |
-| `scripts/e2e-*.ts` | E2E on a separate dev server + DB (`JUN_STATE_DIR=.wrangler/e2e-state`, port 5174, see README) so your own local desk isn't wiped: `e2e-auth`, `e2e-chat`, `e2e-ai` (real Workers AI). Helpers in `e2e-lib.ts` |
+| `scripts/bench-models.ts` | Latency/behaviour comparison of Workers AI chat models on five support questions, incl. a tool call (run against the e2e server after `npm run test:e2e`) |
+| `scripts/e2e-*.ts` | E2E on a separate dev server + DB (`JUN_STATE_DIR=.wrangler/e2e-state`, port 5174, see README) so your own local desk isn't wiped: `e2e-auth`, `e2e-chat`, `e2e-ai`, `e2e-debug`, `e2e-agent` (real Workers AI; `e2e-agent` uses httpbin.org as the "order API" and runs the `jun` CLI). Helpers in `e2e-lib.ts` |
 
 | Package | What |
 |---|---|
 | `packages/llm` | Provider interface; `ChatGPTProvider` (Sign in with ChatGPT, **dev only**); `OpenAIProvider` (API key; for release). Responses API streaming, error mapping. |
-| `packages/cli` | `jun` CLI: `login chatgpt`, `logout`, `whoami`, `models`, `ask`, `chat`. Credentials in `~/.jun/chatgpt.json` (`$JUN_HOME` overrides). |
+| `packages/cli` | `jun` CLI. Desk: `login <url>`, `init`, `pull`, `push`, `eval` (API token in `~/.jun/desk.json`, or `JUN_DESK_URL`/`JUN_DESK_TOKEN` in CI; starter files in `template.ts`). Dev LLM: `login chatgpt`, `logout`, `whoami`, `models`, `ask`, `chat` (`~/.jun/chatgpt.json`). `$JUN_HOME` overrides `~/.jun`. |
 
 Commands: `npm run dev` · `npm test` · `npm run test:e2e` · `npm run typecheck` · `npm run build` · `npm run cf-typegen` (after changing `wrangler.jsonc`) · `npm run jun -- <command>`
 
 AI conventions: the AI only answers when `conversations.handling = 'ai'`; any agent reply, the visitor's "Talk to a person", a HANDOFF line from the model, the turn limit, the monthly cap or an AI error flips it to `human` with a public notice + internal brief. AI replies are idempotent per visitor message (`clientMsgId = ai:<seq>`). Internal messages (`internal = 1`) must never reach visitors (socket broadcast uses the `agent` tag; widget queries exclude them). Local dev: Workers AI always calls Cloudflare (needs `CLOUDFLARE_ACCOUNT_ID` in a gitignored `.env` when the login has several accounts); the dev server binds 127.0.0.1 for the ChatGPT loopback callback; workerd can't fetch its own dev server, so crawl tests use a public URL.
+
+Agent-as-code conventions (M5, D-22): models and the tool loop go through the AI SDK (`createModel` in `providers.ts`; `model.prompt(system)` because ChatGPT plan usage takes the system prompt as `instructions`). Never call Workers AI through `workers-ai-provider` without `dedupedAi`. Live chats and evals must both go through `runAgent`, so evals test what visitors get. Tool calls are recorded in `ai_actions` (agents only); tool secrets come only from Worker secrets named `JUN_SECRET_<NAME>`, in headers. API tokens (`jun_…`) work only on `/workspaces/:id/agent*` and `/cli/whoami`, for their own workspace. Keep `packages/cli/src/template.ts` AGENTS.md in sync with `DEFAULT_AGENTS_MD`.
 
 P1 conventions: never capture request/response bodies or storage; mask in the browser *and* on the server; debug context only reaches agents (`/api/conversations/:id/context`) and the AI prompt, never other visitors. The model's control lines (`HANDOFF:` at the start, `ESCALATE:` as the last line) are stripped from what streams to visitors (`streamVisible`).
 
@@ -41,7 +44,7 @@ Realtime conventions: the Worker authenticates every socket upgrade (agent cooki
 
 Worker conventions: throw `HttpError` for expected failures (rendered as `{ error: { code, message } }`); non-GET API requests must be JSON (CSRF guard in `worker/index.ts`); IDs are prefixed random strings (`newId("usr")`), timestamps are epoch ms; secrets/tokens are stored only as SHA-256 hashes.
 
-**Sign in with ChatGPT is development-only (D-10).** OpenAI allows plan usage for open-source, locally run apps spending the signed-in user's own plan. Released/deployed builds must use `OpenAIProvider` with an API key (or another API-key provider). Never wire `ChatGPTProvider` into anything that serves website visitors in a release. Use only OpenAI's documented flow, never the Codex `backend-api` workaround.
+**Sign in with ChatGPT is development-only (D-10).** OpenAI allows plan usage for open-source, locally run apps spending the signed-in user's own plan. Released/deployed builds must use an OpenAI API key (`OPENAI_API_KEY`), Workers AI, or another API-key provider. Never wire ChatGPT sign-in into anything that serves website visitors in a release. Use only OpenAI's documented flow, never the Codex `backend-api` workaround.
 
 ## Docs map
 

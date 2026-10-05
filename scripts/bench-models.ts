@@ -1,17 +1,20 @@
 // Compares Workers AI chat models on latency and behaviour for the support agent.
-// Run against a dev server whose DB already has the e2e knowledge (after `npm run test:e2e`):
+// Run against a dev server whose DB already has the e2e knowledge and agent config with the
+// lookup_order tool (after `npm run test:e2e`):
 //   BASE_URL=http://localhost:5174 node scripts/bench-models.ts [model ...]
 
 import { Client, SETUP_TOKEN, SoftAuthenticator, TestSocket } from "./e2e-lib.ts";
 
 const MODELS = process.argv.slice(2).length
   ? process.argv.slice(2)
-  : ["@cf/openai/gpt-oss-120b", "@cf/openai/gpt-oss-20b", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/qwen/qwen3-30b-a3b-fp8", "@cf/meta/llama-4-scout-17b-16e-instruct", "@cf/mistralai/mistral-small-3.1-24b-instruct"];
+  : ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-4-scout-17b-16e-instruct", "@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/openai/gpt-oss-20b", "@cf/openai/gpt-oss-120b", "@cf/zai-org/glm-4.7-flash"];
 
 const now = Date.now();
 const QUESTIONS = [
   { name: "knowledge", body: "How many days do I have to request a refund?", context: undefined },
   { name: "vague", body: "My dashboard won't load", context: undefined },
+  { name: "tool", body: "Where is my order A-1042?", context: undefined },
+  { name: "no-tool", body: "Do you have a refund policy?", context: undefined },
   {
     name: "bug",
     body: "Why can't I pay my invoice?",

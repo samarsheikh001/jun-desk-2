@@ -10,12 +10,25 @@ import {
   type ChatMessage,
   type LlmProvider,
 } from "@jun/llm";
+import { evaluate, init, login, pull, push } from "./desk.ts";
 import { loginWithChatGPT } from "./login.ts";
 import { FileCredentialStore } from "./store.ts";
 
 const HELP = `jun — Jun Desk developer CLI
 
-Usage:
+Support agent as code (talks to your deployed desk):
+  jun login <desk-url> [--token jun_…]   Connect to a desk with an API token (Settings → API tokens)
+  jun init [dir]                         Start a config folder (default: support-agent)
+  jun pull [dir]                         Download the desk's live agent config
+  jun push [dir] [-m "message"]          Validate and make the folder's config live (--force overwrites dashboard edits)
+  jun eval [dir]                         Run evals/*.yaml and replay recent conversations against the folder's config
+      --sample <n>       conversations to replay (default 20, 0 to skip)
+      --mock-tools       use each tool's mock: response instead of calling it
+      --no-cases         skip evals/*.yaml          --json   one JSON event per line
+      --fail-on-change   exit 1 if any replayed answer changes (for CI)
+  In CI, set JUN_DESK_URL and JUN_DESK_TOKEN instead of running jun login.
+
+Local LLM (development):
   jun login chatgpt [--no-browser]   Sign in with ChatGPT (dev only: uses your own plan)
   jun logout chatgpt                 Revoke and forget ChatGPT tokens
   jun whoami                         Show the signed-in ChatGPT account
@@ -61,6 +74,14 @@ async function main(argv: string[]): Promise<void> {
       model: { type: "string" },
       instructions: { type: "string" },
       "no-browser": { type: "boolean" },
+      token: { type: "string" },
+      message: { type: "string", short: "m" },
+      force: { type: "boolean" },
+      sample: { type: "string" },
+      "mock-tools": { type: "boolean" },
+      "no-cases": { type: "boolean" },
+      json: { type: "boolean" },
+      "fail-on-change": { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -74,7 +95,18 @@ async function main(argv: string[]): Promise<void> {
 
   switch (command) {
     case "login": {
-      if (arg !== "chatgpt") throw new Error("Usage: jun login chatgpt");
+      if (arg && /^https?:\/\//.test(arg)) {
+        let token = values.token ?? process.env.JUN_DESK_TOKEN;
+        if (!token) {
+          const rl = createInterface({ input: process.stdin, output: process.stdout });
+          token = (await rl.question("API token (Settings → API tokens): ")).trim();
+          rl.close();
+        }
+        const desk = await login(arg, token);
+        console.log(`Logged in to ${desk.workspaceName} at ${desk.url} as ${desk.user}.`);
+        return;
+      }
+      if (arg !== "chatgpt") throw new Error("Usage: jun login <desk-url>  or  jun login chatgpt");
       console.log("Note: ChatGPT sign-in is for local development only. Released builds use an OpenAI API key.\n");
       const result = await loginWithChatGPT(store, { openBrowser: !values["no-browser"] });
       console.log(`\nSigned in${result.email ? ` as ${result.email}` : ""}.${result.registered ? " (Registered this machine with OpenAI.)" : ""}`);
@@ -135,6 +167,21 @@ async function main(argv: string[]): Promise<void> {
       }
       return;
     }
+    case "init":
+      return init(arg ?? "support-agent");
+    case "pull":
+      return pull(arg ?? "support-agent");
+    case "push":
+      return push(arg ?? "support-agent", { ...(values.message ? { message: values.message } : {}), force: Boolean(values.force) });
+    case "eval":
+      return evaluate(arg ?? "support-agent", {
+        ...(values.sample !== undefined ? { sample: Number(values.sample) } : {}),
+        mockTools: Boolean(values["mock-tools"]),
+        cases: !values["no-cases"],
+        replay: values.sample !== "0",
+        json: Boolean(values.json),
+        failOnChange: Boolean(values["fail-on-change"]),
+      });
     default:
       throw new Error(`Unknown command "${command}".\n\n${HELP}`);
   }
