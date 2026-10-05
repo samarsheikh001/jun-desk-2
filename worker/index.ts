@@ -84,7 +84,8 @@ async function serveWidgetFrame(request: Request, env: Env): Promise<Response> {
 }
 
 /** Must match the daily entry in wrangler.jsonc `triggers.crons`. */
-const DAILY_CRON = "17 3 * * *";
+/** The run of the 15-minute schedule that also does the daily knowledge re-sync (03:15 UTC). */
+const isDailyRun = (scheduledTime: number) => { const d = new Date(scheduledTime); return d.getUTCHours() === 3 && d.getUTCMinutes() === 15; };
 
 export default {
   fetch(request, env, ctx) {
@@ -98,9 +99,9 @@ export default {
   async queue(batch, env) {
     await handleCrawlBatch(batch as MessageBatch<CrawlJob>, env);
   },
-  // Daily knowledge re-sync (DAILY_CRON); every 15 minutes, topic labels for quiet chats (A-02).
+  // Every 15 minutes, topic labels for quiet chats (A-02); once a day also the knowledge re-sync.
   async scheduled(controller, env, ctx) {
-    if (controller.cron === DAILY_CRON) ctx.waitUntil(resyncAll(env));
-    else ctx.waitUntil(labelAllWorkspaces(env));
+    if (isDailyRun(controller.scheduledTime)) ctx.waitUntil(resyncAll(env));
+    ctx.waitUntil(labelAllWorkspaces(env));
   },
 } satisfies ExportedHandler<Env>;
