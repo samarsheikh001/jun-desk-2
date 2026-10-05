@@ -1,6 +1,8 @@
 import { chatgptOAuth as oauth, tokensFromResponse, type ChatGPTCredentials } from "@jun/llm";
 import { Hono } from "hono";
-import { deleteSource, DEFAULT_MAX_PAGES, indexSnippet, removeDocument, startSync, type SourceSettings } from "../ai/knowledge.ts";
+import { MAX_KB_FILE_BYTES, MAX_KB_FILES } from "../../shared/protocol.ts";
+import { sniffFormat, titleFromName, UnsupportedFile, type FileFormat } from "../ai/file-extract.ts";
+import { deleteSource, DEFAULT_MAX_PAGES, fileKey, indexSnippet, removeDocument, startFileIndex, startSync, type SourceSettings } from "../ai/knowledge.ts";
 import { DEFAULT_MODELS, isLoopback, loadAiSettings, type ProviderId } from "../ai/providers.ts";
 import { searchKnowledge } from "../ai/search.ts";
 import { requireUser } from "../auth/session.ts";
@@ -238,7 +240,9 @@ ai.get("/workspaces/:id/knowledge", async (c) => {
   await memberRole(c, workspaceId);
   const rows = await c.env.DB.prepare(
     `SELECT id, kind, url, title, status, page_count AS pageCount, pending_jobs AS pendingJobs, error, last_synced_at AS lastSyncedAt, created_at AS createdAt,
-            (SELECT COUNT(*) FROM kb_chunks k WHERE k.source_id = s.id) AS chunkCount
+            json_extract(settings, '$.file.name') AS fileName, json_extract(settings, '$.file.size') AS fileSize,
+            (SELECT COUNT(*) FROM kb_chunks k WHERE k.source_id = s.id) AS chunkCount,
+            (SELECT COUNT(*) FROM kb_chunks k WHERE k.source_id = s.id AND k.embedded = 0) AS chunksWithoutVectors
      FROM kb_sources s WHERE workspace_id = ? ORDER BY created_at DESC`,
   )
     .bind(workspaceId)
@@ -278,12 +282,81 @@ ai.post("/workspaces/:id/knowledge/snippets", async (c) => {
   return c.json({ id });
 });
 
+// K-02: upload a file (raw body with X-Jun-Upload: 1 and a URI-encoded X-File-Name, like
+// attachments). The original goes to R2; a Queue job extracts and indexes it.
+const FILE_CONTENT_TYPES: Record<FileFormat, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  markdown: "text/markdown; charset=utf-8",
+  text: "text/plain; charset=utf-8",
+};
+const TOO_LARGE = `Files are limited to ${MAX_KB_FILE_BYTES / 1024 / 1024} MB.`;
+
+ai.post("/workspaces/:id/knowledge/files", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  if (c.req.header("x-jun-upload") !== "1") throw new HttpError(400, "upload_required", "Send the file as the request body with X-Jun-Upload: 1.");
+  if (Number(c.req.header("content-length") ?? 0) > MAX_KB_FILE_BYTES) throw new HttpError(400, "too_large", TOO_LARGE);
+  let name = "";
+  try {
+    name = decodeURIComponent(c.req.header("x-file-name") ?? "");
+  } catch {
+    // rejected below
+  }
+  name = name.replace(/[\\/\r\n"\0]/g, "_").trim().slice(0, 200);
+  if (!name) throw new HttpError(400, "invalid_field", "Send the file name in X-File-Name.");
+  const { n } = (await c.env.DB.prepare("SELECT COUNT(*) AS n FROM kb_sources WHERE workspace_id = ? AND kind = 'file'").bind(workspaceId).first<{ n: number }>())!;
+  if (n >= MAX_KB_FILES) throw new HttpError(400, "too_many_files", `A workspace can have up to ${MAX_KB_FILES} files. Remove some first.`);
+
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  if (bytes.byteLength > MAX_KB_FILE_BYTES) throw new HttpError(400, "too_large", TOO_LARGE);
+  let format: FileFormat;
+  try {
+    format = sniffFormat(name, bytes);
+  } catch (error) {
+    if (error instanceof UnsupportedFile) throw new HttpError(400, "unsupported_file", error.message);
+    throw error;
+  }
+
+  const id = newId("src");
+  const key = fileKey(workspaceId, id);
+  const title = titleFromName(name);
+  await c.env.FILES.put(key, bytes, { httpMetadata: { contentType: FILE_CONTENT_TYPES[format] } });
+  await c.env.DB.prepare("INSERT INTO kb_sources (id, workspace_id, kind, title, settings, created_at) VALUES (?, ?, 'file', ?, ?, ?)")
+    .bind(id, workspaceId, title, JSON.stringify({ file: { key, name, format, size: bytes.byteLength } } satisfies SourceSettings), Date.now())
+    .run();
+  await startFileIndex(c.env, id);
+  return c.json({ id, title, format, size: bytes.byteLength });
+});
+
+// K-02: the uploaded original, for the team (always a download).
+ai.get("/workspaces/:id/knowledge/:sourceId/file", async (c) => {
+  const workspaceId = c.req.param("id");
+  await memberRole(c, workspaceId);
+  const source = await c.env.DB.prepare("SELECT settings FROM kb_sources WHERE id = ? AND workspace_id = ? AND kind = 'file'")
+    .bind(c.req.param("sourceId"), workspaceId)
+    .first<{ settings: string }>();
+  const file = source ? (JSON.parse(source.settings) as SourceSettings).file : undefined;
+  const object = file ? await c.env.FILES.get(file.key) : null;
+  if (!file || !object) throw new HttpError(404, "not_found", "File not found.");
+  return new Response(object.body, {
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "sandbox; default-src 'none'",
+      "Cache-Control": "private, no-store",
+    },
+  });
+});
+
 ai.post("/workspaces/:id/knowledge/:sourceId/sync", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
   const source = await c.env.DB.prepare("SELECT kind FROM kb_sources WHERE id = ? AND workspace_id = ?").bind(c.req.param("sourceId"), workspaceId).first<{ kind: string }>();
   if (!source) throw new HttpError(404, "not_found", "Source not found.");
   if (source.kind === "website") await startSync(c.env, c.req.param("sourceId"));
+  else if (source.kind === "file") await startFileIndex(c.env, c.req.param("sourceId"));
   else await indexSnippet(c.env, c.req.param("sourceId"));
   return c.json({ ok: true });
 });
@@ -298,13 +371,15 @@ ai.get("/workspaces/:id/knowledge/:sourceId", async (c) => {
   if (!source) throw new HttpError(404, "not_found", "Source not found.");
   const settings = JSON.parse(source.settings) as SourceSettings;
   const documents = await c.env.DB.prepare(
-    `SELECT d.id, d.url, d.title, d.updated_at AS updatedAt, (SELECT COUNT(*) FROM kb_chunks k WHERE k.document_id = d.id) AS chunkCount
+    `SELECT d.id, d.url, d.title, d.updated_at AS updatedAt, (SELECT COUNT(*) FROM kb_chunks k WHERE k.document_id = d.id) AS chunkCount,
+            (SELECT COUNT(*) FROM kb_chunks k WHERE k.document_id = d.id AND k.embedded = 0) AS chunksWithoutVectors
      FROM kb_documents d WHERE d.source_id = ? AND d.content_hash IS NOT NULL ORDER BY d.url LIMIT 1000`,
   )
     .bind(source.id)
     .all();
+  const file = settings.file ? { name: settings.file.name, format: settings.file.format, size: settings.file.size } : null;
   return c.json({
-    source: { id: source.id, kind: source.kind, url: source.url, title: source.title, body: source.body, maxPages: settings.maxPages ?? DEFAULT_MAX_PAGES, exclude: settings.exclude ?? [] },
+    source: { id: source.id, kind: source.kind, url: source.url, title: source.title, body: source.body, maxPages: settings.maxPages ?? DEFAULT_MAX_PAGES, exclude: settings.exclude ?? [], file },
     documents: documents.results,
   });
 });
@@ -324,6 +399,14 @@ ai.patch("/workspaces/:id/knowledge/:sourceId", async (c) => {
     const snippet = body.body === undefined ? (source.body ?? "") : text(body, "body", { max: 20_000 });
     await c.env.DB.prepare("UPDATE kb_sources SET title = ?, body = ? WHERE id = ?").bind(title, snippet, sourceId).run();
     await indexSnippet(c.env, sourceId);
+    return c.json({ ok: true });
+  }
+  if (source.kind === "file") {
+    // Chunks carry the title (and FTS indexes it), so a new title means re-indexing.
+    if (title !== source.title) {
+      await c.env.DB.prepare("UPDATE kb_sources SET title = ? WHERE id = ?").bind(title, sourceId).run();
+      await startFileIndex(c.env, sourceId);
+    }
     return c.json({ ok: true });
   }
   const settings = JSON.parse(source.settings) as SourceSettings;
@@ -364,7 +447,7 @@ ai.delete("/workspaces/:id/knowledge/:sourceId/documents/:docId", async (c) => {
 ai.delete("/workspaces/:id/knowledge/:sourceId", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
-  await deleteSource(c.env, workspaceId, c.req.param("sourceId"));
+  if (!(await deleteSource(c.env, workspaceId, c.req.param("sourceId")))) throw new HttpError(404, "not_found", "Source not found.");
   return c.json({ ok: true });
 });
 

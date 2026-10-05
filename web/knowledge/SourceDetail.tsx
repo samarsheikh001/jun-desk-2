@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
+import { formatSize } from "../lib/thread.ts";
 import { useAction } from "../useAction.ts";
 
 // K-04: what a knowledge source contains, and the knobs to fix it: edit a snippet, cap or
 // skip pages of a website, remove a page (kept out of future syncs), see its indexed text.
+// K-02: an uploaded file shows its original (download) and the text indexed from it.
 
 interface Detail {
-  source: { id: string; kind: "website" | "snippet"; url: string | null; title: string; body: string | null; maxPages: number; exclude: string[] };
-  documents: { id: string; url: string; title: string | null; chunkCount: number; updatedAt: number }[];
+  source: {
+    id: string;
+    kind: "website" | "snippet" | "file";
+    url: string | null;
+    title: string;
+    body: string | null;
+    maxPages: number;
+    exclude: string[];
+    file: { name: string; format: string; size: number } | null;
+  };
+  documents: { id: string; url: string; title: string | null; chunkCount: number; chunksWithoutVectors: number; updatedAt: number }[];
 }
 
 function pathOf(url: string, base: string | null): string {
@@ -60,7 +71,9 @@ export function SourceDetail({ base, sourceId, canEdit, onChanged }: { base: str
         body:
           source.kind === "snippet"
             ? { title: data.get("title"), body: data.get("body") }
-            : { title: data.get("title"), maxPages: Number(data.get("maxPages")), exclude: String(data.get("exclude") ?? "") },
+            : source.kind === "file"
+              ? { title: data.get("title") }
+              : { title: data.get("title"), maxPages: Number(data.get("maxPages")), exclude: String(data.get("exclude") ?? "") },
       });
       await load();
       onChanged();
@@ -83,6 +96,15 @@ export function SourceDetail({ base, sourceId, canEdit, onChanged }: { base: str
             <span className="small">Text</span>
             <textarea name="body" rows={8} defaultValue={source.body ?? ""} disabled={!canEdit} />
           </label>
+        ) : source.kind === "file" ? (
+          source.file && (
+            <div className="row small">
+              <span className="muted">
+                {source.file.name} · {formatSize(source.file.size)}
+              </span>
+              <a href={`/api${url}/file`} download={source.file.name}>Download original</a>
+            </div>
+          )
         ) : (
           <>
             <label className="field">
@@ -97,13 +119,30 @@ export function SourceDetail({ base, sourceId, canEdit, onChanged }: { base: str
         )}
         {canEdit && (
           <div className="row">
-            <button className="small" disabled={busy}>{source.kind === "snippet" ? "Save and re-index" : "Save"}</button>
+            <button className="small" disabled={busy}>{source.kind === "website" ? "Save" : "Save and re-index"}</button>
             {source.kind === "website" && <span className="muted small">Page limits and skips apply on the next sync.</span>}
             {saved && <span className="muted small">Saved ✓</span>}
           </div>
         )}
         {error && <p className="error small">{error}</p>}
       </form>
+
+      {source.kind === "file" &&
+        documents.map((d) => (
+          <div key={d.id} className="kb-file-doc">
+            <div className="row">
+              <button className="link small" onClick={() => setOpen(open === d.id ? null : d.id)} title="Show what the AI can quote from this file">
+                {open === d.id ? "▾" : "▸"} Indexed text
+              </button>
+              <span className="spacer" />
+              <span className="muted small">
+                {d.chunkCount} chunk{d.chunkCount === 1 ? "" : "s"}
+                {d.chunksWithoutVectors > 0 ? ` (${d.chunksWithoutVectors} keyword search only)` : ""}
+              </span>
+            </div>
+            {open === d.id && <Chunks base={url} documentId={d.id} />}
+          </div>
+        ))}
 
       {source.kind === "website" && (
         <>
@@ -120,7 +159,7 @@ export function SourceDetail({ base, sourceId, canEdit, onChanged }: { base: str
                     {open === d.id ? "▾" : "▸"} {d.title || pathOf(d.url, source.url)}
                   </button>
                   <span className="spacer" />
-                  <span className="muted small">{d.chunkCount} chunk{d.chunkCount === 1 ? "" : "s"}</span>
+                  <span className="muted small">{d.chunkCount} chunk{d.chunkCount === 1 ? "" : "s"}{d.chunksWithoutVectors > 0 ? ` (${d.chunksWithoutVectors} keyword only)` : ""}</span>
                   <a className="small" href={d.url} target="_blank" rel="noreferrer">Open</a>
                   {canEdit && (
                     <button

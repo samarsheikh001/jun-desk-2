@@ -100,7 +100,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
 | K-01 | Website crawl with scheduled re-sync | v1 | shipped | Shipped M2: sitemap first, else link-following (depth 3, page cap), robots.txt, Queue jobs, content-hash skip, daily cron re-sync, removed pages pruned | 01, 03 |
-| K-02 | File upload (PDF, DOCX, MD, TXT) | v1 | agreed | | 01 |
+| K-02 | File upload (PDF, DOCX, MD, TXT) | v1 | shipped | Shipped 2026-10-05: drag-and-drop on the Knowledge page (≤ 10 MB each, ≤ 200 per workspace, type checked by extension and bytes); original in R2, indexed by a Queue job. PDF via Workers AI toMarkdown, DOCX by our own unzip + XML reader (no new dependency). Indexing no longer fails when embedding does: chunks stay keyword-searchable and a re-index or the daily cron adds vectors (also for pages and snippets) | 01 |
 | K-03 | Manual Q&A / snippets | v1 | shipped | Shipped M2: snippets (markdown headings become sections) | |
 | K-04 | Source management: see chunks, exclude pages, re-index | v1 | shipped | Shipped M7: per-source detail: indexed pages with chunk counts and their text, remove a page (kept out of future syncs), skip paths, page cap, edit snippets (re-indexed now) | |
 | K-05 | Hosted help centre (public articles, SEO) | v2 | proposed | Also the KB source | |

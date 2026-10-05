@@ -1,16 +1,26 @@
 import { newId } from "../lib/crypto.ts";
-import { blocksFromText, chunkBlocks, contentHash, decodeEntities } from "./chunk.ts";
+import { blocksFromText, chunkBlocks, contentHash, decodeEntities, type Block } from "./chunk.ts";
 import { embed } from "./embeddings.ts";
 import { extractPage } from "./extract.ts";
+import { blocksFromDocx, blocksFromMarkdown, blocksFromPlainText, cleanPdfMarkdown, decodeText, type FileFormat } from "./file-extract.ts";
 import { isExcluded, normalizeUrl } from "./urls.ts";
 
-// Knowledge sources: websites (crawled through a Queue) and snippets (indexed directly).
+// Knowledge sources: websites (crawled through a Queue), snippets (indexed directly) and
+// uploaded files (K-02: original in R2, extracted and indexed by a Queue job).
+//
+// Embedding can fail (e.g. Workers AI's daily free allocation, error 4006). Chunks are then
+// still stored in D1 + FTS with `embedded = 0`, so keyword search finds them, and
+// fillMissingVectors adds their vectors on a later re-index, sync or the daily cron.
 
 export type CrawlJob =
   | { type: "sync"; sourceId: string }
-  | { type: "page"; sourceId: string; syncToken: string; url: string; depth: number; follow: boolean };
+  | { type: "page"; sourceId: string; syncToken: string; url: string; depth: number; follow: boolean }
+  | { type: "file"; sourceId: string };
 
 export const DEFAULT_MAX_PAGES = 200;
+const MAX_PAGE_CHUNKS = 200;
+/** A file can be a whole manual: more chunks than a web page (~1.2 MB of text). */
+export const MAX_FILE_CHUNKS = 1000;
 const MAX_DEPTH = 3;
 const MAX_PAGE_BYTES = 2_000_000;
 const USER_AGENT = "JunDeskBot/0.1 (+https://github.com/samarsheikh001/jun-desk-2)";
@@ -19,7 +29,7 @@ const SKIP_EXTENSIONS = /\.(png|jpe?g|gif|webp|svg|ico|pdf|zip|gz|mp4|mp3|webm|w
 interface SourceRow {
   id: string;
   workspace_id: string;
-  kind: "website" | "snippet";
+  kind: "website" | "snippet" | "file";
   url: string | null;
   title: string;
   body: string | null;
@@ -32,7 +42,18 @@ export interface SourceSettings {
   disallow?: string[];
   /** K-04: pages the admin left out. Full URLs match exactly; "/path" entries are path prefixes ("*" = any). */
   exclude?: string[];
+  /** K-02: the uploaded original (R2 key under kb/<workspace>/). */
+  file?: FileInfo;
 }
+
+export interface FileInfo {
+  key: string;
+  name: string;
+  format: FileFormat;
+  size: number;
+}
+
+export const fileKey = (workspaceId: string, sourceId: string) => `kb/${workspaceId}/${sourceId}`;
 
 const index = (env: Env, workspaceId: string) => env.KNOWLEDGE_INDEX.getByName(workspaceId);
 
@@ -40,35 +61,84 @@ async function loadSource(env: Env, sourceId: string): Promise<SourceRow | null>
   return env.DB.prepare("SELECT id, workspace_id, kind, url, title, body, settings FROM kb_sources WHERE id = ?").bind(sourceId).first<SourceRow>();
 }
 
+const embeddingText = (c: { title: string; heading: string; text: string }) => `${c.title}\n${c.heading}\n${c.text}`;
+
+/** Vectors for these texts, or null when Workers AI fails (the chunks are kept for keyword search). */
+async function tryEmbed(env: Env, texts: string[]): Promise<number[][] | null> {
+  try {
+    return await embed(env, texts);
+  } catch (error) {
+    console.error("embedding failed, storing chunks for keyword search only:", error);
+    return null;
+  }
+}
+
 /** Chunk, embed and store text for one document (or snippet), replacing its old chunks. */
 async function indexText(
   env: Env,
   target: { workspaceId: string; sourceId: string; documentId: string | null; url: string | null; title: string },
-  blocks: ReturnType<typeof blocksFromText>,
-): Promise<number> {
-  const chunks = chunkBlocks(blocks).slice(0, 200);
-  const vectors = chunks.length ? await embed(env, chunks.map((c) => `${target.title}\n${c.heading}\n${c.text}`)) : [];
+  blocks: Block[],
+  maxChunks = MAX_PAGE_CHUNKS,
+): Promise<{ chunks: number; withoutVectors: number }> {
+  const chunks = chunkBlocks(blocks).slice(0, maxChunks);
+  const vectors = chunks.length ? await tryEmbed(env, chunks.map((c) => embeddingText({ title: target.title, ...c }))) : [];
 
   const old = await env.DB.prepare(target.documentId ? "SELECT id FROM kb_chunks WHERE document_id = ?" : "SELECT id FROM kb_chunks WHERE source_id = ? AND document_id IS NULL")
     .bind(target.documentId ?? target.sourceId)
     .all<{ id: string }>();
   if (old.results.length) await index(env, target.workspaceId).deleteChunks(old.results.map((r) => r.id));
 
-  const rows = chunks.map((c, position) => ({ id: newId("chk"), ...c, position }));
+  const rows = chunks.map((c, position) => ({ id: newId("chk"), heading: c.heading, text: c.text, position }));
+  // Rows go in as JSON arrays (one statement per ~400 KB), not one statement per chunk.
+  const groups: (typeof rows)[] = [];
+  let size = Infinity;
+  for (const row of rows) {
+    if (size > 400_000) {
+      groups.push([]);
+      size = 0;
+    }
+    groups[groups.length - 1]!.push(row);
+    size += row.text.length + row.heading.length + 64;
+  }
   await env.DB.batch([
     target.documentId
       ? env.DB.prepare("DELETE FROM kb_chunks WHERE document_id = ?").bind(target.documentId)
       : env.DB.prepare("DELETE FROM kb_chunks WHERE source_id = ? AND document_id IS NULL").bind(target.sourceId),
-    ...rows.map((r) =>
+    ...groups.map((group) =>
       env.DB.prepare(
-        "INSERT INTO kb_chunks (id, workspace_id, source_id, document_id, url, title, heading, text, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ).bind(r.id, target.workspaceId, target.sourceId, target.documentId, target.url, target.title, r.heading, r.text, r.position),
+        `INSERT INTO kb_chunks (id, workspace_id, source_id, document_id, url, title, heading, text, position, embedded)
+         SELECT json_extract(value, '$.id'), ?1, ?2, ?3, ?4, ?5, json_extract(value, '$.heading'), json_extract(value, '$.text'), json_extract(value, '$.position'), ?6
+         FROM json_each(?7)`,
+      ).bind(target.workspaceId, target.sourceId, target.documentId, target.url, target.title, vectors ? 1 : 0, JSON.stringify(group)),
     ),
   ]);
-  if (rows.length) {
-    await index(env, target.workspaceId).upsert(rows.map((r, i) => ({ chunkId: r.id, sourceId: target.sourceId, vector: vectors[i]! })));
+  // In slices: a 1,000-chunk file is ~8 MB of vectors, too much for one RPC.
+  for (let i = 0; vectors && i < rows.length; i += 200) {
+    const slice = rows.slice(i, i + 200);
+    await index(env, target.workspaceId).upsert(slice.map((r, j) => ({ chunkId: r.id, sourceId: target.sourceId, vector: vectors[i + j]! })));
   }
-  return rows.length;
+  return { chunks: rows.length, withoutVectors: vectors ? 0 : rows.length };
+}
+
+/**
+ * Adds vectors to a source's chunks that were stored without one (embedding failed earlier).
+ * Stops quietly if embedding still fails. Returns how many chunks are still without a vector.
+ */
+export async function fillMissingVectors(env: Env, workspaceId: string, sourceId: string): Promise<number> {
+  for (let round = 0; round < 20; round++) {
+    const rows = await env.DB.prepare("SELECT id, title, heading, text FROM kb_chunks WHERE source_id = ? AND embedded = 0 ORDER BY rowid LIMIT 64")
+      .bind(sourceId)
+      .all<{ id: string; title: string; heading: string; text: string }>();
+    if (rows.results.length === 0) return 0;
+    const vectors = await tryEmbed(env, rows.results.map(embeddingText));
+    if (!vectors) break;
+    await index(env, workspaceId).upsert(rows.results.map((r, i) => ({ chunkId: r.id, sourceId, vector: vectors[i]! })));
+    await env.DB.prepare("UPDATE kb_chunks SET embedded = 1 WHERE id IN (SELECT value FROM json_each(?))")
+      .bind(JSON.stringify(rows.results.map((r) => r.id)))
+      .run();
+  }
+  const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM kb_chunks WHERE source_id = ? AND embedded = 0").bind(sourceId).first<{ n: number }>();
+  return left?.n ?? 0;
 }
 
 export async function indexSnippet(env: Env, sourceId: string): Promise<void> {
@@ -97,9 +167,90 @@ export async function removeDocument(env: Env, workspaceId: string, sourceId: st
   return true;
 }
 
-export async function deleteSource(env: Env, workspaceId: string, sourceId: string): Promise<void> {
+/** Removes a source: its vectors, its D1 rows (documents, chunks and FTS rows cascade) and an uploaded original. */
+export async function deleteSource(env: Env, workspaceId: string, sourceId: string): Promise<boolean> {
+  const row = await env.DB.prepare("DELETE FROM kb_sources WHERE id = ? AND workspace_id = ? RETURNING settings")
+    .bind(sourceId, workspaceId)
+    .first<{ settings: string }>();
+  if (!row) return false;
   await index(env, workspaceId).deleteSource(sourceId);
-  await env.DB.prepare("DELETE FROM kb_sources WHERE id = ? AND workspace_id = ?").bind(sourceId, workspaceId).run();
+  const { file } = JSON.parse(row.settings) as SourceSettings;
+  if (file) await env.FILES.delete(file.key);
+  return true;
+}
+
+// ---------- uploaded files (K-02) ----------
+
+/** Queues (re-)extraction and indexing of an uploaded file. */
+export async function startFileIndex(env: Env, sourceId: string): Promise<void> {
+  await env.DB.prepare("UPDATE kb_sources SET status = 'pending', error = NULL WHERE id = ?").bind(sourceId).run();
+  await env.CRAWL_QUEUE.send({ type: "file", sourceId } satisfies CrawlJob);
+}
+
+/**
+ * PDFs go through Workers AI's document conversion (toMarkdown: free for PDFs, no extra
+ * dependency). Embedded images aren't described: that would use AI models and the free allocation.
+ */
+async function pdfToMarkdown(env: Env, name: string, bytes: Uint8Array): Promise<string> {
+  let result;
+  try {
+    result = await env.AI.toMarkdown(
+      { name, blob: new Blob([bytes], { type: "application/pdf" }) },
+      { conversionOptions: { pdf: { images: { convert: false }, metadata: false } } },
+    );
+  } catch (error) {
+    throw new Error(`Couldn't convert this PDF right now (${(error as Error).message}). Re-index to try again, or upload it as DOCX or text.`);
+  }
+  if (result.format === "error") throw new Error(`Couldn't read this PDF: ${result.error}`);
+  return result.data;
+}
+
+async function extractFile(env: Env, file: FileInfo, bytes: Uint8Array): Promise<Block[]> {
+  switch (file.format) {
+    case "markdown":
+      return blocksFromMarkdown(decodeText(bytes, file.name));
+    case "text":
+      return blocksFromPlainText(decodeText(bytes, file.name));
+    case "docx":
+      return blocksFromDocx(bytes);
+    case "pdf":
+      return blocksFromMarkdown(cleanPdfMarkdown(await pdfToMarkdown(env, file.name, bytes), file.name));
+  }
+}
+
+async function runFile(env: Env, sourceId: string): Promise<void> {
+  const source = await loadSource(env, sourceId);
+  if (!source || source.kind !== "file") return;
+  const { file } = JSON.parse(source.settings) as SourceSettings;
+  if (!file) return;
+  await env.DB.prepare("UPDATE kb_sources SET status = 'syncing', error = NULL WHERE id = ?").bind(sourceId).run();
+  try {
+    const object = await env.FILES.get(file.key);
+    if (!object) throw new Error("The uploaded file is missing from storage. Remove it and upload it again.");
+    const blocks = await extractFile(env, file, new Uint8Array(await object.arrayBuffer()));
+    if (!blocks.some((b) => b.kind === "text")) {
+      throw new Error(file.format === "pdf" ? "No text found in this PDF. Scanned PDFs (pictures of pages) can't be read yet." : "No text found in this file.");
+    }
+    const hash = await contentHash(`${source.title}\n${blocks.map((b) => b.text).join("\n")}`);
+    const doc = (await env.DB.prepare(
+      `INSERT INTO kb_documents (id, workspace_id, source_id, url, title, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (source_id, url) DO UPDATE SET title = excluded.title
+       RETURNING id, content_hash`,
+    )
+      .bind(newId("doc"), source.workspace_id, sourceId, `file:${file.name}`, source.title, Date.now())
+      .first<{ id: string; content_hash: string | null }>())!;
+    const existing = await env.DB.prepare("SELECT COUNT(*) AS n FROM kb_chunks WHERE document_id = ?").bind(doc.id).first<{ n: number }>();
+    // Unchanged text keeps its chunks; only missing vectors get filled below.
+    if (doc.content_hash !== hash || !existing?.n) {
+      await indexText(env, { workspaceId: source.workspace_id, sourceId, documentId: doc.id, url: null, title: source.title }, blocks, MAX_FILE_CHUNKS);
+      await env.DB.prepare("UPDATE kb_documents SET content_hash = ?, updated_at = ? WHERE id = ?").bind(hash, Date.now(), doc.id).run();
+    }
+    await fillMissingVectors(env, source.workspace_id, sourceId);
+    await env.DB.prepare("UPDATE kb_sources SET status = 'ready', page_count = 1, last_synced_at = ?, error = NULL WHERE id = ?").bind(Date.now(), sourceId).run();
+  } catch (error) {
+    console.error(`index file ${sourceId}:`, error);
+    await env.DB.prepare("UPDATE kb_sources SET status = 'error', error = ? WHERE id = ?").bind((error as Error).message.slice(0, 300), sourceId).run();
+  }
 }
 
 // ---------- website crawling ----------
@@ -287,6 +438,7 @@ async function finishSync(env: Env, source: SourceRow, settings: SourceSettings)
        WHERE id = ?2`,
     ).bind(Date.now(), source.id),
   ]);
+  await fillMissingVectors(env, source.workspace_id, source.id);
 }
 
 /** Queue consumer. Every job is acknowledged; failures are logged, not retried forever. */
@@ -294,6 +446,7 @@ export async function handleCrawlBatch(batch: MessageBatch<CrawlJob>, env: Env):
   for (const message of batch.messages) {
     try {
       if (message.body.type === "sync") await runSync(env, message.body.sourceId);
+      else if (message.body.type === "file") await runFile(env, message.body.sourceId);
       else await runPage(env, message.body);
     } catch (error) {
       console.error("crawl job failed:", error);
@@ -302,10 +455,19 @@ export async function handleCrawlBatch(batch: MessageBatch<CrawlJob>, env: Env):
   }
 }
 
-/** Daily re-sync of website sources (cron). Unchanged pages are skipped by content hash. */
+/**
+ * Daily re-sync of website sources (cron). Unchanged pages are skipped by content hash, and a
+ * finished sync fills missing vectors. Snippets and files only get their missing vectors.
+ */
 export async function resyncAll(env: Env): Promise<void> {
   const due = await env.DB.prepare("SELECT id FROM kb_sources WHERE kind = 'website' AND status != 'syncing' AND (last_synced_at IS NULL OR last_synced_at < ?)")
     .bind(Date.now() - 20 * 60 * 60 * 1000)
     .all<{ id: string }>();
   for (const { id } of due.results) await startSync(env, id);
+  const unembedded = await env.DB.prepare(
+    "SELECT s.id, s.workspace_id FROM kb_sources s WHERE s.kind != 'website' AND EXISTS (SELECT 1 FROM kb_chunks c WHERE c.source_id = s.id AND c.embedded = 0)",
+  ).all<{ id: string; workspace_id: string }>();
+  for (const s of unembedded.results) {
+    if ((await fillMissingVectors(env, s.workspace_id, s.id)) > 0) break; // still failing: try again tomorrow
+  }
 }

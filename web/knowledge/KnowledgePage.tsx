@@ -1,19 +1,37 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
+import { formatSize } from "../lib/thread.ts";
 import { useAction } from "../useAction.ts";
+import { FileUpload } from "./FileUpload.tsx";
 import { SourceDetail } from "./SourceDetail.tsx";
 
 interface SourceRow {
   id: string;
-  kind: "website" | "snippet";
+  kind: "website" | "snippet" | "file";
   url: string | null;
   title: string;
   status: "pending" | "syncing" | "ready" | "error";
   pageCount: number;
   pendingJobs: number;
   chunkCount: number;
+  /** Stored for keyword search only: embedding failed (e.g. Workers AI's daily allocation). */
+  chunksWithoutVectors: number;
+  fileName: string | null;
+  fileSize: number | null;
   error: string | null;
   lastSyncedAt: number | null;
+}
+
+const ICONS = { website: "🌐", snippet: "📝", file: "📄" } as const;
+
+function describe(s: SourceRow): string {
+  const parts = [
+    s.kind === "website" ? plural(s.pageCount, "page") : null,
+    s.kind === "file" && s.fileName ? `${s.fileName.slice(s.fileName.lastIndexOf(".") + 1).toUpperCase()} · ${formatSize(s.fileSize ?? 0)}` : null,
+    plural(s.chunkCount, "chunk"),
+    `${s.kind === "website" ? "synced" : "indexed"} ${ago(s.lastSyncedAt)}`,
+  ];
+  return parts.filter(Boolean).join(" · ");
 }
 
 interface Hit {
@@ -79,10 +97,11 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
       <section className="panel">
         <h2>Knowledge</h2>
         <p className="muted small">
-          The AI assistant answers only from what's here, and cites it. Add your docs site (we read its sitemap or follow its links, and re-sync daily) or write snippets for anything that isn't on the web.
+          The AI assistant answers only from what's here, and cites it. Add your docs site (we read its sitemap or follow its links, and re-sync daily), upload files, or write snippets for anything that isn't on the web.
         </p>
         {canEdit && (
           <div className="kb-forms">
+            <FileUpload base={base} onUploaded={() => load().catch(() => {})} />
             <form onSubmit={addWebsite} className="row">
               <input name="url" type="url" required placeholder="https://docs.yourcompany.com" aria-label="Website URL" />
               <button disabled={busy}>Add website</button>
@@ -107,18 +126,22 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
             {sources.map((s) => (
               <li key={s.id} className="kb-source">
                 <button className="link kb-title" onClick={() => setExpanded(expanded === s.id ? null : s.id)} aria-expanded={expanded === s.id}>
-                  {expanded === s.id ? "▾" : "▸"} {s.kind === "website" ? "🌐" : "📝"} {s.title}
+                  {expanded === s.id ? "▾" : "▸"} {ICONS[s.kind]} {s.title}
                 </button>
                 <span className="muted small">
                   {s.status === "syncing" || s.status === "pending"
-                    ? `Syncing… ${s.pendingJobs > 0 ? `${plural(s.pendingJobs, "page")} queued` : ""}`
+                    ? s.kind === "website"
+                      ? `Syncing… ${s.pendingJobs > 0 ? `${plural(s.pendingJobs, "page")} queued` : ""}`
+                      : "Indexing…"
                     : s.status === "error"
                       ? <span className="error">{s.error ?? "Error"}</span>
-                      : `${s.kind === "website" ? `${plural(s.pageCount, "page")} · ` : ""}${plural(s.chunkCount, "chunk")} · synced ${ago(s.lastSyncedAt)}`}
+                      : describe(s)}
                 </span>
                 {canEdit && (
                   <>
-                    <button className="ghost small" disabled={busy || s.status === "syncing"} onClick={() => run(async () => { await api(`${base}/${s.id}/sync`, { body: {} }); await load(); })}>Re-sync</button>
+                    <button className="ghost small" disabled={busy || s.status === "syncing" || s.status === "pending"} onClick={() => run(async () => { await api(`${base}/${s.id}/sync`, { body: {} }); await load(); })}>
+                      {s.kind === "website" ? "Re-sync" : "Re-index"}
+                    </button>
                     <button
                       className="ghost small"
                       disabled={busy}
@@ -130,6 +153,12 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
                       Remove
                     </button>
                   </>
+                )}
+                {s.chunksWithoutVectors > 0 && s.status !== "syncing" && s.status !== "pending" && (
+                  <p className="kb-warn small" role="status">
+                    Keyword search only{s.chunksWithoutVectors < s.chunkCount ? ` for ${s.chunksWithoutVectors} of ${plural(s.chunkCount, "chunk")}` : ""}: embedding failed (Workers AI may be out of its
+                    daily free allocation). {canEdit ? `${s.kind === "website" ? "Re-sync" : "Re-index"} later to add vectors; the daily re-sync also retries.` : "The daily re-sync retries."}
+                  </p>
                 )}
                 {expanded === s.id && <SourceDetail base={base} sourceId={s.id} canEdit={canEdit} onChanged={() => load().catch(() => {})} />}
               </li>
