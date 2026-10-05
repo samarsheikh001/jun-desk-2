@@ -170,7 +170,10 @@ widget.post("/widget/:key/nudge", async (c) => {
       temperature: 0.2,
       abortSignal: AbortSignal.timeout(NUDGE_TIMEOUT_MS),
     });
-    text = cleanNudge(result.text, event.kind === "app_error" ? event.message : undefined) ?? GENERIC_NUDGE;
+    const cleaned = cleanNudge(result.text, event.kind === "app_error" ? event.message : undefined);
+    // Logged so a too-strict filter shows up in `wrangler tail` (the line is already masked).
+    if (!cleaned) console.warn("nudge line filtered, using the generic line:", JSON.stringify(result.text.slice(0, 200)));
+    text = cleaned ?? GENERIC_NUDGE;
     c.executionCtx.waitUntil(
       Promise.all([
         cache?.put(cacheUrl, new Response(text, { headers: { "Cache-Control": `max-age=${NUDGE_CACHE_S}` } })),
