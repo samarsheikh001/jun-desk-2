@@ -1,4 +1,4 @@
-// `npm run deploy`: apply D1 migrations and deploy, in the right order.
+// `npm run deploy`: build, apply D1 migrations and deploy, in the right order.
 //
 // Upgrades: migrate first, then deploy, so new code never runs against an old schema.
 // First deploy: the database doesn't exist until `wrangler deploy` provisions it,
@@ -32,6 +32,9 @@ if (list.status !== 0) process.exit(1);
 const exists = (JSON.parse(list.stdout) as { name: string; uuid: string }[]).some(
   (d) => d.name === db.database_name || d.uuid === db.database_id,
 );
+
+// `wrangler deploy` uploads the Vite output in dist/ as it is: build first, or a stale bundle ships.
+if (spawnSync("npx", ["vite", "build"], { shell: process.platform === "win32", stdio: "inherit" }).status !== 0) process.exit(1);
 
 const migrate = ["d1", "migrations", "apply", "DB", "--remote"];
 if (exists) {
