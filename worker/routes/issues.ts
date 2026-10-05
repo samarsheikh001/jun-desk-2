@@ -1,14 +1,31 @@
 import { Hono } from "hono";
 import { redact } from "../../shared/debug.ts";
-import { buildDraft, fallbackNarrative, issueFactsText, issuePrompt, parseIssueInput, parseNarrative, parseRepo, type IssueFacts, type IssueNarrative } from "../../shared/issues.ts";
-import type { ConversationIssue } from "../../shared/protocol.ts";
+import {
+  buildDraft,
+  deskFileUrl,
+  fallbackNarrative,
+  imagesSection,
+  isImageType,
+  issueFactsText,
+  issuePrompt,
+  parseImageKeys,
+  parseIssueInput,
+  parseNarrative,
+  parseRepo,
+  pickIssueImages,
+  withImagesSection,
+  type IssueFacts,
+  type IssueImage,
+  type IssueNarrative,
+} from "../../shared/issues.ts";
+import type { Attachment, ConversationIssue } from "../../shared/protocol.ts";
 import { completeText, createModel, loadAiSettings } from "../ai/providers.ts";
 import { requireUser } from "../auth/session.ts";
 import type { ConversationRef } from "../conversation.ts";
 import { loadDebugContext, loadIssues, loadMessages } from "../lib/conversations.ts";
 import { newId } from "../lib/crypto.ts";
 import { checkRepo, createIssue, GITHUB_API_DEFAULT, GitHubError, type GitHubClient } from "../lib/github.ts";
-import { checkLinear, createLinearIssue, LINEAR_API_DEFAULT, LinearError, type LinearClient, type LinearTeam } from "../lib/linear.ts";
+import { checkLinear, createLinearIssue, LINEAR_API_DEFAULT, uploadLinearFile, LinearError, type LinearClient, type LinearTeam } from "../lib/linear.ts";
 import { readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
 import { requireConversation } from "./conversations.ts";
@@ -92,7 +109,7 @@ async function trackerStatus(c: AppContext, workspaceId: string) {
 }
 
 export const issues = new Hono<AppEnv>();
-for (const path of ["/workspaces/:id/trackers", "/workspaces/:id/github", "/workspaces/:id/github/*", "/workspaces/:id/linear", "/workspaces/:id/linear/*", "/conversations/:cid/issue-draft", "/conversations/:cid/issues"]) {
+for (const path of ["/workspaces/:id/trackers", "/workspaces/:id/github", "/workspaces/:id/github/*", "/workspaces/:id/linear", "/workspaces/:id/linear/*", "/conversations/:cid/issue-draft", "/conversations/:cid/issue-images", "/conversations/:cid/issues"]) {
   issues.use(path, requireUser);
 }
 
@@ -266,6 +283,62 @@ issues.post("/conversations/:cid/issue-draft", async (c) => {
   return c.json({ ...draft, source: narrative ? "ai" : "template", notice });
 });
 
+// ---------- S-14: screenshots ----------
+
+/**
+ * The conversation's attachments (images and other files: pickIssueImages rejects the
+ * others by type), oldest first, with the stored file metadata. Both the
+ * visitor's and the agents', on public messages and internal notes: the issue goes to the
+ * team's own engineers and an agent picks each one before filing (never shown to visitors).
+ */
+async function conversationFiles(db: D1Database, ref: ConversationRef): Promise<IssueImage[]> {
+  const rows = await db
+    .prepare("SELECT author_type, internal, attachments, created_at FROM messages WHERE conversation_id = ? AND attachments != '[]' ORDER BY seq")
+    .bind(ref.conversationId)
+    .all<{ author_type: string; internal: number; attachments: string; created_at: number }>();
+  const attached = rows.results.flatMap((r) =>
+    (JSON.parse(r.attachments) as Attachment[]).map((a) => ({ key: String(a.key), from: r.author_type === "visitor" ? ("visitor" as const) : ("agent" as const), internal: r.internal === 1, createdAt: r.created_at })),
+  );
+  if (!attached.length) return [];
+  // Type and size from the files table (same workspace), not from the message JSON.
+  const keys = [...new Set(attached.map((a) => a.key))];
+  const files = new Map<string, Attachment>();
+  for (let i = 0; i < keys.length; i += 50) {
+    const chunk = keys.slice(i, i + 50);
+    const found = await db
+      .prepare(`SELECT key, name, type, size FROM files WHERE workspace_id = ? AND key IN (${chunk.map(() => "?").join(",")})`)
+      .bind(ref.workspaceId, ...chunk)
+      .all<Attachment>();
+    for (const f of found.results) files.set(f.key, f);
+  }
+  const seen = new Set<string>();
+  const out: IssueImage[] = [];
+  for (const a of attached) {
+    const file = files.get(a.key);
+    if (!file || seen.has(a.key)) continue;
+    seen.add(a.key);
+    out.push({ key: file.key, name: file.name, type: file.type, size: file.size, from: a.from, internal: a.internal, createdAt: a.createdAt });
+  }
+  return out;
+}
+
+/**
+ * The dialog's image list, plus whether the GitHub repo is private (GitHub has no upload API,
+ * so images are links to the desk's file URLs: ticked by default only for a private repo).
+ * `githubPrivate` is null when GitHub isn't set up or the check failed.
+ */
+issues.get("/conversations/:cid/issue-images", async (c) => {
+  const ref = await requireConversation(c, c.req.param("cid"));
+  const [files, settings, creds] = await Promise.all([conversationFiles(c.env.DB, ref), loadTrackerSettings(c.env.DB, ref.workspaceId), trackerCreds(c.env, ref.workspaceId)]);
+  const images = files.filter((f) => isImageType(f.type));
+  let githubPrivate: boolean | null = null;
+  if (images.length && settings.repo && creds.github.token) {
+    const check = await checkRepo(githubClient(creds.github.token, creds.github.apiUrl), settings.repo);
+    githubPrivate = check.ok ? check.private : null;
+  }
+  return c.json({ images, githubPrivate });
+});
+
 // ---------- file ----------
 
 issues.get("/conversations/:cid/issues", async (c) => {
@@ -294,6 +367,15 @@ issues.post("/conversations/:cid/issues", async (c) => {
     throw new HttpError(400, "invalid_field", "clientId must be a short string.");
   }
   const clientId = (body.clientId as string | undefined) ?? crypto.randomUUID();
+  // S-14: only images attached to this conversation's messages (checked before anything else).
+  let images: IssueImage[] = [];
+  try {
+    const keys = parseImageKeys(body.images);
+    if (keys.length) images = pickIssueImages(keys, await conversationFiles(c.env.DB, ref));
+  } catch (error) {
+    throw new HttpError(400, "invalid_field", (error as Error).message);
+  }
+  let imagesFailed = 0;
 
   // Where it goes, and how to file it there.
   const settings = await loadTrackerSettings(c.env.DB, ref.workspaceId);
@@ -308,7 +390,10 @@ issues.post("/conversations/:cid/issues", async (c) => {
     }
     target = repo;
     file = async () => {
-      const created = await createIssue(githubClient(token, apiUrl), repo, input);
+      // No upload API: links to the desk's own (unguessable) file URLs. The dialog warns on public repos.
+      const origin = new URL(c.req.url).origin;
+      const section = imagesSection(images.map((i) => ({ name: i.name, url: deskFileUrl(origin, i.key) })));
+      const created = await createIssue(githubClient(token, apiUrl), repo, { ...input, body: withImagesSection(input.body, section) });
       return { externalId: String(created.number), key: `${repo}#${created.number}`, url: created.url };
     };
   } else {
@@ -320,7 +405,21 @@ issues.post("/conversations/:cid/issues", async (c) => {
     target = team.key;
     file = async () => {
       // Same Markdown body (Linear renders it). Labels are GitHub-only for now.
-      const created = await createLinearIssue(linearClient(apiKey, apiUrl), { teamId: team.id, title: input.title, description: input.body });
+      // Screenshots are uploaded to Linear's storage first; one that fails is left out, not fatal.
+      const client = linearClient(apiKey, apiUrl);
+      const uploaded: { name: string; url: string }[] = [];
+      for (const image of images) {
+        try {
+          const object = await c.env.FILES.get(image.key);
+          if (!object) throw new Error("not in R2");
+          uploaded.push({ name: image.name, url: await uploadLinearFile(client, { name: image.name, type: image.type, bytes: await object.arrayBuffer() }) });
+        } catch (error) {
+          console.warn("linear image upload failed:", (error as Error).message);
+          imagesFailed++;
+        }
+      }
+      const description = withImagesSection(input.body, imagesSection(uploaded));
+      const created = await createLinearIssue(client, { teamId: team.id, title: input.title, description });
       return { externalId: created.id, key: created.identifier, url: created.url };
     };
   }
@@ -358,5 +457,10 @@ issues.post("/conversations/:cid/issues", async (c) => {
   const issue: ConversationIssue = { id, provider, target, ...filed, title: input.title, createdBy: c.get("user").id, createdAt: now };
   // An internal note in the timeline (live for agents, never for the visitor or the AI).
   await c.env.CONVERSATION.getByName(ref.conversationId).addNote(ref, `Issue created: ${filed.key} — ${input.title}`, `issue:${id}`, { issue });
-  return c.json({ issue });
+  return c.json({
+    issue,
+    imagesAttached: images.length - imagesFailed,
+    imagesFailed,
+    ...(imagesFailed ? { notice: imagesFailed === 1 ? "1 image couldn't be attached." : `${imagesFailed} images couldn't be attached.` } : {}),
+  });
 });

@@ -439,7 +439,7 @@ function WidgetThread({
       {conversationId && (
         <EmailAsk api={api} conversationId={conversationId} contact={contact} away={away} waiting={handling === "human" ? lastVisitorWaiting(thread.messages) : null} />
       )}
-      <Composer placeholder="Write a message…" upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} />
+      <Composer placeholder="Write a message…" upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
     </>
   );
 }

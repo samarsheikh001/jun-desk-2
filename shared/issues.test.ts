@@ -3,7 +3,12 @@ import { test } from "node:test";
 import { sanitizeContext } from "./debug.ts";
 import {
   buildDraft,
+  deskFileUrl,
   errorsSection,
+  imagesSection,
+  parseImageKeys,
+  pickIssueImages,
+  withImagesSection,
   environmentSection,
   failingRequestsSection,
   fallbackNarrative,
@@ -195,4 +200,45 @@ test("filing input: lengths, labels, and the body is masked again", () => {
   assert.throws(() => parseIssueInput({ title: "x", labels: "bug" }), /list/);
   assert.throws(() => parseIssueInput({ title: "x", labels: Array.from({ length: 11 }, (_, i) => `l${i}`) }), /At most 10/);
   assert.throws(() => parseIssueInput({ title: "x", labels: ["l".repeat(51)] }), /50 characters/);
+});
+
+// ---------- S-14: screenshots ----------
+
+test("parseImageKeys: a short list of keys, deduplicated", () => {
+  assert.deepEqual(parseImageKeys(undefined), []);
+  assert.deepEqual(parseImageKeys(null), []);
+  assert.deepEqual(parseImageKeys(["f_a", "f_b", "f_a"]), ["f_a", "f_b"]);
+  for (const bad of ["f_a", [1], [""], ["x".repeat(101)], {}]) assert.throws(() => parseImageKeys(bad), /list of file keys/);
+  assert.throws(() => parseImageKeys(Array.from({ length: 11 }, (_, i) => `f_${i}`)), /At most 10 images/);
+});
+
+test("pickIssueImages: only this conversation's images, under 10 MB, in the requested order", () => {
+  const available = [
+    { key: "f_shot", name: "shot.png", type: "image/png", size: 1000 },
+    { key: "f_pdf", name: "invoice.pdf", type: "application/pdf", size: 1000 },
+    { key: "f_big", name: "huge.jpg", type: "image/jpeg", size: 11 * 1024 * 1024 },
+    { key: "f_webp", name: "b.webp", type: "IMAGE/WEBP", size: 5 },
+  ];
+  assert.deepEqual(pickIssueImages(["f_webp", "f_shot"], available).map((i) => i.key), ["f_webp", "f_shot"]);
+  assert.deepEqual(pickIssueImages([], available), []);
+  assert.throws(() => pickIssueImages(["f_other_conversation"], available), /isn't attached to this conversation/);
+  assert.throws(() => pickIssueImages(["f_pdf"], available), /Only images/);
+  assert.throws(() => pickIssueImages(["f_big"], available), /10 MB/);
+});
+
+test("GitHub links: desk file URLs as Markdown images, before the footer", () => {
+  assert.equal(deskFileUrl("https://desk.acme.test/", "f_abc-_1"), "https://desk.acme.test/api/files/f_abc-_1");
+  const section = imagesSection([
+    { name: "Screenshot [checkout].png", url: deskFileUrl("https://desk.acme.test", "f_abc") },
+    { name: "", url: "https://desk.acme.test/api/files/f two(1)" },
+  ]);
+  assert.equal(section, "## Screenshots\n\n![Screenshot checkout .png](https://desk.acme.test/api/files/f_abc)\n\n![screenshot](https://desk.acme.test/api/files/f%20two%281%29)");
+  assert.equal(imagesSection([]), "");
+
+  const body = "## Summary\nPay fails.\n\n---\nFrom a support conversation in Jun Desk: https://desk.acme.test/inbox/cv_1";
+  assert.equal(withImagesSection(body, section), `## Summary\nPay fails.\n\n${section}\n\n---\nFrom a support conversation in Jun Desk: https://desk.acme.test/inbox/cv_1`);
+  // An agent removed the footer: appended at the end. No images: unchanged.
+  assert.equal(withImagesSection("Pay fails.\n", section), `Pay fails.\n\n${section}`);
+  assert.equal(withImagesSection("", section), section);
+  assert.equal(withImagesSection(body, ""), body);
 });

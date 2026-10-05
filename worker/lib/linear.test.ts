@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkLinear, createLinearIssue, LinearError, type LinearClient } from "./linear.ts";
+import { checkLinear, createLinearIssue, LinearError, uploadLinearFile, type LinearClient } from "./linear.ts";
 
 interface Seen {
   url: string;
@@ -77,4 +77,74 @@ test("checkLinear loads the viewer and the teams", async () => {
   assert.deepEqual(bad.ok ? null : bad.reason, "bad_key");
   const broken = await checkLinear(fakeLinear(500, {}).client);
   assert.deepEqual(broken.ok ? null : [broken.reason, broken.message], ["error", "Linear returned 500."]);
+});
+
+// ---------- S-14: fileUpload ----------
+
+interface Raw {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
+/** Answers the GraphQL call with `graphql`, the PUT with `putStatus`; records both. */
+function fakeUpload(graphqlJson: unknown, putStatus = 200): { client: LinearClient; seen: Raw[] } {
+  const seen: Raw[] = [];
+  const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    seen.push({ url: String(input), method, headers: Object.fromEntries(new Headers(init?.headers).entries()), body: method === "PUT" ? init?.body : JSON.parse(String(init?.body)) });
+    if (method === "PUT") return new Response(null, { status: putStatus });
+    return new Response(JSON.stringify(graphqlJson), { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+  return { client: { apiKey: "lin_api_TEST", apiUrl: "https://api.linear.app/graphql", fetch: fetchFn }, seen };
+}
+
+const UPLOAD = {
+  data: {
+    fileUpload: {
+      success: true,
+      uploadFile: {
+        uploadUrl: "https://storage.googleapis.com/linear-uploads/abc?X-Goog-Signature=sig",
+        assetUrl: "https://uploads.linear.app/ws/abc/screenshot.png",
+        headers: [
+          { key: "x-goog-content-length-range", value: "4,4" },
+          { key: "Content-Disposition", value: 'attachment; filename="screenshot.png"' },
+        ],
+      },
+    },
+  },
+};
+
+test("uploadLinearFile: fileUpload mutation, then a PUT with exactly Linear's headers (never the API key)", async () => {
+  const { client, seen } = fakeUpload(UPLOAD);
+  const bytes = new Uint8Array([137, 80, 78, 71]).buffer;
+  const assetUrl = await uploadLinearFile(client, { name: "screenshot.png", type: "image/png", bytes });
+  assert.equal(assetUrl, "https://uploads.linear.app/ws/abc/screenshot.png");
+  assert.equal(seen.length, 2);
+  const [gql, put] = seen as [Raw, Raw];
+  assert.equal(gql.url, "https://api.linear.app/graphql");
+  assert.equal(gql.headers.authorization, "lin_api_TEST");
+  assert.deepEqual(gql.body, {
+    query:
+      "mutation($contentType: String!, $filename: String!, $size: Int!) { fileUpload(contentType: $contentType, filename: $filename, size: $size) { success uploadFile { uploadUrl assetUrl headers { key value } } } }",
+    variables: { contentType: "image/png", filename: "screenshot.png", size: 4 },
+  });
+  assert.equal(put.url, UPLOAD.data.fileUpload.uploadFile.uploadUrl);
+  assert.equal(put.method, "PUT");
+  assert.deepEqual(put.headers, {
+    "content-type": "image/png",
+    "cache-control": "public, max-age=31536000",
+    "x-goog-content-length-range": "4,4",
+    "content-disposition": 'attachment; filename="screenshot.png"',
+  });
+  assert.equal(put.body, bytes);
+});
+
+test("uploadLinearFile: success false, a refused PUT and GraphQL errors throw LinearError", async () => {
+  const file = { name: "a.png", type: "image/png", bytes: new ArrayBuffer(1) };
+  await assert.rejects(uploadLinearFile(fakeUpload({ data: { fileUpload: { success: false, uploadFile: null } } }).client, file), (e: unknown) => e instanceof LinearError && /success: false/.test(e.message));
+  const refused = fakeUpload(UPLOAD, 403);
+  await assert.rejects(uploadLinearFile(refused.client, file), (e: unknown) => e instanceof LinearError && e.status === 403 && /refused the upload/.test(e.message));
+  await assert.rejects(uploadLinearFile(fakeUpload({ errors: [{ message: "File too large" }], data: null }).client, file), /File too large/);
 });

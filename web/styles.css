@@ -208,6 +208,12 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .composer { border-top: 1px solid var(--border); background: var(--surface); padding: 10px 12px; }
 .composer-row { display: flex; align-items: flex-end; gap: 8px; }
 .composer-files { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; align-items: center; }
+/* S-15: screenshot preview, sent or discarded by the visitor */
+.composer-shot { margin-bottom: 8px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); display: grid; gap: 8px; }
+.composer-shot img { width: 100%; max-height: 180px; object-fit: contain; border-radius: 4px; background: var(--surface); }
+.composer-shot-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.composer-shot-actions .muted { flex: 1 1 100%; }
+.composer-shot-actions button:first-of-type { margin-left: auto; }
 .chip { display: inline-flex; gap: 6px; align-items: center; padding: 3px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); font-size: 0.85rem; }
 
 @media (max-width: 760px) {
@@ -494,6 +500,19 @@ dialog.issue-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
 .issue-drafting { display: flex; align-items: center; gap: 8px; min-height: 8lh; margin: 0; }
 .issue-drafting .typing { padding: 0; }
 .issue-actions { border-top: 1px solid var(--border); padding-top: 12px; }
+/* S-14: screenshots in the Create issue dialog */
+.issue-images { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px 12px; margin: 0; min-width: 0; }
+.issue-images legend { padding: 0 4px; font-weight: 600; font-size: 0.9rem; }
+.issue-images legend .muted { font-weight: 400; margin-left: 4px; }
+.issue-images p { margin: 4px 0 10px; }
+.issue-images-warning { background: var(--note-bg); color: var(--note-text); border: 1px solid var(--note-border); border-radius: 6px; padding: 6px 10px; }
+.issue-images ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+.issue-images label { position: relative; display: grid; gap: 4px; padding: 4px; border: 2px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg); }
+.issue-images label.checked { border-color: var(--accent); }
+.issue-images label:has(input:disabled) { cursor: not-allowed; opacity: 0.6; }
+.issue-dialog .issue-images input[type="checkbox"] { position: absolute; top: 8px; left: 8px; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.issue-images img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 4px; background: var(--surface); display: block; }
+.issue-image-meta { font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ok-text { color: #1a7f37; }
 .tag-warn { background: var(--note-bg); color: var(--note-text); }
 @media (prefers-color-scheme: dark) { .ok-text { color: #4ac26b; } }
