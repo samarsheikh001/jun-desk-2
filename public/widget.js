@@ -221,7 +221,7 @@
       (e.status === 0 || e.status >= 500 || (e.status >= 400 && e.method !== "GET"));
   }
   function maybeNudge(e) {
-    if (nudged || open || !worthNudging(e)) return;
+    if (nudged || open || !consented || !worthNudging(e)) return; // nothing leaves the page before consent (V-06)
     nudgeEvent = e;
     clearTimeout(nudgeTimer);
     nudgeTimer = setTimeout(showNudge, /rage|stuck/.test(e.kind) ? 0 : 1200); // errors come in bursts; wait for things to settle (rage clicks already waited)
