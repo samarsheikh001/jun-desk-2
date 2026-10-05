@@ -320,3 +320,72 @@ export function parseIssueInput(raw: Record<string, unknown>): IssueInput {
   }
   return { title: redact(title, ISSUE_TITLE_MAX), body: redact(body, ISSUE_BODY_MAX), labels };
 }
+
+// ---------- S-14: screenshots in issues ----------
+
+/** At most this many images per issue (the same cap as attachments per message). */
+export const ISSUE_IMAGES_MAX = 10;
+/** W-06's upload limit: no stored file is bigger, but check anyway. */
+export const ISSUE_IMAGE_BYTES_MAX = 10 * 1024 * 1024;
+/** The types W-06 shows inline (worker/routes/files.ts). Anything else isn't a screenshot. */
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+export const isImageType = (type: string) => IMAGE_TYPES.has(type.toLowerCase());
+
+/** An image attached to a message in the conversation, as the Create issue dialog lists it. */
+export interface IssueImage {
+  key: string;
+  name: string;
+  type: string;
+  size: number;
+  /** Who sent it. */
+  from: "visitor" | "agent";
+  /** Attached to an internal note. */
+  internal: boolean;
+  createdAt: number;
+}
+
+/** `images` from the request: file keys, deduplicated, at most ISSUE_IMAGES_MAX. Throws a message for the agent. */
+export function parseImageKeys(raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.some((k) => typeof k !== "string" || !k || k.length > 100)) throw new Error("images must be a list of file keys.");
+  const keys = [...new Set(raw as string[])];
+  if (keys.length > ISSUE_IMAGES_MAX) throw new Error(`At most ${ISSUE_IMAGES_MAX} images per issue.`);
+  return keys;
+}
+
+/**
+ * The ownership check: every requested key must be an image attached to a message of this
+ * conversation (`available`, with the stored file metadata, not what a client claims).
+ * Throws a message for the agent otherwise. Keeps the requested order.
+ */
+export function pickIssueImages<T extends { key: string; type: string; size: number }>(keys: string[], available: T[]): T[] {
+  const byKey = new Map(available.map((a) => [a.key, a]));
+  return keys.map((key) => {
+    const file = byKey.get(key);
+    if (!file) throw new Error("That image isn't attached to this conversation.");
+    if (!isImageType(file.type)) throw new Error("Only images (PNG, JPEG, GIF, WebP) can be added to an issue.");
+    if (file.size > ISSUE_IMAGE_BYTES_MAX) throw new Error("Images are limited to 10 MB.");
+    return file;
+  });
+}
+
+/** Where the desk serves a file (W-06): unguessable, but anyone with the link can open it. */
+export const deskFileUrl = (origin: string, key: string) => `${origin.replace(/\/+$/, "")}/api/files/${encodeURIComponent(key)}`;
+
+/** Alt text that can't break out of `![…]`. */
+const altText = (name: string) => name.replace(/[[\]\\\r\n]/g, " ").replace(/\s+/g, " ").trim().slice(0, 100) || "screenshot";
+
+/** "## Screenshots" with one Markdown image per entry, or "" for none. */
+export function imagesSection(images: { name: string; url: string }[]): string {
+  if (!images.length) return "";
+  return `## Screenshots\n\n${images.map((i) => `![${altText(i.name)}](${i.url.replace(/[\s()<>]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`)})`).join("\n\n")}`;
+}
+
+/** The body with the screenshots section added before the "From a support conversation" footer (or at the end). */
+export function withImagesSection(body: string, section: string): string {
+  if (!section) return body;
+  const at = body.lastIndexOf("\n---\nFrom a support conversation");
+  if (at === -1) return body.trim() ? `${body.trimEnd()}\n\n${section}` : section;
+  return `${body.slice(0, at).trimEnd()}\n\n${section}\n${body.slice(at)}`;
+}

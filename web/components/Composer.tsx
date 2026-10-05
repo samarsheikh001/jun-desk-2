@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { Attachment } from "../../shared/protocol.ts";
+import { canCaptureScreen, captureScreen } from "../lib/screenshot.ts";
 import { formatSize } from "../lib/thread.ts";
 
 export interface SavedReply {
@@ -24,6 +25,7 @@ export function Composer({
   mentionables = [],
   savedReplies = [],
   fillReply = (body) => body,
+  screenshot = false,
 }: {
   placeholder: string;
   disabled?: boolean;
@@ -35,6 +37,8 @@ export function Composer({
   mentionables?: { id: string; name: string }[];
   savedReplies?: SavedReply[];
   fillReply?: (body: string) => string;
+  /** S-15: offer "Send a screenshot" (the widget), where the browser supports it. */
+  screenshot?: boolean;
 }) {
   const [body, setBody] = useState("");
   const [note, setNote] = useState(false);
@@ -47,6 +51,13 @@ export function Composer({
   const fileInput = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const pendingCaret = useRef<number | null>(null);
+  // S-15: a captured screenshot waiting for the visitor to send or discard it.
+  const canShoot = useMemo(() => screenshot && canCaptureScreen(), [screenshot]);
+  const [shot, setShot] = useState<{ file: File; url: string } | null>(null);
+  const [shooting, setShooting] = useState(false);
+  useEffect(() => () => {
+    if (shot) URL.revokeObjectURL(shot.url);
+  }, [shot]);
 
   const before = body.slice(0, caret);
   const suggestions = useMemo<Suggestion[]>(() => {
@@ -129,6 +140,37 @@ export function Composer({
     if (fileInput.current) fileInput.current.value = "";
   };
 
+  const takeScreenshot = async () => {
+    setError(null);
+    setShooting(true);
+    try {
+      const file = await captureScreen();
+      if (file) setShot({ file, url: URL.createObjectURL(file) });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setShooting(false);
+    }
+  };
+
+  /** Sends the screenshot now, with whatever the visitor already typed or attached. */
+  const sendShot = async () => {
+    if (!shot) return;
+    setUploading((n) => n + 1);
+    try {
+      const attachment = await upload(shot.file);
+      setShot(null);
+      const [text, files] = [body, attachments];
+      setBody("");
+      setAttachments([]);
+      await onSend(text, [...files, attachment], { internal: note });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setUploading((n) => n - 1);
+    }
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (open) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -174,6 +216,16 @@ export function Composer({
           {error && <span className="error small">{error}</span>}
         </div>
       )}
+      {shot && (
+        <div className="composer-shot" role="group" aria-label="Screenshot preview">
+          <img src={shot.url} alt="Your screenshot" />
+          <div className="composer-shot-actions">
+            <span className="muted small">Check it shows nothing private. It's sent only if you press Send.</span>
+            <button className="ghost small" disabled={uploading > 0} onClick={() => setShot(null)}>Discard</button>
+            <button className="small" disabled={disabled || uploading > 0} onClick={() => void sendShot()}>{uploading > 0 ? "Sending…" : "Send screenshot"}</button>
+          </div>
+        </div>
+      )}
       {open && (
         <ul className="suggest" role="listbox" aria-label={suggestions[0]!.kind === "reply" ? "Saved replies" : "Mention a teammate"}>
           {suggestions.map((s, i) => (
@@ -187,6 +239,11 @@ export function Composer({
       <div className="composer-row">
         <button className="ghost icon" title="Attach files" aria-label="Attach files" disabled={disabled} onClick={() => fileInput.current?.click()}>📎</button>
         <input ref={fileInput} type="file" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
+        {canShoot && (
+          <button className="ghost icon" title="Send a screenshot" aria-label="Send a screenshot" disabled={disabled || shooting || shot !== null} onClick={() => void takeScreenshot()}>
+            📷
+          </button>
+        )}
         <textarea
           ref={input}
           rows={1}

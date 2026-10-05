@@ -6,7 +6,7 @@ import { Composer, type SavedReply } from "../components/Composer.tsx";
 import { MessageList } from "../components/MessageList.tsx";
 import { navigate } from "../lib/router.ts";
 import { DebugPanel } from "./DebugPanel.tsx";
-import { configuredProviders, IssueDialog } from "./IssueDialog.tsx";
+import { configuredProviders, IssueDialog, type FiledIssue } from "./IssueDialog.tsx";
 import type { TrackerStatus } from "../settings/IssueTrackersPanel.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
 import type { Hub } from "../Shell.tsx";
@@ -230,7 +230,7 @@ function Thread({
   const [conversation, setConversation] = useState<ConversationSummary | null>(null);
   const [filed, setFiled] = useState<ConversationIssue[]>([]);
   const [issueOpen, setIssueOpen] = useState(false);
-  const [created, setCreated] = useState<ConversationIssue | null>(null);
+  const [created, setCreated] = useState<FiledIssue | null>(null);
   const [initial, setInitial] = useState<Message[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedReplies, setSavedReplies] = useState<SavedReply[]>([]);
@@ -356,16 +356,20 @@ function Thread({
           conversationId={conversationId}
           trackers={trackers}
           onClose={() => setIssueOpen(false)}
-          onCreated={(issue) => {
+          onCreated={(result) => {
+            const { issue } = result;
             setFiled((current) => (current.some((i) => i.id === issue.id) ? current : [...current, issue]));
-            setCreated(issue);
+            setCreated(result);
             setIssueOpen(false);
           }}
         />
       )}
       {created && (
         <div className="toast" role="status">
-          <span>Created <a href={created.url} target="_blank" rel="noreferrer">{created.key}</a></span>
+          <span>
+            Created <a href={created.issue.url} target="_blank" rel="noreferrer">{created.issue.key}</a>
+            {created.notice && <span className="error"> · {created.notice}</span>}
+          </span>
           <button className="ghost small" aria-label="Dismiss" onClick={() => setCreated(null)}>×</button>
         </div>
       )}

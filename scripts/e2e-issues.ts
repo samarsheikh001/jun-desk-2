@@ -12,6 +12,7 @@ const run = Date.now().toString(36);
 let workspaceId = "";
 let widgetKey = "";
 let conversationId = "";
+let visitorToken = "";
 let aiSettings: Record<string, unknown> = {};
 
 const now = Date.now();
@@ -129,6 +130,7 @@ await step("setup: a visitor reports a failed payment with a debug snapshot", as
   assert.equal((await setAi(false)).status, 200); // the support AI stays out of this conversation
   const visitor = new Client();
   const token = (await visitor.call(`/widget/${widgetKey}/visitor`, { body: {} })).json.token as string;
+  visitorToken = token;
   const res = await visitor.call(`/widget/${widgetKey}/conversations`, {
     body: { clientMsgId: crypto.randomUUID(), body: `I can't pay my invoice, it says something went wrong. My email is pat@customer.test (${run})`, context },
     headers: { "X-Visitor-Token": token },
@@ -197,6 +199,76 @@ await step("with AI off the button still works: a template draft from the facts"
   assert.equal((await new Client().call(`/conversations/${conversationId}/issue-draft`, { body: {} })).status, 401);
   assert.equal((await owner.call(`/conversations/cv_nope/issue-draft`, { body: {} })).status, 404);
 });
+
+// S-14: a 1×1 PNG and JPEG are enough; type and size come from the stored file, not the message.
+const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="), (ch) => ch.charCodeAt(0));
+const imageKeys = { visitor: "", note: "", pdf: "", foreign: "" };
+
+await step("screenshots: the dialog lists the conversation's images (visitor's and a note's), not other files or conversations", async () => {
+  const upload = async (who: Client, path: string, name: string, type: string, headers: Record<string, string> = {}) => {
+    const res = await who.call(path, { body: PNG, headers: { "Content-Type": type, "X-File-Name": encodeURIComponent(name), ...headers } });
+    assert.equal(res.status, 200, JSON.stringify(res.json));
+    return res.json.attachment as { key: string; name: string; type: string; size: number };
+  };
+  const visitor = new Client();
+  const shot = await upload(visitor, `/widget/${widgetKey}/files`, "Screenshot 2026-10-05.png", "image/png", { "X-Visitor-Token": visitorToken });
+  const pdf = await upload(visitor, `/widget/${widgetKey}/files`, "invoice.pdf", "application/pdf", { "X-Visitor-Token": visitorToken });
+  const sent = await visitor.call(`/widget/${widgetKey}/conversations/${conversationId}/messages`, {
+    body: { clientMsgId: crypto.randomUUID(), body: "Here's what I see", attachments: [shot, pdf] },
+    headers: { "X-Visitor-Token": visitorToken },
+  });
+  assert.equal(sent.status, 200, JSON.stringify(sent.json));
+  const noteShot = await upload(owner, `/workspaces/${workspaceId}/files`, "stripe-dashboard.jpg", "image/jpeg");
+  const note = await owner.call(`/conversations/${conversationId}/messages`, { body: { clientMsgId: crypto.randomUUID(), body: "Stripe shows a timeout", internal: true, attachments: [noteShot] } });
+  assert.equal(note.status, 200, JSON.stringify(note.json));
+  // Someone else's conversation, with its own image.
+  const other = new Client();
+  const otherToken = (await other.call(`/widget/${widgetKey}/visitor`, { body: {} })).json.token as string;
+  const foreign = await upload(other, `/widget/${widgetKey}/files`, "other.png", "image/png", { "X-Visitor-Token": otherToken });
+  const otherConversation = await other.call(`/widget/${widgetKey}/conversations`, { body: { clientMsgId: crypto.randomUUID(), body: "Unrelated", attachments: [foreign] }, headers: { "X-Visitor-Token": otherToken } });
+  assert.equal(otherConversation.status, 200, JSON.stringify(otherConversation.json));
+  Object.assign(imageKeys, { visitor: shot.key, note: noteShot.key, pdf: pdf.key, foreign: foreign.key });
+
+  const list = await teammate.call(`/conversations/${conversationId}/issue-images`);
+  assert.equal(list.status, 200, JSON.stringify(list.json));
+  assert.deepEqual(
+    list.json.images.map((i: Record<string, unknown>) => [i.key, i.name, i.type, i.size, i.from, i.internal]),
+    [
+      [shot.key, "Screenshot 2026-10-05.png", "image/png", PNG.byteLength, "visitor", false],
+      [noteShot.key, "stripe-dashboard.jpg", "image/jpeg", PNG.byteLength, "agent", true],
+    ],
+  );
+  assert.equal(list.json.githubPrivate, null, "no GitHub token on the e2e server, so privacy is unknown (images start unticked for GitHub)");
+  assert.equal((await new Client().call(`/conversations/${conversationId}/issue-images`)).status, 401);
+  assert.equal((await owner.call(`/conversations/cv_nope/issue-images`)).status, 404);
+  // GitHub gets links to these URLs: unguessable, served without a session.
+  const res = await fetch(`${BASE}/api/files/${shot.key}`);
+  assert.deepEqual([res.status, res.headers.get("content-type")], [200, "image/png"]);
+});
+
+await step("screenshots: filing accepts only this conversation's images (400 otherwise), checked before the tracker", async () => {
+  const path = `/conversations/${conversationId}/issues`;
+  const issue = { provider: "github", title: "Pay fails", body: "Steps…" };
+  const cases: [unknown, RegExp][] = [
+    [[imageKeys.foreign], /isn't attached to this conversation/],
+    [["f_doesnotexist"], /isn't attached to this conversation/],
+    [[imageKeys.visitor, imageKeys.pdf], /Only images/],
+    [imageKeys.visitor, /list of file keys/],
+    [[42], /list of file keys/],
+    [Array.from({ length: 11 }, (_, i) => `f_${i}`), /At most 10 images/],
+  ];
+  for (const [images, message] of cases) {
+    const res = await owner.call(path, { body: { ...issue, images } });
+    assert.equal(res.status, 400, JSON.stringify(images));
+    assert.match(res.json.error.message, message);
+  }
+  // Valid images pass validation and reach the (unconfigured) tracker check.
+  for (const provider of ["github", "linear"]) {
+    const res = await owner.call(path, { body: { ...issue, provider, images: [imageKeys.visitor, imageKeys.note], clientId: crypto.randomUUID() } });
+    assert.deepEqual([res.status, res.json.error.code], [409, `${provider}_not_configured`]);
+  }
+});
+
 await step("filing validates provider and issue, then says the tracker isn't configured (409) without calling it", async () => {
   const path = `/conversations/${conversationId}/issues`;
   const cases: [Record<string, unknown>, RegExp][] = [

@@ -257,7 +257,7 @@
       frame = document.createElement("iframe");
       frame.className = "frame";
       frame.title = "Chat";
-      frame.allow = "clipboard-write";
+      frame.allow = "clipboard-write; display-capture";
       frame.src = origin + "/widget?key=" + encodeURIComponent(key) + (consented ? "" : "&persist=0");
       wrap.appendChild(frame);
     }
