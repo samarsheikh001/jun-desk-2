@@ -11,6 +11,7 @@ import {
   type ReplyRow,
 } from "../../shared/metrics.ts";
 import { loadAiSettings } from "../ai/providers.ts";
+import { kickTopicLabelling } from "../ai/topics.ts";
 import { requireUser } from "../auth/session.ts";
 import { HttpError, type AppEnv } from "../types.ts";
 
@@ -40,7 +41,9 @@ const CONVERSATION_FACTS = `
       EXISTS (SELECT 1 FROM messages m
         WHERE m.conversation_id = c.id AND m.author_type = 'system' AND m.internal = 0 AND json_extract(m.meta, '$.handoffReason') = ?5) AS aiOffHandoff,
       -- A-06: the loader sends the page with the visitor's first message; no extra tracking.
-      (SELECT json_extract(d.context, '$.page.url') FROM debug_snapshots d WHERE d.conversation_id = c.id ORDER BY d.created_at LIMIT 1) AS startUrl
+      (SELECT json_extract(d.context, '$.page.url') FROM debug_snapshots d WHERE d.conversation_id = c.id ORDER BY d.created_at LIMIT 1) AS startUrl,
+      -- A-02: the AI's topic label.
+      c.topic_id AS topicId, (SELECT t.name FROM topics t WHERE t.id = c.topic_id) AS topicName
     FROM conversations c
     WHERE c.workspace_id = ?1 AND c.created_at >= ?2 AND c.created_at < ?3
     ORDER BY c.created_at DESC LIMIT ?4
@@ -55,6 +58,10 @@ metrics.get("/workspaces/:id/metrics", async (c) => {
   if (!days) throw new HttpError(400, "invalid_field", "days must be 7, 30 or 90.");
   const timezone = c.req.query("tz") || "UTC";
   if (!validTimezone(timezone)) throw new HttpError(400, "invalid_field", "Unknown time zone.");
+
+  // A-02: opening Reports labels chats that went quiet since the last pass, in the background
+  // (at most every 5 minutes per workspace; skipped while the AI is off or capped).
+  c.executionCtx.waitUntil(kickTopicLabelling(c.env, workspaceId));
 
   const now = Date.now();
   const { since, until } = periodDays(now, days, timezone);

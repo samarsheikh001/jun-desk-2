@@ -108,6 +108,7 @@ conversations.get("/workspaces/:id/conversations", async (c) => {
   const status = c.req.query("status") ?? "open";
   const assignee = c.req.query("assignee"); // "me" | "unassigned" | "mentions" | undefined
   const tag = c.req.query("tag");
+  const topic = c.req.query("topic"); // A-02: a topic id
   const rating = c.req.query("rating"); // W-12: "good" | "bad", the latest rating
   if (rating !== undefined && rating !== "good" && rating !== "bad") throw new HttpError(400, "invalid_field", "rating must be good or bad.");
   if (status !== "all" && !STATUSES.includes(status as ConversationStatus)) throw new HttpError(400, "invalid_field", "Unknown status.");
@@ -130,6 +131,10 @@ conversations.get("/workspaces/:id/conversations", async (c) => {
   if (tag) {
     where.push("c.id IN (SELECT ct.conversation_id FROM conversation_tags ct JOIN tags t ON t.id = ct.tag_id WHERE t.workspace_id = c.workspace_id AND t.name = ?)");
     params.push(tag);
+  }
+  if (topic) {
+    where.push("c.topic_id = ?");
+    params.push(topic);
   }
   if (rating) {
     where.push("c.csat_rating = ?");

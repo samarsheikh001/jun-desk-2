@@ -333,3 +333,34 @@ test("durations read like a person wrote them", () => {
   assert.equal(formatDuration(3 * 24 * 60 * MIN), "3d");
   assert.equal(formatDuration(-5), "0s");
 });
+
+test("topics (A-02): counts, share of labelled chats, AI resolution per topic", () => {
+  const billing = { topicId: "top_b", topicName: "Billing" };
+  const login = { topicId: "top_l", topicName: "Login" };
+  const r = computeMetrics(
+    input({
+      conversations: [
+        conv(NOW, { ...billing, firstAiAt: NOW + S }), // AI resolved
+        conv(NOW, { ...billing, firstAiAt: NOW + S, handoffReason: "The customer asked for a person." }),
+        conv(NOW, { ...billing }), // team only: not an AI conversation
+        conv(NOW, { ...login, firstAiAt: NOW + S }),
+        conv(NOW, { topicId: "top_x", topicName: null }), // topic deleted meanwhile: unlabeled
+        conv(NOW), // not labelled yet
+        conv(NOW, { firstVisitorAt: null }), // no visitor message: never labelled, not counted
+        conv(NOW - 30 * 24 * 60 * MIN, { ...login }), // outside the period
+      ],
+    }),
+  );
+  assert.deepEqual(r.topics, {
+    list: [
+      { id: "top_b", name: "Billing", count: 3, share: 3 / 4, aiResolutionRate: 1 / 2 },
+      { id: "top_l", name: "Login", count: 1, share: 1 / 4, aiResolutionRate: 1 },
+    ],
+    labeled: 4,
+    unlabeled: 2,
+  });
+  assert.deepEqual(computeMetrics(input({})).topics, { list: [], labeled: 0, unlabeled: 0 });
+  // Ties sort by name; a topic with no AI conversations has no rate.
+  const tie = computeMetrics(input({ conversations: [conv(NOW, login), conv(NOW, billing)] }));
+  assert.deepEqual(tie.topics.list.map((t) => [t.name, t.aiResolutionRate]), [["Billing", null], ["Login", null]]);
+});

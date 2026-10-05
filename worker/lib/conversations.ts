@@ -5,6 +5,7 @@ export const SUMMARY_SELECT = `
   SELECT c.id, c.status, c.handling, c.assignee_id, c.last_seq, c.last_message_at, c.last_message_preview,
          c.last_message_author, c.agent_read_seq, c.visitor_read_seq, c.created_at, c.debug_issue_count,
          c.resolution, c.csat_rating, c.csat_resolution,
+         c.topic_id, (SELECT tp.name FROM topics tp WHERE tp.id = c.topic_id) AS topic_name,
          ct.id AS contact_id, ct.name AS contact_name, ct.email AS contact_email, ct.verified_at AS contact_verified_at,
          (SELECT json_group_array(t.name) FROM conversation_tags ctg JOIN tags t ON t.id = ctg.tag_id WHERE ctg.conversation_id = c.id) AS tags
   FROM conversations c JOIN contacts ct ON ct.id = c.contact_id`;
@@ -25,6 +26,8 @@ export interface SummaryRow {
   resolution: number;
   csat_rating: CsatRating | null;
   csat_resolution: number | null;
+  topic_id: string | null;
+  topic_name: string | null;
   contact_id: string;
   contact_name: string | null;
   contact_email: string | null;
@@ -48,15 +51,16 @@ export function toSummary(row: SummaryRow): ConversationSummary {
     createdAt: row.created_at,
     debugIssueCount: row.debug_issue_count,
     tags: (JSON.parse(row.tags) as string[]).sort((a, b) => a.localeCompare(b)),
+    topic: row.topic_id && row.topic_name ? { id: row.topic_id, name: row.topic_name } : null,
     // Rated since it was last resolved (a reopened conversation isn't, until it's resolved and rated again).
     csat: { rating: row.csat_rating, ratedThisRound: row.status === "resolved" && row.csat_rating !== null && row.csat_resolution === row.resolution },
   };
 }
 
-/** What a visitor may see of their conversation: no tags (I-07). */
+/** What a visitor may see of their conversation: no tags (I-07) or topic (A-02). */
 export function forVisitor(summary: ConversationSummary): ConversationSummary {
-  // Tags and the debug issue count are for agents only.
-  return { ...summary, tags: [], debugIssueCount: 0 };
+  // Tags, the topic and the debug issue count are for agents only.
+  return { ...summary, tags: [], topic: null, debugIssueCount: 0 };
 }
 
 export async function loadSummary(db: D1Database, conversationId: string): Promise<ConversationSummary | null> {

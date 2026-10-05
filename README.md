@@ -13,6 +13,7 @@ What you get:
 - **A real-time inbox** with assignment, takeover from the AI, internal notes with @mentions, saved replies, tags, a contact sidebar, and a live list of who's on your site right now. You can start a chat with any of them.
 - **Issues from a conversation.** "Create issue" drafts a GitHub or Linear issue from the chat and the masked browser details (steps to reproduce, failing requests, errors, browser), your agent edits it and files it, and the conversation keeps the link. The AI never files issues on its own.
 - **Reports** for the last 7, 30 or 90 days: conversations, how many the AI resolved on its own, handoff rate and reasons, first-response times, CSAT and replies per teammate.
+- **Topics**: the AI labels each chat with a short topic (Billing, Login, …) once it goes quiet, reusing your existing ones. See the top topics in Reports, filter the inbox by topic, and rename, merge or delete them in Settings.
 
 ## Deploy
 

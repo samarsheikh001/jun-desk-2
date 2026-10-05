@@ -152,6 +152,18 @@ export class WorkspaceHub extends DurableObject<Env> {
     return picked;
   }
 
+  /**
+   * RPC (A-02): may a lazy topic-labelling pass start? True (and recorded) unless one started in
+   * the last `minIntervalMs`; checked and set inside this object, so two callers never both win.
+   */
+  async claimTopicRun(minIntervalMs: number): Promise<boolean> {
+    const last = (await this.ctx.storage.get<number>("topics:last-run")) ?? 0;
+    const now = Date.now();
+    if (now - last < minIntervalMs) return false;
+    await this.ctx.storage.put("topics:last-run", now);
+    return true;
+  }
+
   /** RPC (W-08): is any teammate's dashboard open? Visitors only ever get this yes/no. */
   async agentsOnline(): Promise<boolean> {
     return this.ctx.getWebSockets("agent").some((ws) => ws.readyState === WebSocket.OPEN);

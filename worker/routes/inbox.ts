@@ -10,13 +10,13 @@ import { HttpError, type AppContext, type AppEnv } from "../types.ts";
 // M7 inbox basics: saved replies (I-06), tags (I-07) and unread @mentions (I-05). Notes
 // themselves are messages, sent like replies with `internal: true`.
 
-async function memberRole(c: AppContext, workspaceId: string): Promise<string> {
+export async function memberRole(c: AppContext, workspaceId: string): Promise<string> {
   const row = await c.env.DB.prepare("SELECT role FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, c.get("user").id).first<{ role: string }>();
   if (!row) throw new HttpError(404, "not_found", "Workspace not found.");
   return row.role;
 }
 
-async function requireAdmin(c: AppContext, workspaceId: string): Promise<void> {
+export async function requireAdmin(c: AppContext, workspaceId: string): Promise<void> {
   if ((await memberRole(c, workspaceId)) === "agent") throw new HttpError(403, "forbidden", "Only owners and admins can change this.");
 }
 

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { handleCrawlBatch, resyncAll, type CrawlJob } from "./ai/knowledge.ts";
+import { labelAllWorkspaces } from "./ai/topics.ts";
 import { ai, handleChatGPTCallback } from "./routes/ai.ts";
 import { auth } from "./routes/auth.ts";
 import { conversations } from "./routes/conversations.ts";
@@ -7,6 +8,7 @@ import { files } from "./routes/files.ts";
 import { inbox } from "./routes/inbox.ts";
 import { issues } from "./routes/issues.ts";
 import { metrics } from "./routes/metrics.ts";
+import { topics } from "./routes/topics.ts";
 import { widget } from "./routes/widget.ts";
 import { onboarding } from "./routes/onboarding.ts";
 import { visitors } from "./routes/visitors.ts";
@@ -56,6 +58,7 @@ app.route("/", visitors);
 app.route("/", onboarding);
 app.route("/", inbox);
 app.route("/", metrics);
+app.route("/", topics);
 app.route("/", issues);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "No such API route." } }, 404));
@@ -80,6 +83,9 @@ async function serveWidgetFrame(request: Request, env: Env): Promise<Response> {
   return response;
 }
 
+/** Must match the daily entry in wrangler.jsonc `triggers.crons`. */
+const DAILY_CRON = "17 3 * * *";
+
 export default {
   fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
@@ -92,8 +98,9 @@ export default {
   async queue(batch, env) {
     await handleCrawlBatch(batch as MessageBatch<CrawlJob>, env);
   },
-  // Daily knowledge re-sync.
-  async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(resyncAll(env));
+  // Daily knowledge re-sync (DAILY_CRON); every 15 minutes, topic labels for quiet chats (A-02).
+  async scheduled(controller, env, ctx) {
+    if (controller.cron === DAILY_CRON) ctx.waitUntil(resyncAll(env));
+    else ctx.waitUntil(labelAllWorkspaces(env));
   },
 } satisfies ExportedHandler<Env>;

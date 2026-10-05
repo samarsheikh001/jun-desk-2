@@ -37,8 +37,8 @@
     "consumers": [{ "queue": "jun-desk-crawl", "max_batch_size": 4, "max_batch_timeout": 2 }]
   },
 
-  // Daily knowledge re-sync.
-  "triggers": { "crons": ["17 3 * * *"] },
+  // Daily knowledge re-sync; every 15 minutes, topic labels for quiet chats (A-02).
+  "triggers": { "crons": ["17 3 * * *", "*/15 * * * *"] },
 
   // Conversation: one per conversation, live state + AI turns, write-through to D1 (D-11).
   // WorkspaceHub: one per workspace, inbox fan-out, presence, dev ChatGPT token refresh.
