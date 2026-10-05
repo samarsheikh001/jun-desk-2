@@ -153,15 +153,23 @@
       // S-13 stuck on a form: on this page for 3+ visible minutes (hidden tab time doesn't count)
       // after a real problem, with no successful submit since. A plain timer would be the cut timed pop-up (N-02).
       window.addEventListener("submit", function () { pageIssue = 0; }, true);
-      setInterval(function () {
-        if (!document.hidden) seen += 1000;
-        if (seen >= stuckMs && pageIssue && !stuckSent && consented) {
-          stuckSent = 1;
-          push({ kind: "stuck", url: cleanUrl(location.pathname), seconds: seen / 1000, issue: pageIssue });
-        }
-      }, 1000);
     } catch (e) { /* never break the host page */ }
   }
+
+  // Visible time on this page (path), for S-13 and P-01 page openers. Runs with capture off too:
+  // openers send nothing captured (pageIssue stays unset without capture, so no S-13).
+  setInterval(function () {
+    if (!document.hidden) seen += 1000;
+    if (seen >= stuckMs && pageIssue && !stuckSent && consented) {
+      stuckSent = 1;
+      push({ kind: "stuck", url: cleanUrl(location.pathname), seconds: seen / 1000, issue: pageIssue });
+    }
+    // P-01: the first opener rule (Settings) for this path whose visible seconds are up; the desk
+    // sends its line. Not after an error nudge, a card, or once the chat was opened (frame.src).
+    if (openers && !nudged && !nudgeTimer && !frame.src && consented) openers.some(function (r) {
+      return seen >= r.delay * 1000 && RegExp(r.match).test(pagePath) && (nudgeEvent = { kind: "opener", id: r.id }, openers = 0, !showNudge());
+    });
+  }, 1000);
 
   // Page changes feed both the debug trail and the live visitor list.
   function nav() {
@@ -220,8 +228,8 @@
   }
 
   // ---------- proactive help (P-01): offer a chat when something really breaks ----------
-  var nudged, nudgeTimer, nudgeEvent; // push() decides when (P-01)
-  // The card's opener (what the chat starts with if they click it): { text, inviteId?, from? }.
+  var nudged, nudgeTimer, nudgeEvent, openers; // push() and the ticker decide when (P-01)
+  // The card's opener (what the chat starts with if they click it): { text, inviteId?, from?, page? }.
   var cardOpener;
   function showCard(o) {
     nudged = true;
@@ -237,7 +245,7 @@
       method: "POST",
       body: JSON.stringify({ event: nudgeEvent, page: { url: location.origin + cleanUrl(location.href), title: redact(document.title, 200) } }),
     }).then(function (r) { return r.json(); }).then(function (res) {
-      if (res.show && res.text && !nudged && !open) showCard({ text: res.text });
+      if (res.show && res.text && !nudged && !open) showCard(res);
     }).catch(function () {});
   }
   function hideNudge() { card.style.display = "none"; }
@@ -281,6 +289,7 @@
       wrap.style.setProperty("--c", c);
       wrap.style.setProperty("--t", lum > 0.65 ? "#1c1c1a" : "#fff");
     }
+    if (cfg) openers = cfg.openers;
     if (cfg && cfg.position === "left") wrap.classList.add("l");
     wrap.classList.add("on");
   }

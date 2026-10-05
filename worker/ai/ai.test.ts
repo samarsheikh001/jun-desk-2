@@ -181,3 +181,23 @@ test("K-04: excluded pages match by exact URL or path prefix", async () => {
   assert.equal(isExcluded(new URL("https://docs.acme.test/guides/blog/"), rules), false, "prefixes start at the root");
   assert.equal(isExcluded(new URL("https://docs.acme.test/x"), undefined), false);
 });
+
+test("P-01 page opener: facts from title, path and hint; technical or alarming lines fall back", async () => {
+  const { cleanOpener, openerFacts, GENERIC_OPENER } = await import("./nudge.ts");
+  const facts = openerFacts({ path: "/pricing", title: "Pricing – Acme" }, "help choosing between Team and Business");
+  assert.match(facts, /Page title: Pricing – Acme/);
+  assert.match(facts, /Page path: \/pricing/);
+  assert.match(facts, /wants to offer on this page: help choosing between Team and Business/);
+  assert.doesNotMatch(openerFacts({ path: "/", title: "" }), /offer/);
+  assert.match(openerFacts({ path: "/", title: "" }), /\(untitled\)/);
+  assert.equal(cleanOpener('"Comparing plans? Happy to help you pick the right one."'), "Comparing plans? Happy to help you pick the right one.");
+  assert.equal(cleanOpener("Questions about our plans\nSure!"), "Questions about our plans.");
+  assert.equal(cleanOpener(GENERIC_OPENER), GENERIC_OPENER);
+  assert.equal(cleanOpener("Need help with the /docs/api page?"), null);
+  assert.equal(cleanOpener("Seeing an error on this page?"), null);
+  assert.equal(cleanOpener("Something went wrong? We can help."), null);
+  assert.equal(cleanOpener("Having problems with billing?"), null);
+  assert.equal(cleanOpener("Check https://acme.com for prices."), null);
+  assert.equal(cleanOpener(`${"Very long ".repeat(15)}line.`), null);
+  assert.equal(cleanOpener("  "), null);
+});

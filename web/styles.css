@@ -320,6 +320,13 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .verified { margin-left: 6px; color: #1a7f37; font-size: 0.8rem; font-weight: 600; }
 .identity { display: grid; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .identity h3 { margin: 0; }
+/* P-01 page openers */
+.opener-rule { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.opener-when { align-items: end; flex-wrap: wrap; row-gap: 6px; }
+.opener-when .field:first-child { flex: 1; min-width: 160px; }
+.opener-delay input { width: 110px; }
+.openers code { white-space: nowrap; }
+.openers-off { margin: 0; background: var(--note-bg); color: var(--note-text); border: 1px solid var(--note-border); border-radius: 6px; padding: 6px 10px; }
 pre.code { margin: 0; padding: 10px 12px; background: var(--bg); border-radius: 8px; white-space: pre-wrap; overflow: auto; }
 @media (max-width: 700px) {
   .visitors thead { display: none; }

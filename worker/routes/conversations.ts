@@ -6,6 +6,8 @@ import { loadDebugContext, loadIssues, loadMessages, loadSummary, SUMMARY_SELECT
 import { connectConversation, connectHub, notifyConversationChanged, sendMessage } from "../lib/realtime.ts";
 import { parseHours } from "../../shared/hours.ts";
 import { parseAssignment } from "../../shared/inbox.ts";
+import { parseOpeners } from "../../shared/openers.ts";
+import { newId } from "../lib/crypto.ts";
 import { normalizeDomains } from "../lib/origins.ts";
 import { object, readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
@@ -89,6 +91,14 @@ conversations.patch("/workspaces/:id/inbox", async (c) => {
   if (body.assignment !== undefined) {
     try {
       settings.assignment = parseAssignment(body.assignment);
+    } catch (error) {
+      throw new HttpError(400, "invalid_field", (error as Error).message);
+    }
+  }
+  // P-01 page openers: the whole list at once.
+  if (body.openers !== undefined) {
+    try {
+      settings.openers = parseOpeners(body.openers, () => newId("op"));
     } catch (error) {
       throw new HttpError(400, "invalid_field", (error as Error).message);
     }

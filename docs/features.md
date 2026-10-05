@@ -153,9 +153,9 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 
 | ID | Feature | Ver | Status | Why / notes | Ref |
 |---|---|---|---|---|---|
-| P-01 | Signal-triggered AI openers (struggle, page, segment) | v1 | building | Partly shipped with S-06 (error-triggered nudge). Page/segment triggers still v2 | 02 |
+| P-01 | Signal-triggered AI openers (struggle, page, segment) | v1 | shipped | Partly shipped with S-06 (error-triggered nudge). **Shipped 2026-10-06 (page triggers):** owners/admins set up to 10 rules in Settings → Install (inbox settings JSON, no migration): a path pattern (`/pricing`, `/docs/*` = /docs and below, `*/billing`, `*`; `*` matches anything, path only, validated server-side), 5–600 s of *visible* time on that page (S-13's ticker; hidden tabs don't count, SPA navigation restarts it), and fixed text (≤ 140) or "Let the AI write it" (one friendly line from page title/path + optional hint ≤ 200, same cache/usage/fallback as S-11, filtered for technical or alarming words). The widget config gives the loader only id + regex + delay; the loader matches, then asks the nudge route, which re-checks rule, path, proactive toggle and allowed websites. One card per page load shared with the nudges (no opener after an error nudge, a card, or once the chat was opened); nothing before consent; works with `data-capture="off"` (sends only the page URL and title, like the live visitor list). Loader +74 B gzipped. Not built: "first-time visitors only" (loader bytes) and segment triggers (v2) | 02 |
 | P-02 | Public API / webhook to start an AI conversation from the customer's backend (e.g. payment failed) | v2 | proposed | Fin Proactive Procedures equivalent | 02 |
-| P-03 | Basic targeted messages (page/URL rules) | v2 | proposed | Simple version before P-01 | 02 |
+| P-03 | Basic targeted messages (page/URL rules) | v1 | shipped | Simple version before P-01. **Shipped 2026-10-06 as P-01's page openers** (path rules, visible-time delay, fixed or AI-written line); v1 per D-29 | 02 |
 | P-04 | Outbound campaigns (email/in-app broadcasts) | later | proposed | Scope creep toward marketing tools | |
 | P-05 | Product tours / in-app guidance | — | proposed | See "Not building" | 02 |
 
