@@ -60,12 +60,25 @@ function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: 
   const [widgetKey, setWidgetKey] = useState<string | null>(null);
   const [proactive, setProactive] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [domains, setDomains] = useState("");
+  const [savedDomains, setSavedDomains] = useState("");
+  const { busy, error, run } = useAction();
   useEffect(() => {
-    api<{ inbox: { widgetKey: string; settings: { proactive?: boolean } } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => {
+    api<{ inbox: { widgetKey: string; settings: { proactive?: boolean; allowedDomains?: string[] } } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => {
       setWidgetKey(r.inbox?.widgetKey ?? null);
       setProactive(r.inbox?.settings.proactive !== false);
+      const list = (r.inbox?.settings.allowedDomains ?? []).join(", ");
+      setDomains(list);
+      setSavedDomains(list);
     });
   }, [workspaceId]);
+  const saveDomains = () =>
+    run(async () => {
+      const r = await api<{ settings: { allowedDomains?: string[] } }>(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body: { allowedDomains: domains } });
+      const list = (r.settings.allowedDomains ?? []).join(", ");
+      setDomains(list);
+      setSavedDomains(list);
+    });
   const toggleProactive = async (value: boolean) => {
     setProactive(value);
     await api(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body: { proactive: value } });
@@ -91,6 +104,17 @@ function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: 
         <input type="checkbox" checked={proactive} disabled={!canEdit} onChange={(e) => void toggleProactive(e.target.checked)} />
         Offer help when something breaks on the page (e.g. "Looks like your payment didn't go through. Want a hand?")
       </label>
+      <div className="field" style={{ marginTop: 12 }}>
+        <span className="small strong">Allowed websites</span>
+        <div className="row">
+          <input value={domains} onChange={(e) => setDomains(e.target.value)} disabled={!canEdit} placeholder="Any website (e.g. acme.com, *.acme.com)" style={{ flex: 1 }} />
+          {canEdit && <button className="small" disabled={busy || domains === savedDomains} onClick={saveDomains}>Save</button>}
+        </div>
+        <small className="muted">
+          Your widget key is public, so anyone could copy the snippet. List your sites and the widget won't open, track visitors or use AI anywhere else. Use <code>*.acme.com</code> for subdomains. This desk ({window.location.host}) always works for testing.
+        </small>
+        {error && <small className="error">{error}</small>}
+      </div>
       <p className="muted small">
         Cookie banner? Add <code>data-consent="required"</code>: the widget then stores nothing and doesn't show the visitor on your live list until you call <code>JunDesk.consent(true)</code>.
       </p>

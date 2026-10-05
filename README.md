@@ -41,6 +41,7 @@ Turn it on in **Settings → AI assistant** and add your docs under **Knowledge*
   ```
 
   Agents see a verified name, email and attributes; chats follow the user across devices; the AI greets them and tools can look up their account with `{user.id}`.
+- **Allowed websites:** list your domains in Settings → Install so copies of your (public) widget key don't work on other sites.
 - **Consent:** add `data-consent="required"` and the widget stores nothing and stays off the visitor list until you call `JunDesk.consent(true)`.
 
 ## Support agent as code

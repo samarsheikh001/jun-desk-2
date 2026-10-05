@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { signIdentityToken } from "../worker/lib/identity.ts";
-import { Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+import { BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const AI_TIMEOUT = 120_000;
 // Unique per run, so the suite can run again on the same database.
@@ -203,6 +203,36 @@ pick: [args, url]
   assert.ok(call, `expected a my_account call; got ${JSON.stringify(actions)} and reply: ${reply.body}`);
   assert.equal(call.status, "ok");
   assert.ok(call.output.includes(`accounts/${ADA}`), call.output);
+});
+
+await step("domain restriction: only allowed websites get the live list, nudges and the chat frame", async () => {
+  const bad = await agent.call(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body: { allowedDomains: "acme..com" } });
+  assert.equal(bad.status, 400);
+  const set = await agent.call(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body: { allowedDomains: "https://customer.example/, *.shop.example" } });
+  assert.equal(set.status, 200, JSON.stringify(set.json));
+  assert.deepEqual(set.json.settings.allowedDomains, ["customer.example", "*.shop.example"]);
+
+  const allowed = new TestSocket(`/api/widget/${widgetKey}/live?s=allowed123456`, { headers: { Origin: "https://eu.shop.example" } });
+  await allowed.opened;
+  allowed.close();
+  const blocked = new TestSocket(`/api/widget/${widgetKey}/live?s=blocked123456`, { headers: { Origin: "https://copycat.example" } });
+  await assert.rejects(blocked.opened);
+
+  const nudge = (origin: string) =>
+    fetch(`${BASE}/api/widget/${widgetKey}/nudge`, { method: "POST", headers: { Origin: origin, "Content-Type": "text/plain" }, body: JSON.stringify({ event: { t: 1, kind: "error", message: "boom" }, page: { url: "https://x/", title: "X" } }) }).then((r) => r.json() as Promise<{ show: boolean; text?: string }>);
+  assert.deepEqual(await nudge("https://copycat.example"), { show: false });
+  assert.equal((await nudge("https://customer.example")).show, true);
+
+  const frame = await fetch(`${BASE}/widget?key=${widgetKey}`);
+  assert.equal(frame.status, 200);
+  assert.match(await frame.text(), /<div id="root">|<html/i);
+  const csp = frame.headers.get("content-security-policy") ?? "";
+  assert.match(csp, /^frame-ancestors 'self' https:\/\/customer\.example:\*/);
+  assert.doesNotMatch(csp, /copycat/);
+
+  // Back to "any website" for the other suites.
+  await agent.call(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body: { allowedDomains: "" } });
+  assert.equal((await fetch(`${BASE}/widget?key=${widgetKey}`)).headers.get("content-security-policy"), "frame-ancestors *");
 });
 
 summary();

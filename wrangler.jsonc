@@ -7,10 +7,12 @@
 
   // The dashboard and widget frame (React, built by Vite) are static assets.
   // API routes go to the Worker first; everything else falls back to the SPA.
-  // /auth/callback is the dev-only "Sign in with ChatGPT" loopback return.
+  // /auth/callback is the dev-only "Sign in with ChatGPT" loopback return. /widget (the chat
+  // frame) goes through the Worker so it can say which sites may embed it (frame-ancestors).
   "assets": {
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/auth/callback"]
+    "run_worker_first": ["/api/*", "/auth/callback", "/widget"]
   },
 
   // Resource IDs are omitted on purpose: the Deploy to Cloudflare button and

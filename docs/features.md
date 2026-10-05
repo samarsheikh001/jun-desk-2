@@ -201,6 +201,7 @@ Applies to the paid hosted cloud (D-04). B-03 also applies to self-hosters' own 
 | T-12 | Upgrade path: update from upstream + automatic D1 migrations | v1 | building | `npm run deploy` (scripts/deploy.ts): migrate→deploy on upgrades, deploy→migrate on first install. Upgrade order verified live 2026-10-04; first-install order not yet | 04 |
 | T-14 | Hosted cloud: multi-tenant Jun Desk run by us, signup, billing, one D1 per workspace | v2 | agreed | D-04, D-16 | 04 |
 | T-08 | SOC 2 | later | proposed | Needed for mid-market sales | |
+| T-16 | Widget domain allowlist: only listed websites can show the chat, appear on the live visitor list or trigger AI nudges | v1 | shipped | Shipped 2026-10-05 (follow-up to M6): Settings → Install → Allowed websites (`acme.com`, `*.acme.com`); live socket and nudge check the browser's Origin; the chat frame is served with CSP `frame-ancestors`; empty list = any site; the desk's own origin always works. A non-browser script can still fake Origin (rate limits later) | 02 |
 
 ---
 

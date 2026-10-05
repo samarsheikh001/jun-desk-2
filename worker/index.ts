@@ -8,6 +8,7 @@ import { widget } from "./routes/widget.ts";
 import { visitors } from "./routes/visitors.ts";
 import { workspaces } from "./routes/workspaces.ts";
 import { agent } from "./routes/agent.ts";
+import { frameAncestors } from "./lib/origins.ts";
 import { HttpError, type AppEnv } from "./types.ts";
 
 export { Conversation } from "./conversation.ts";
@@ -59,10 +60,24 @@ app.onError((error, c) => {
   return c.json({ error: { code: "internal", message: "Something went wrong." } }, 500);
 });
 
+/** The chat frame, with a CSP that lets only the widget's allowed websites embed it. */
+async function serveWidgetFrame(request: Request, env: Env): Promise<Response> {
+  const key = new URL(request.url).searchParams.get("key") ?? "";
+  const inbox = key ? await env.DB.prepare("SELECT settings FROM inboxes WHERE widget_key = ?").bind(key).first<{ settings: string }>() : null;
+  const domains = inbox ? ((JSON.parse(inbox.settings) as { allowedDomains?: string[] }).allowedDomains ?? []) : [];
+  // /widget maps to widget.html in the assets (asking for /widget.html would redirect here).
+  const asset = await env.ASSETS.fetch(request);
+  const response = new Response(asset.body, asset);
+  response.headers.set("Content-Security-Policy", frameAncestors(domains));
+  return response;
+}
+
 export default {
   fetch(request, env, ctx) {
+    const { pathname } = new URL(request.url);
     // Dev-only ChatGPT sign-in returns to a 127.0.0.1 loopback path outside /api.
-    if (new URL(request.url).pathname === "/auth/callback") return handleChatGPTCallback(request, env);
+    if (pathname === "/auth/callback") return handleChatGPTCallback(request, env);
+    if (pathname === "/widget") return serveWidgetFrame(request, env);
     return app.fetch(request, env, ctx);
   },
   // Website crawling (K-01).

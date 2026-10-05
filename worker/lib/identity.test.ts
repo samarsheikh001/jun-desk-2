@@ -58,3 +58,22 @@ test("the prompt names a verified customer", () => {
   assert.match(prompt, /The customer is signed in; Acme's website verified who they are \(name: Ada; email: ada@acme\.test; user id: 42; plan: pro\)/);
   assert.doesNotMatch(systemPrompt({ workspaceName: "Acme", persona: "", hits: [] }), /signed in/);
 });
+
+test("widget domain restriction: cleaning, matching and the frame CSP", async () => {
+  const { frameAncestors, normalizeDomains, originAllowed } = await import("./origins.ts");
+  assert.deepEqual(normalizeDomains("https://www.Acme.com/pricing, *.acme.com acme.com:8080 localhost"), { domains: ["www.acme.com", "*.acme.com", "acme.com", "localhost"], invalid: [] });
+  assert.deepEqual(normalizeDomains(["acme..com", "not a domain"]).invalid, ["acme..com", "not a domain"]);
+  const desk = "https://desk.example.dev";
+  const domains = ["acme.com", "*.shop.acme.com"];
+  assert.equal(originAllowed("https://acme.com", domains, desk), true);
+  assert.equal(originAllowed("https://www.acme.com", domains, desk), false, "exact unless *.");
+  assert.equal(originAllowed("https://eu.shop.acme.com", domains, desk), true);
+  assert.equal(originAllowed("https://shop.acme.com", domains, desk), true);
+  assert.equal(originAllowed("https://acme.com.evil.test", domains, desk), false);
+  assert.equal(originAllowed("https://evilacme.com", domains, desk), false);
+  assert.equal(originAllowed(desk, domains, desk), true, "the desk's own demo page");
+  assert.equal(originAllowed(undefined, domains, desk), false);
+  assert.equal(originAllowed(undefined, [], desk), true, "no list: anywhere");
+  assert.equal(frameAncestors([]), "frame-ancestors *");
+  assert.equal(frameAncestors(["*.acme.com"]), "frame-ancestors 'self' https://*.acme.com:* http://*.acme.com:* https://acme.com:* http://acme.com:*");
+});

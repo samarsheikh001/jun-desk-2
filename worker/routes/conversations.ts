@@ -5,6 +5,7 @@ import { requireUser } from "../auth/session.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
 import { loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
 import { connectConversation, connectHub, notifyConversationChanged, sendMessage } from "../lib/realtime.ts";
+import { normalizeDomains } from "../lib/origins.ts";
 import { object, readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
 import { storeUpload } from "./files.ts";
@@ -57,6 +58,11 @@ conversations.patch("/workspaces/:id/inbox", async (c) => {
   if (!inbox) throw new HttpError(404, "not_found", "No widget inbox.");
   const settings = JSON.parse(inbox.settings) as Record<string, unknown>;
   if (typeof body.proactive === "boolean") settings.proactive = body.proactive;
+  if (body.allowedDomains !== undefined) {
+    const { domains, invalid } = normalizeDomains(body.allowedDomains);
+    if (invalid.length) throw new HttpError(400, "invalid_field", `Not a domain: ${invalid.join(", ")}. Use e.g. acme.com or *.acme.com.`);
+    settings.allowedDomains = domains;
+  }
   await c.env.DB.prepare("UPDATE inboxes SET settings = ? WHERE id = ?").bind(JSON.stringify(settings), inbox.id).run();
   return c.json({ settings });
 });

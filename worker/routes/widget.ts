@@ -4,6 +4,7 @@ import type { ConversationRef, Participant } from "../conversation.ts";
 import { loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
 import { createVisitor, findVisitor, identify } from "../lib/contacts.ts";
 import { newId, sha256 } from "../lib/crypto.ts";
+import { originAllowed } from "../lib/origins.ts";
 import { IdentityError, verifyIdentityToken } from "../lib/identity.ts";
 import { connectConversation, connectVisitorLive, notifyConversationChanged, offeredProtocols, sendMessage } from "../lib/realtime.ts";
 import { readJson } from "../lib/validate.ts";
@@ -35,6 +36,12 @@ async function widgetInbox(c: AppContext): Promise<WidgetInbox> {
     .first<{ inboxId: string; workspaceId: string; workspaceName: string; settings: string; identitySecret: string | null }>();
   if (!row) throw new HttpError(404, "unknown_widget", "Unknown widget key.");
   return { ...row, settings: JSON.parse(row.settings) as Record<string, unknown> };
+}
+
+/** Domain restriction: is this request from a website allowed to use the widget? */
+function fromAllowedSite(c: AppContext, inbox: WidgetInbox): boolean {
+  const domains = Array.isArray(inbox.settings.allowedDomains) ? (inbox.settings.allowedDomains as string[]) : [];
+  return originAllowed(c.req.header("origin"), domains, new URL(c.req.url).origin);
 }
 
 async function visitor(c: AppContext, inbox: WidgetInbox, token = c.req.header("x-visitor-token")): Promise<{ contactId: string }> {
@@ -86,7 +93,7 @@ const NUDGE_TIMEOUT_MS = 2500;
 widget.post("/widget/:key/nudge", async (c) => {
   const cors = { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" };
   const inbox = await widgetInbox(c).catch(() => null);
-  if (!inbox || inbox.settings.proactive === false) return c.json({ show: false }, 200, cors);
+  if (!inbox || inbox.settings.proactive === false || !fromAllowedSite(c, inbox)) return c.json({ show: false }, 200, cors);
   let raw: Record<string, unknown> = {};
   try {
     raw = JSON.parse(await c.req.text()) as Record<string, unknown>;
@@ -169,6 +176,7 @@ widget.post("/widget/:key/identify", async (c) => {
 // report itself and receive invites addressed to its own session.
 widget.get("/widget/:key/live", async (c) => {
   const inbox = await widgetInbox(c);
+  if (!fromAllowedSite(c, inbox)) throw new HttpError(403, "site_not_allowed", "This website isn't allowed to use this widget (Settings → Install → Allowed websites).");
   const sessionId = c.req.query("s") ?? "";
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(sessionId)) throw new HttpError(400, "invalid_field", "Bad session id.");
   const cf = (c.req.raw as Request & { cf?: { country?: string; city?: string } }).cf;
