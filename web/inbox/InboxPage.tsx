@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ConversationStatus, ConversationSummary, Message } from "../../shared/protocol.ts";
+import type { ConversationStatus, ConversationSummary, CsatRating, Message } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { fillSavedReply } from "../../shared/inbox.ts";
 import { Composer, type SavedReply } from "../components/Composer.tsx";
@@ -11,6 +11,7 @@ import type { Hub } from "../Shell.tsx";
 
 type StatusFilter = ConversationStatus | "all";
 type AssigneeFilter = "all" | "me" | "unassigned" | "mentions";
+type RatingFilter = CsatRating | "";
 interface Member { id: string; name: string }
 interface Tag { id: string; name: string; conversations: number }
 interface MentionToast { conversationId: string; by: string; preview: string }
@@ -32,10 +33,17 @@ function visitorNumber(id: string): string {
 export const contactLabel = (c: ConversationSummary["contact"]) => c.name ?? c.email ?? `Visitor #${visitorNumber(c.id)}`;
 const isUnread = (c: ConversationSummary) => c.lastMessageAuthor === "visitor" && c.lastSeq > c.agentReadSeq;
 
+/** W-12: the customer's latest rating as a small badge. */
+function CsatBadge({ rating }: { rating: CsatRating | null }) {
+  if (!rating) return null;
+  return <em className={`tag csat-tag ${rating}`} title={rating === "good" ? "The customer rated this Good" : "The customer rated this Bad"}>{rating === "good" ? "👍" : "👎"}</em>;
+}
+
 export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceId: string; me: { id: string; name: string }; hub: Hub; conversationId: string | null }) {
   const [status, setStatus] = useState<StatusFilter>("open");
   const [assignee, setAssignee] = useState<AssigneeFilter>("all");
   const [tagFilter, setTagFilter] = useState("");
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>("");
   const [list, setList] = useState<ConversationSummary[] | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -46,19 +54,20 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
     (c: ConversationSummary) =>
       (status === "all" || c.status === status) &&
       (tagFilter === "" || c.tags.some((t) => t.toLowerCase() === tagFilter.toLowerCase())) &&
+      (ratingFilter === "" || c.csat.rating === ratingFilter) &&
       (assignee === "all" || assignee === "mentions" || (assignee === "me" ? c.assigneeId === me.id : c.assigneeId === null)),
-    [status, assignee, tagFilter, me.id],
+    [status, assignee, tagFilter, ratingFilter, me.id],
   );
 
   useEffect(() => {
     let cancelled = false;
     setList(null);
-    const query = new URLSearchParams({ status, ...(assignee !== "all" ? { assignee } : {}), ...(tagFilter ? { tag: tagFilter } : {}) });
+    const query = new URLSearchParams({ status, ...(assignee !== "all" ? { assignee } : {}), ...(tagFilter ? { tag: tagFilter } : {}), ...(ratingFilter ? { rating: ratingFilter } : {}) });
     api<{ conversations: ConversationSummary[] }>(`/workspaces/${workspaceId}/conversations?${query}`).then((r) => !cancelled && setList(r.conversations));
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, status, assignee, tagFilter]);
+  }, [workspaceId, status, assignee, tagFilter, ratingFilter]);
 
   const loadTags = useCallback(() => api<{ tags: Tag[] }>(`/workspaces/${workspaceId}/tags`).then((r) => setTags(r.tags)), [workspaceId]);
   const loadMentions = useCallback(() => api<{ unread: number }>(`/workspaces/${workspaceId}/mentions`).then((r) => setUnreadMentions(r.unread)), [workspaceId]);
@@ -125,10 +134,25 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
             ))}
           </select>
         )}
+        <select
+          className="filter"
+          value={ratingFilter}
+          onChange={(e) => {
+            const next = e.target.value as RatingFilter;
+            setRatingFilter(next);
+            // Rated conversations are resolved ones: don't leave the filter on an empty Open tab.
+            if (next && status === "open") setStatus("all");
+          }}
+          aria-label="Rating filter"
+        >
+          <option value="">Any rating</option>
+          <option value="good">Rated 👍 Good</option>
+          <option value="bad">Rated 👎 Bad</option>
+        </select>
         {list === null ? (
           <p className="muted small pad">Loading…</p>
         ) : list.length === 0 ? (
-          <p className="muted small pad">No conversations here. Install the widget from Settings to start receiving chats.</p>
+          <p className="muted small pad">{ratingFilter ? "No conversations with this rating." : "No conversations here. Install the widget from Settings to start receiving chats."}</p>
         ) : (
           <ul>
             {list.map((c) => (
@@ -143,6 +167,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
                     {c.contact.verified && <span className="verified" title="Identity verified by your site">✓</span>}
                     {c.handling === "ai" && <em className="tag ai-tag" title="The AI assistant is answering">AI</em>}
                     {c.debugIssueCount > 0 && <em className="tag issue-tag" title="Errors or failed requests in the visitor's browser">⚠ {c.debugIssueCount}</em>}
+                    <CsatBadge rating={c.csat.rating} />
                     <span className="spacer" />
                     <span className="muted small">{formatTime(c.lastMessageAt)}</span>
                   </span>
@@ -264,6 +289,7 @@ function Thread({
         <div>
           <strong>{contactLabel(conversation.contact)}</strong>
           {conversation.contact.verified && <span className="verified" title="Identity verified by your site">✓</span>}
+          <CsatBadge rating={conversation.csat.rating} />
           <div className="muted small">
             {thread.state === "open" ? "Live" : thread.state === "connecting" ? "Connecting…" : "Reconnecting…"} · started {formatTime(conversation.createdAt)}
           </div>

@@ -237,6 +237,10 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 /* ---------- AI ---------- */
 .ai-tag { margin-left: 6px; }
+/* W-12: the customer's rating. */
+.csat-tag { margin-left: 6px; padding: 0 6px; font-style: normal; }
+.csat-tag.bad { background: #fdecec; }
+@media (prefers-color-scheme: dark) { .csat-tag.bad { background: #3a1d1d; } }
 .msg.ai .bubble { background: var(--tag); color: var(--text); border-color: transparent; }
 .msg.ai.streaming .bubble { opacity: 0.9; }
 .bubble code { font-size: 0.85em; padding: 0 4px; border-radius: 4px; background: var(--surface); }

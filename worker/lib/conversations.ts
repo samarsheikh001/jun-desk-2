@@ -1,8 +1,9 @@
-import type { Attachment, AuthorType, ConversationStatus, ConversationSummary, Handling, Message, MessageMeta } from "../../shared/protocol.ts";
+import type { Attachment, AuthorType, ConversationStatus, CsatRating, ConversationSummary, Handling, Message, MessageMeta } from "../../shared/protocol.ts";
 
 export const SUMMARY_SELECT = `
   SELECT c.id, c.status, c.handling, c.assignee_id, c.last_seq, c.last_message_at, c.last_message_preview,
          c.last_message_author, c.agent_read_seq, c.visitor_read_seq, c.created_at, c.debug_issue_count,
+         c.resolution, c.csat_rating, c.csat_resolution,
          ct.id AS contact_id, ct.name AS contact_name, ct.email AS contact_email, ct.verified_at AS contact_verified_at,
          (SELECT json_group_array(t.name) FROM conversation_tags ctg JOIN tags t ON t.id = ctg.tag_id WHERE ctg.conversation_id = c.id) AS tags
   FROM conversations c JOIN contacts ct ON ct.id = c.contact_id`;
@@ -20,6 +21,9 @@ export interface SummaryRow {
   visitor_read_seq: number;
   created_at: number;
   debug_issue_count: number;
+  resolution: number;
+  csat_rating: CsatRating | null;
+  csat_resolution: number | null;
   contact_id: string;
   contact_name: string | null;
   contact_email: string | null;
@@ -43,6 +47,8 @@ export function toSummary(row: SummaryRow): ConversationSummary {
     createdAt: row.created_at,
     debugIssueCount: row.debug_issue_count,
     tags: (JSON.parse(row.tags) as string[]).sort((a, b) => a.localeCompare(b)),
+    // Rated since it was last resolved (a reopened conversation isn't, until it's resolved and rated again).
+    csat: { rating: row.csat_rating, ratedThisRound: row.status === "resolved" && row.csat_rating !== null && row.csat_resolution === row.resolution },
   };
 }
 

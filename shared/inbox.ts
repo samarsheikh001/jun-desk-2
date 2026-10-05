@@ -1,5 +1,7 @@
-// M7 inbox helpers shared by the Worker and the dashboard: @mentions in notes (I-05),
-// saved-reply placeholders (I-06) and tag names (I-07). Pure functions.
+// M7 inbox helpers shared by the Worker, the dashboard and the widget: @mentions in notes
+// (I-05), saved-reply placeholders (I-06), tag names (I-07) and CSAT ratings (W-12). Pure functions.
+
+import { MAX_CSAT_COMMENT, type AuthorType, type ConversationStatus, type CsatRating } from "./protocol.ts";
 
 export interface MentionTarget {
   id: string;
@@ -65,4 +67,22 @@ export function normalizeTag(raw: unknown): string | null {
   const name = raw.replace(/\s+/g, " ").trim().replace(/^#/, "");
   if (!name || name.length > MAX_TAG_LENGTH) return null;
   return name;
+}
+
+/** W-12: a rating as sent by the widget. Throws a visitor-readable message when it's malformed. */
+export function parseRating(body: Record<string, unknown>): { rating: CsatRating; comment: string } {
+  const { rating, comment } = body;
+  if (rating !== "good" && rating !== "bad") throw new Error("rating must be good or bad.");
+  if (comment != null && typeof comment !== "string") throw new Error("comment must be text.");
+  const text = typeof comment === "string" ? comment.trim() : "";
+  if (text.length > MAX_CSAT_COMMENT) throw new Error(`Comments are limited to ${MAX_CSAT_COMMENT} characters.`);
+  return { rating, comment: text };
+}
+
+/**
+ * W-12: whether a conversation can be rated: ratings are on, it's resolved, and the team or the
+ * AI actually replied. Once per resolution is checked separately (`csat.ratedThisRound`).
+ */
+export function offersRating(enabled: boolean, status: ConversationStatus, messages: { authorType: AuthorType; internal: boolean }[]): boolean {
+  return enabled && status === "resolved" && messages.some((m) => !m.internal && (m.authorType === "agent" || m.authorType === "ai"));
 }

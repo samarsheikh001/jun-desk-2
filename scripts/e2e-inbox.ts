@@ -1,6 +1,6 @@
 // End-to-end test of M7's inbox basics: internal notes and @mentions (I-05), saved replies
-// (I-06), tags (I-07) and offline email capture (W-08). Notes and tags must never reach the
-// visitor. Run after e2e-polish.
+// (I-06), tags (I-07), offline email capture (W-08) and CSAT (W-12). Notes and tags must never
+// reach the visitor. Run after e2e-polish.
 
 import assert from "node:assert/strict";
 import { signIdentityToken } from "../worker/lib/identity.ts";
@@ -182,6 +182,91 @@ await step("W-08: a visitor waiting for the team leaves an email; agents get it 
   const blocked = await vic.call(`/widget/${widgetKey}/conversations/${vicConv.id}/email`, { body: { email: "other@x.test" }, headers: { "X-Visitor-Token": vicToken } });
   assert.equal(blocked.status, 409);
   assert.equal((await owner.call(`/conversations/${vicConv.id}`)).json.conversation.contact.email, `vic-${run}@acme.test`);
+});
+
+// ---------- W-12: CSAT ----------
+let csatId = "";
+const ratePath = () => `/widget/${widgetKey}/conversations/${csatId}/rating`;
+const rate = (body: Record<string, unknown>) => visitor.call(ratePath(), { body, headers: vh() });
+const agentNotes = async (pattern: RegExp) =>
+  ((await owner.call(`/conversations/${csatId}`)).json.messages as { body: string; internal: boolean }[]).filter((m) => m.internal && pattern.test(m.body));
+const resolve = async () => {
+  const res = await owner.call(`/conversations/${csatId}`, { method: "PATCH", body: { status: "resolved" } });
+  assert.equal(res.json.conversation.status, "resolved");
+};
+
+await step("W-12: no rating until the conversation is resolved and someone replied", async () => {
+  assert.equal((await visitor.call(`/widget/${widgetKey}/config`)).json.csat, true, "on by default");
+  const conv = await visitor.call(`/widget/${widgetKey}/conversations`, { body: { clientMsgId: crypto.randomUUID(), body: "Can I change my plan mid-month?" }, headers: vh() });
+  assert.equal(conv.status, 200, JSON.stringify(conv.json));
+  csatId = conv.json.conversation.id;
+  assert.deepEqual(conv.json.conversation.csat, { rating: null, ratedThisRound: false });
+  assert.equal((await rate({ rating: "good" })).json.error.code, "not_resolved");
+  // An agent answers (taking it from the AI), so no AI turn writes after this.
+  await owner.call(`/conversations/${csatId}/messages`, { body: { clientMsgId: crypto.randomUUID(), body: "Yes, it's prorated." } });
+  assert.equal((await rate({ rating: "meh" })).status, 400);
+  assert.equal((await new Client().call(ratePath(), { body: { rating: "good" } })).status, 401);
+});
+
+await step("W-12: resolved, the visitor rates 👍 once; agents get a note, the visitor doesn't", async () => {
+  await resolve();
+  assert.deepEqual((await visitor.call(`/widget/${widgetKey}/conversations/${csatId}`, { headers: vh() })).json.conversation.csat, { rating: null, ratedThisRound: false });
+  const rated = await rate({ rating: "good" });
+  assert.equal(rated.status, 200, JSON.stringify(rated.json));
+  assert.deepEqual(rated.json.conversation.csat, { rating: "good", ratedThisRound: true });
+  assert.equal((await agentNotes(/rated this conversation 👍 Good\./)).length, 1);
+  const transcript = (await visitor.call(`/widget/${widgetKey}/conversations/${csatId}`, { headers: vh() })).json.messages as { body: string }[];
+  assert.ok(!transcript.some((m) => /rated this conversation/.test(m.body)), "rating note leaked to the visitor");
+
+  // Rated this round: no second rating, no switching to 👎; a comment on the same rating is fine (once).
+  assert.equal((await rate({ rating: "good" })).json.error.code, "already_rated");
+  assert.equal((await rate({ rating: "bad", comment: "Actually no" })).json.error.code, "already_rated");
+  assert.equal((await rate({ rating: "good", comment: "x".repeat(1001) })).status, 400);
+  for (let i = 0; i < 2; i++) assert.equal((await rate({ rating: "good", comment: " Quick and clear " })).status, 200);
+  const comments = await agentNotes(/commented on their 👍 Good rating: Quick and clear$/);
+  assert.equal(comments.length, 1, "the same comment twice adds one note");
+
+  // Pending and back to resolved without the visitor writing: still the same, rated round.
+  await owner.call(`/conversations/${csatId}`, { method: "PATCH", body: { status: "pending" } });
+  await resolve();
+  assert.deepEqual((await visitor.call(`/widget/${widgetKey}/conversations/${csatId}`, { headers: vh() })).json.conversation.csat, { rating: "good", ratedThisRound: true });
+  assert.equal((await rate({ rating: "good" })).json.error.code, "already_rated");
+});
+
+await step("W-12: writing again reopens it; resolved again, they can rate again (👎) and agents can filter", async () => {
+  const again = await visitor.call(`/widget/${widgetKey}/conversations/${csatId}/messages`, { body: { clientMsgId: crypto.randomUUID(), body: "The proration looks wrong on my invoice" }, headers: vh() });
+  assert.equal(again.status, 200, JSON.stringify(again.json));
+  const reopened = (await visitor.call(`/widget/${widgetKey}/conversations/${csatId}`, { headers: vh() })).json.conversation;
+  assert.equal(reopened.status, "open");
+  assert.deepEqual(reopened.csat, { rating: "good", ratedThisRound: false }, "the old rating stays until a new one");
+  assert.equal((await rate({ rating: "bad" })).json.error.code, "not_resolved");
+  await owner.call(`/conversations/${csatId}/messages`, { body: { clientMsgId: crypto.randomUUID(), body: "Fixed, sorry about that." } });
+  await resolve();
+  const rated = await rate({ rating: "bad", comment: "Took two tries" });
+  assert.equal(rated.status, 200, JSON.stringify(rated.json));
+  assert.deepEqual(rated.json.conversation.csat, { rating: "bad", ratedThisRound: true });
+  assert.equal((await agentNotes(/rated this conversation 👎 Bad: Took two tries$/)).length, 1);
+  assert.equal((await agentNotes(/rated this conversation/)).length, 2, "both ratings are kept");
+
+  const list = (rating: string) => owner.call(`/workspaces/${workspaceId}/conversations?status=all&rating=${rating}`);
+  const bad = (await list("bad")).json.conversations as { id: string; csat: { rating: string } }[];
+  assert.ok(bad.some((c) => c.id === csatId) && bad.every((c) => c.csat.rating === "bad"), JSON.stringify(bad));
+  assert.ok(!(await list("good")).json.conversations.some((c: { id: string }) => c.id === csatId), "the latest rating wins");
+  assert.equal((await list("great")).status, 400);
+});
+
+await step("W-12: turned off, the widget doesn't ask and ratings are refused", async () => {
+  const inbox = `/workspaces/${workspaceId}/inbox`;
+  assert.equal((await owner.call(inbox, { method: "PATCH", body: { csat: false } })).json.settings.csat, false);
+  try {
+    assert.equal((await visitor.call(`/widget/${widgetKey}/config`)).json.csat, false);
+    await visitor.call(`/widget/${widgetKey}/conversations/${csatId}/messages`, { body: { clientMsgId: crypto.randomUUID(), body: "One more thing" }, headers: vh() });
+    await resolve();
+    assert.equal((await rate({ rating: "good" })).json.error.code, "csat_off");
+  } finally {
+    assert.equal((await owner.call(inbox, { method: "PATCH", body: { csat: true } })).json.settings.csat, true);
+  }
+  assert.equal((await rate({ rating: "good" })).status, 200, "back on: this round can be rated");
 });
 
 summary();

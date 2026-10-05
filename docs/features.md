@@ -33,7 +33,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | W-09 | AI-rendered UI: allow-listed cards, forms, buttons, choice chips | v2 | proposed | Declarative (A2UI/ChatKit-style), not arbitrary HTML | 02 |
 | W-10 | Help-centre search and articles inside the widget | v2 | proposed | Pairs with K-05 | |
 | W-11 | Multilingual UI plus auto-translation of messages | v2 | proposed | | |
-| W-12 | CSAT rating at conversation end | v1 | agreed | Feeds billing verification (B-02) and analytics | 01 |
+| W-12 | CSAT rating at conversation end | v1 | shipped | Shipped M7: when a conversation the team or the AI answered is resolved, the widget asks "How did we do?" (👍/👎, then an optional comment). Once per resolution: writing again reopens it, and the next resolution can be rated again. Every rating is kept (`csat_ratings`, for A-01); the latest shows as a badge in the inbox, with a rating filter and a note for agents. On by default, off in Settings → Widget appearance. Feeds billing verification (B-02) and analytics | 01 |
 | W-13 | Mobile SDKs (iOS/Android/React Native) | v3 | proposed | Web first | 02 |
 | W-14 | Public Core Web Vitals budget and perf page | v2 | proposed | Marketing differentiator | 02 |
 

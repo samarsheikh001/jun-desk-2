@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import { SOCKET_PROTOCOL, type Attachment } from "../../shared/protocol.ts";
+import { SOCKET_PROTOCOL, type Attachment, type CsatRating } from "../../shared/protocol.ts";
+import { parseRating } from "../../shared/inbox.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
 import { forVisitor, loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
 import { createVisitor, findVisitor, identify } from "../lib/contacts.ts";
@@ -90,6 +91,8 @@ widget.get("/widget/:key/config", async (c) => {
       greeting: typeof s.greeting === "string" ? s.greeting : "Hi! How can we help?",
       // P-01: offer help when the page has an error (on unless turned off).
       proactive: s.proactive !== false,
+      // W-12: ask for a rating when a conversation is resolved (on unless turned off).
+      csat: s.csat !== false,
       /** Whether new chats are answered by the AI first (the widget shows its typing dots right away). */
       ai: (await loadAiSettings(c.env, inbox.workspaceId)).enabled,
       // W-04 branding.
@@ -339,6 +342,68 @@ widget.post("/widget/:key/conversations/:cid/email", async (c) => {
   const others = await c.env.DB.prepare("SELECT id FROM conversations WHERE contact_id = ? AND id != ? LIMIT 50").bind(contactId, ref.conversationId).all<{ id: string }>();
   c.executionCtx.waitUntil(Promise.all(others.results.map((r) => notifyConversationChanged(c.env, { conversationId: r.id, workspaceId: inbox.workspaceId }))));
   return c.json({ ok: true, email });
+});
+
+// W-12: the visitor rates a resolved conversation, once per resolution (writing again reopens
+// it; when it's resolved again they can rate again). Thumbs first: a second call with the same
+// rating adds or replaces the comment. Agents get the rating as a note.
+widget.post("/widget/:key/conversations/:cid/rating", async (c) => {
+  const inbox = await widgetInbox(c);
+  const { contactId } = await visitor(c, inbox);
+  const ref = await visitorConversation(c, inbox, contactId);
+  let input: ReturnType<typeof parseRating>;
+  try {
+    input = parseRating(await readJson(c.req));
+  } catch (error) {
+    throw new HttpError(400, "invalid_field", (error as Error).message);
+  }
+  const { rating, comment } = input;
+  if (inbox.settings.csat === false) throw new HttpError(409, "csat_off", "Ratings are turned off for this desk.");
+
+  const db = c.env.DB;
+  const row = await db.prepare(
+    `SELECT c.status, c.resolution,
+            EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.internal = 0 AND m.author_type IN ('agent', 'ai')) AS replied
+     FROM conversations c WHERE c.id = ?`,
+  )
+    .bind(ref.conversationId)
+    .first<{ status: string; resolution: number; replied: number }>();
+  if (row?.status !== "resolved") throw new HttpError(409, "not_resolved", "You can rate this conversation once it's resolved.");
+  if (!row.replied) throw new HttpError(409, "nothing_to_rate", "Nobody has replied in this conversation yet.");
+
+  const now = Date.now();
+  const id = newId("csat");
+  const label = rating === "good" ? "👍 Good" : "👎 Bad";
+  // One rating per round: the unique key settles concurrent clicks; the row follows only if this one won.
+  const [inserted] = await db.batch([
+    db.prepare(
+      `INSERT INTO csat_ratings (id, conversation_id, workspace_id, contact_id, resolution, rating, comment, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (conversation_id, resolution) DO NOTHING`,
+    ).bind(id, ref.conversationId, inbox.workspaceId, contactId, row.resolution, rating, comment || null, now, now),
+    db.prepare("UPDATE conversations SET csat_rating = ?, csat_at = ?, csat_resolution = ? WHERE id = ? AND EXISTS (SELECT 1 FROM csat_ratings WHERE id = ?)").bind(
+      rating,
+      now,
+      row.resolution,
+      ref.conversationId,
+      id,
+    ),
+  ]);
+  const note = c.env.CONVERSATION.getByName(ref.conversationId);
+  if ((inserted?.meta.changes ?? 0) > 0) {
+    await note.addNote(ref, `The customer rated this conversation ${label}${comment ? `: ${comment}` : "."}`, `csat:${row.resolution}`);
+  } else {
+    // Already rated this round: only a comment on the same rating can follow.
+    const existing = await db.prepare("SELECT id, rating, comment FROM csat_ratings WHERE conversation_id = ? AND resolution = ?")
+      .bind(ref.conversationId, row.resolution)
+      .first<{ id: string; rating: CsatRating; comment: string | null }>();
+    if (!existing || !comment || existing.rating !== rating) throw new HttpError(409, "already_rated", "You've already rated this conversation.");
+    if (comment !== existing.comment) {
+      await db.prepare("UPDATE csat_ratings SET comment = ?, updated_at = ? WHERE id = ?").bind(comment, now, existing.id).run();
+      await note.addNote(ref, `The customer commented on their ${label} rating: ${comment}`, `csat:${row.resolution}:${await sha256(comment)}`);
+    }
+  }
+  const conversation = await loadSummary(db, ref.conversationId);
+  return c.json({ conversation: conversation && forVisitor(conversation) });
 });
 
 widget.get("/widget/:key/conversations/:cid/ws", async (c) => {

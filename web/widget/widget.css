@@ -19,5 +19,12 @@ body { background: var(--surface); }
 .w-logo { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; background: #fff; }
 
 /* W-08: offline email capture in the widget. */
-.w-email { display: grid; gap: 6px; padding: 8px 12px; background: var(--tag); border-top: 1px solid var(--border); }
+.w-email { display: grid; gap: 6px; margin: 0; padding: 8px 12px; background: var(--tag); border-top: 1px solid var(--border); }
 .w-email input { flex: 1; min-width: 0; }
+
+/* W-12: "How did we do?" on a resolved conversation. */
+.w-csat { display: grid; gap: 6px; margin: 0; padding: 8px 12px; background: var(--tag); border-top: 1px solid var(--border); }
+.w-csat .row { gap: 8px; }
+.w-csat textarea { resize: none; }
+button.w-thumb { padding: 2px 10px; font-size: 1.1rem; line-height: 1.4; background: var(--surface); }
+button.w-thumb:hover:not(:disabled) { border-color: var(--accent); }

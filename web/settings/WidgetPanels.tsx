@@ -13,6 +13,8 @@ export interface InboxSettings {
   displayName?: string;
   logoKey?: string;
   hours?: BusinessHours;
+  /** W-12: ask for a rating when a conversation is resolved (default on). */
+  csat?: boolean;
 }
 
 const DEFAULT_COLOR = "#2f5bea";
@@ -30,6 +32,7 @@ export function AppearancePanel({ workspaceId, widgetKey, workspaceName, setting
   const [name, setName] = useState(settings.displayName ?? "");
   const [greeting, setGreeting] = useState(settings.greeting ?? "");
   const [replyTime, setReplyTime] = useState(settings.replyTime ?? "");
+  const [csat, setCsat] = useState(settings.csat !== false);
   const [saved, setSaved] = useState(false);
   const { busy, error, run } = useAction();
 
@@ -38,7 +41,7 @@ export function AppearancePanel({ workspaceId, widgetKey, workspaceName, setting
     run(async () => {
       const r = await api<{ settings: InboxSettings }>(`/workspaces/${workspaceId}/inbox`, {
         method: "PATCH",
-        body: { color, position, displayName: name, greeting, replyTime },
+        body: { color, position, displayName: name, greeting, replyTime, csat },
       });
       onSaved(r.settings);
       setSaved(true);
@@ -107,6 +110,10 @@ export function AppearancePanel({ workspaceId, widgetKey, workspaceName, setting
               {canEdit && logo && <button type="button" className="ghost small" disabled={busy} onClick={() => run(async () => onSaved((await api<{ settings: InboxSettings }>(`/workspaces/${workspaceId}/inbox/logo`, { method: "DELETE" })).settings))}>Remove</button>}
             </span>
           </div>
+          <label className="check small">
+            <input type="checkbox" checked={csat} onChange={(e) => setCsat(e.target.checked)} disabled={!canEdit} />
+            Ask "How did we do?" when a conversation is resolved
+          </label>
           {error && <p className="error small">{error}</p>}
           {canEdit && <div className="row"><button disabled={busy}>Save</button>{saved && <span className="muted small">Saved ✓</span>}</div>}
         </form>

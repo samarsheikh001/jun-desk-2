@@ -6,7 +6,7 @@ An open-source support desk for B2B SaaS where the AI already knows what broke. 
 
 What you get:
 
-- **A chat widget** (about 4 KB) with live replies, typing indicators, read receipts, file uploads, your colour and logo, and business hours. When nobody's around it asks for an email, so you can reply after they've left.
+- **A chat widget** (about 4 KB) with live replies, typing indicators, read receipts, file uploads, your colour and logo, and business hours. When nobody's around it asks for an email, so you can reply after they've left, and when a conversation is resolved it asks for a quick 👍 or 👎.
 - **An AI agent** that answers from your docs with citations and hands off to a person when it can't help, or when the customer asks. It runs on Workers AI out of the box, so you don't need an API key, and it can use OpenAI instead.
 - **Support that sees the bug.** Recent errors, failed requests and pages visited are captured in the visitor's browser, masked twice (in the browser and on the server), and shown to your agents and the AI. If something on the page breaks, the widget can offer help on its own: "Adding a team member didn't work. Want a hand?"
 - **A support agent you keep in git.** The AI's rules, procedures, tools and tests are plain files. `jun eval` replays recent real conversations against your edits before you push them, so you see which answers would change.

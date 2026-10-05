@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import type { Attachment, ConversationSummary, Message } from "../../shared/protocol.ts";
+import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
+import { offersRating } from "../../shared/inbox.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
@@ -133,6 +134,8 @@ interface WidgetConfig {
   replyTime: string;
   logoUrl: string | null;
   hours: { open: boolean; back: string | null } | null;
+  /** W-12: ask for a rating when a conversation is resolved. */
+  csat: boolean;
 }
 
 /** W-04: the desk's brand colour on the frame (with readable text on top of it). */
@@ -283,8 +286,8 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           key={view.id ?? "new"}
           api={api}
           conversationId={view.id}
-          handling={conversations.find((c) => c.id === view.id)?.handling ?? null}
-          contact={conversations.find((c) => c.id === view.id)?.contact ?? null}
+          summary={conversations.find((c) => c.id === view.id) ?? null}
+          csat={config.csat}
           away={Boolean(config.hours && !config.hours.open)}
           opener={view.opener}
           sessionId={sessionId}
@@ -305,8 +308,8 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
 function WidgetThread({
   api,
   conversationId,
-  handling,
-  contact,
+  summary,
+  csat,
   away,
   opener,
   sessionId,
@@ -317,8 +320,8 @@ function WidgetThread({
 }: {
   api: WidgetApi;
   conversationId: string | null;
-  handling: "ai" | "human" | null;
-  contact: ConversationSummary["contact"] | null;
+  summary: ConversationSummary | null;
+  csat: boolean;
   away: boolean;
   opener?: Opener | undefined;
   sessionId: string | null;
@@ -331,6 +334,8 @@ function WidgetThread({
   const [error, setError] = useState<string | null>(null);
   /** First message is on its way (no conversation yet): show it, and the AI's dots, right away. */
   const [starting, setStarting] = useState<string | null>(null);
+  const handling = summary?.handling ?? null;
+  const contact = summary?.contact ?? null;
 
   useEffect(() => {
     if (!conversationId) return;
@@ -427,6 +432,10 @@ function WidgetThread({
           <button className="link small" onClick={() => thread.requestHuman()}>Talk to a person</button>
         </div>
       )}
+      {/* W-12: rate a resolved conversation someone (the team or the AI) actually answered. */}
+      {conversationId && summary && offersRating(csat, summary.status, thread.messages) && (
+        <CsatAsk api={api} conversationId={conversationId} rated={summary.csat.ratedThisRound} onConversation={onConversation} />
+      )}
       {conversationId && (
         <EmailAsk api={api} conversationId={conversationId} contact={contact} away={away} waiting={handling === "human" ? lastVisitorWaiting(thread.messages) : null} />
       )}
@@ -517,5 +526,77 @@ function EmailAsk({
       </div>
       {error && <p className="error small">{error}</p>}
     </form>
+  );
+}
+
+/** W-12: "How did we do?" under a resolved conversation. Thumbs first, then an optional comment. */
+function CsatAsk({
+  api,
+  conversationId,
+  rated,
+  onConversation,
+}: {
+  api: WidgetApi;
+  conversationId: string;
+  rated: boolean;
+  onConversation: (c: ConversationSummary) => void;
+}) {
+  // Stays mounted through the comment step, after the server already counts it as rated.
+  const [rating, setRating] = useState<CsatRating | null>(null);
+  const [done, setDone] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const post = async (body: { rating: CsatRating; comment?: string }) => {
+    setBusy(true);
+    setError(null);
+    try {
+      onConversation((await api.call<{ conversation: ConversationSummary }>(`/conversations/${conversationId}/rating`, { body })).conversation);
+      return true;
+    } catch (err) {
+      setError((err as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (done) return <div className="w-csat small"><span>Thanks for your feedback.</span></div>;
+  if (rating) {
+    const submit = async (e: FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      const comment = String(new FormData(e.currentTarget).get("comment") ?? "").trim();
+      if (!comment || (await post({ rating, comment }))) setDone(true);
+    };
+    return (
+      <form className="w-csat" onSubmit={submit}>
+        <span className="small strong">{rating === "good" ? "Thanks! Anything to add?" : "Thanks for telling us. Anything we could do better?"}</span>
+        <textarea name="comment" rows={2} maxLength={MAX_CSAT_COMMENT} placeholder="Optional" aria-label="Your comment" autoFocus />
+        <div className="row">
+          <span className="spacer" />
+          <button type="button" className="ghost small" onClick={() => setDone(true)}>Skip</button>
+          <button className="small" disabled={busy}>Send</button>
+        </div>
+        {error && <p className="error small">{error}</p>}
+      </form>
+    );
+  }
+  if (rated || dismissed) return null;
+
+  const rate = async (value: CsatRating) => {
+    if (await post({ rating: value })) setRating(value);
+  };
+  return (
+    <div className="w-csat">
+      <div className="row">
+        <span className="small strong">How did we do?</span>
+        <span className="spacer" />
+        <button type="button" className="ghost w-thumb" disabled={busy} aria-label="Good" title="Good" onClick={() => void rate("good")}>👍</button>
+        <button type="button" className="ghost w-thumb" disabled={busy} aria-label="Bad" title="Bad" onClick={() => void rate("bad")}>👎</button>
+        <button type="button" className="ghost icon small" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
+      </div>
+      {error && <p className="error small">{error}</p>}
+    </div>
   );
 }

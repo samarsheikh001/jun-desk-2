@@ -20,7 +20,7 @@ A few things I haven't seen in other open-source desks:
 - If the page breaks, the widget can offer help on its own, and the AI words the offer from what failed ("Adding a team member didn't work. Want a hand?") rather than a canned line.
 - Signed-in customers come through as a verified identity (an HS256 JWT from your backend), so tools can look up that customer's own account.
 
-What it doesn't do yet: email and Slack channels, CSAT and reporting. The default Workers AI model (Mistral Small 3.1) is fast, at about a second to the first word, but it's noticeably weaker than GPT-class models on tricky questions; plugging in an OpenAI key is one secret. Captured context never includes request or response bodies, by design, which means the AI sometimes knows *that* a call failed but not *why*.
+What it doesn't do yet: email and Slack channels, and reporting. The default Workers AI model (Mistral Small 3.1) is fast, at about a second to the first word, but it's noticeably weaker than GPT-class models on tricky questions; plugging in an OpenAI key is one secret. Captured context never includes request or response bodies, by design, which means the AI sometimes knows *that* a call failed but not *why*.
 
 The server is AGPL-3.0; the embeddable widget and the config format are MIT. I'd love to hear from anyone running support for a SaaS product about what the debug context gets wrong or misses.
 

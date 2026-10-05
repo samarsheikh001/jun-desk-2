@@ -48,7 +48,7 @@ conversations.get("/workspaces/:id/inbox", async (c) => {
   return c.json({ inbox: inbox && { ...inbox, settings: JSON.parse(inbox.settings) as Record<string, unknown> } });
 });
 
-// Widget settings (owners/admins): currently just proactive help.
+// Widget settings (owners/admins): proactive help, CSAT, branding, hours, allowed websites.
 conversations.patch("/workspaces/:id/inbox", async (c) => {
   const workspaceId = c.req.param("id");
   const role = await c.env.DB.prepare("SELECT role FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, c.get("user").id).first<{ role: string }>();
@@ -59,6 +59,8 @@ conversations.patch("/workspaces/:id/inbox", async (c) => {
   if (!inbox) throw new HttpError(404, "not_found", "No widget inbox.");
   const settings = JSON.parse(inbox.settings) as Record<string, unknown>;
   if (typeof body.proactive === "boolean") settings.proactive = body.proactive;
+  // W-12: ask visitors to rate resolved conversations (on unless turned off).
+  if (typeof body.csat === "boolean") settings.csat = body.csat;
   // W-04 branding.
   if (body.color !== undefined) {
     if (typeof body.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(body.color)) throw new HttpError(400, "invalid_field", "Colour must look like #2f5bea.");
@@ -98,6 +100,8 @@ conversations.get("/workspaces/:id/conversations", async (c) => {
   const status = c.req.query("status") ?? "open";
   const assignee = c.req.query("assignee"); // "me" | "unassigned" | "mentions" | undefined
   const tag = c.req.query("tag");
+  const rating = c.req.query("rating"); // W-12: "good" | "bad", the latest rating
+  if (rating !== undefined && rating !== "good" && rating !== "bad") throw new HttpError(400, "invalid_field", "rating must be good or bad.");
   if (status !== "all" && !STATUSES.includes(status as ConversationStatus)) throw new HttpError(400, "invalid_field", "Unknown status.");
 
   const where = ["c.workspace_id = ?"];
@@ -118,6 +122,10 @@ conversations.get("/workspaces/:id/conversations", async (c) => {
   if (tag) {
     where.push("c.id IN (SELECT ct.conversation_id FROM conversation_tags ct JOIN tags t ON t.id = ct.tag_id WHERE t.workspace_id = c.workspace_id AND t.name = ?)");
     params.push(tag);
+  }
+  if (rating) {
+    where.push("c.csat_rating = ?");
+    params.push(rating);
   }
   const rows = await c.env.DB.prepare(`${SUMMARY_SELECT} WHERE ${where.join(" AND ")} ORDER BY c.last_message_at DESC LIMIT 100`)
     .bind(...params)
@@ -204,8 +212,16 @@ conversations.patch("/conversations/:cid", async (c) => {
 
   if (body.status !== undefined) {
     if (!STATUSES.includes(body.status as ConversationStatus)) throw new HttpError(400, "invalid_field", "Unknown status.");
-    sets.push("status = ?");
-    params.push(body.status);
+    // W-12: becoming resolved starts a new round the visitor can rate, unless they already rated
+    // this round and haven't written since (pending → resolved again doesn't ask twice).
+    sets.push(
+      `resolution = resolution + (CASE WHEN status != 'resolved' AND ? = 'resolved' AND NOT (
+         csat_resolution IS NOT NULL AND csat_resolution = resolution AND NOT EXISTS (
+           SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id AND m.author_type = 'visitor' AND m.created_at > conversations.csat_at)
+       ) THEN 1 ELSE 0 END)`,
+      "status = ?",
+    );
+    params.push(body.status, body.status);
   }
   if (body.assigneeId !== undefined) {
     if (body.assigneeId !== null) {

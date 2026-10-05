@@ -5,6 +5,8 @@ export type ConversationStatus = "open" | "pending" | "snoozed" | "resolved";
 export type AuthorType = "visitor" | "agent" | "ai" | "system";
 /** Who is answering right now: the AI agent, or a human after handoff/takeover. */
 export type Handling = "ai" | "human";
+/** W-12: the visitor's thumbs up or down at the end of a conversation. */
+export type CsatRating = "good" | "bad";
 
 export interface Source {
   title: string;
@@ -64,6 +66,12 @@ export interface ConversationSummary {
   debugIssueCount: number;
   /** I-07: agents only; always [] for visitors. */
   tags: string[];
+  /**
+   * W-12: the latest rating (null if never rated), and whether it was given since the conversation
+   * was last resolved (always false while it isn't resolved). The widget asks while a resolved
+   * conversation isn't `ratedThisRound`.
+   */
+  csat: { rating: CsatRating | null; ratedThisRound: boolean };
 }
 
 /** Messages a client sends on a conversation socket. */
@@ -142,6 +150,8 @@ export const SOCKET_PROTOCOL = "jun";
 export const MAX_MESSAGE_LENGTH = 10_000;
 export const MAX_ATTACHMENTS = 10;
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+/** W-12: the optional comment with a rating. */
+export const MAX_CSAT_COMMENT = 1000;
 
 /** AI-11: one tool call the AI made (agents only). */
 export interface AiAction {
