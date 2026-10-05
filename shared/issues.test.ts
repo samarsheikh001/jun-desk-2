@@ -82,6 +82,26 @@ test("S-12 app errors: in the Errors section, the steps and the fallback's actua
   assert.match(buildDraft(fallbackNarrative(withApp), withApp).body, /## Errors\n\n[^#]*Reported by the app: `Row 42/);
 });
 
+test("S-02 / S-13: a rage click is a step and the fallback's actual; being stuck is added to it", () => {
+  const rageEvents = sanitizeContext({
+    page: { url: "https://app.acme.dev/reports" },
+    events: [
+      { t: T - 10_000, kind: "navigation", url: "https://app.acme.dev/reports" },
+      { t: T, kind: "rage_click", count: 4, target: { tag: "button", id: "export", text: "Export CSV" } },
+      { t: T + 180_000, kind: "stuck", url: "/reports", seconds: 180, issue: "rage_click" },
+    ],
+  })!.events;
+  const rageFacts: IssueFacts = { ...facts, events: rageEvents };
+  assert.deepEqual(inferSteps(rageFacts), ["Open `/reports`", "Click `button#export \"Export CSV\"`: nothing happens (clicked 4 times in a second, the page didn't change)"]);
+  assert.equal(
+    fallbackNarrative(rageFacts).actual,
+    "Clicking `button#export \"Export CSV\"` did nothing (clicked 4 times; the page didn't change). The customer then stayed on `/reports` for 3 min without a successful submit.",
+  );
+  // With a failed request too, that says more; being stuck is still noted.
+  assert.match(fallbackNarrative({ ...facts, events: [...events, rageEvents[2]!] }).actual, /^`POST \/api\/billing\?email=…` returned HTTP 500\. The customer then stayed on `\/reports` for 3 min/);
+  assert.match(issueFactsText(rageFacts), /Clicked button#export "Export CSV" 4 times in quick succession/);
+});
+
 test("environment: browser, OS, screen, locale, page; account without personal data", () => {
   const section = environmentSection(environment, facts.account);
   assert.match(section, /- Page: `https:\/\/app\.acme\.dev\/billing\?session=…` \(Billing · \[email\]\)/);

@@ -3,8 +3,26 @@
 // dashboard (timeline). The loader (public/widget.js) applies the same redaction rules
 // in plain JS; keep them in sync.
 
-/** app_error: the host app's own words, from JunDesk.reportError({ message, code? }) (S-12). */
-export type DebugEventKind = "error" | "network" | "navigation" | "app_error";
+/**
+ * app_error: the host app's own words, from JunDesk.reportError({ message, code? }) (S-12).
+ * rage_click: the same element clicked 3+ times within a second, with no DOM change (S-02).
+ * stuck: same page for 3+ visible minutes after an issue, with no successful submit (S-13).
+ */
+export type DebugEventKind = "error" | "network" | "navigation" | "app_error" | "rage_click" | "stuck";
+
+/**
+ * rage_click: what was clicked, never its value. `text` is the visible label of a button or
+ * link only (tag a/button or role=button), at most 40 chars; other elements' text is never kept.
+ */
+export interface DebugTarget {
+  tag: string;
+  id?: string;
+  /** aria-label */
+  label?: string;
+  name?: string;
+  role?: string;
+  text?: string;
+}
 
 export interface DebugEvent {
   /** Epoch ms. */
@@ -20,11 +38,19 @@ export interface DebugEvent {
   stack?: string;
   /** network */
   method?: string;
-  /** network / navigation: path (+ query keys only) for same-site URLs, origin+path otherwise. */
+  /** network / navigation: path (+ query keys only) for same-site URLs, origin+path otherwise. stuck: page path only. */
   url?: string;
   /** network: HTTP status, or 0 for a network failure / blocked resource. */
   status?: number;
   durationMs?: number;
+  /** rage_click */
+  target?: DebugTarget;
+  /** rage_click: clicks in the burst. */
+  count?: number;
+  /** stuck: visible seconds on the page. */
+  seconds?: number;
+  /** stuck: the kind of the earlier issue. */
+  issue?: DebugEventKind;
 }
 
 export interface DebugContext {
@@ -71,8 +97,43 @@ export function cleanUrl(input: unknown, pageOrigin?: string): string {
   }
 }
 
-const KINDS = new Set<DebugEventKind>(["error", "network", "navigation", "app_error"]);
+const KINDS = new Set<DebugEventKind>(["error", "network", "navigation", "app_error", "rage_click", "stuck"]);
+/** What can come before a `stuck` event (S-13). */
+const STUCK_AFTER = new Set<DebugEventKind>(["error", "network", "app_error", "rage_click"]);
 export const MAX_APP_ERROR = 300;
+/** A button's or link's visible label is kept only up to this length (longer: dropped, not cut). */
+export const MAX_TARGET_TEXT = 40;
+
+/** Only the listed target fields, masked and capped; null without a plausible tag name. */
+export function cleanTarget(input: unknown): DebugTarget | null {
+  if (!input || typeof input !== "object") return null;
+  const r = input as Record<string, unknown>;
+  const tag = typeof r.tag === "string" ? r.tag.toLowerCase() : "";
+  if (!/^[a-z][a-z0-9-]{0,29}$/.test(tag)) return null;
+  const out: DebugTarget = { tag };
+  const str = (v: unknown, max: number) => (typeof v === "string" ? redact(v.replace(/\s+/g, " ").trim(), max).trim() : "");
+  const id = str(r.id, 60);
+  if (id) out.id = id;
+  const label = str(r.label, 60);
+  if (label) out.label = label;
+  const name = str(r.name, 60);
+  if (name) out.name = name;
+  const role = typeof r.role === "string" ? r.role.toLowerCase() : "";
+  if (/^[a-z]{1,20}$/.test(role)) out.role = role;
+  // Visible text only for buttons and links, and only short labels.
+  const text = typeof r.text === "string" ? r.text.replace(/\s+/g, " ").trim() : "";
+  if (text && text.length <= MAX_TARGET_TEXT && (tag === "a" || tag === "button" || out.role === "button")) out.text = redact(text, MAX_TARGET_TEXT);
+  return out;
+}
+
+/** `button#save "Save changes"`, for timelines, prompts and issues. */
+export function describeTarget(t: DebugTarget | undefined): string {
+  if (!t) return "an element";
+  let s = t.tag + (t.id ? `#${t.id}` : "") + (t.role ? `[role=${t.role}]` : "") + (t.name ? `[name=${t.name}]` : "");
+  if (t.label) s += ` (${t.label})`;
+  if (t.text) s += ` "${t.text}"`;
+  return s;
+}
 
 /** An app error code: masked, then only `[\w.-]`, at most 60 chars; "" when nothing's left. */
 export function cleanCode(input: unknown): string {
@@ -112,6 +173,23 @@ export function sanitizeContext(raw: unknown): DebugContext | null {
       events.push(out);
       continue;
     }
+    if (out.kind === "rage_click") {
+      // S-02: only what was clicked (safe description) and how often.
+      const target = cleanTarget(ev.target);
+      if (!target) continue;
+      out.target = target;
+      out.count = Math.max(1, Math.min(100, Math.trunc(num(ev.count, 3))));
+      events.push(out);
+      continue;
+    }
+    if (out.kind === "stuck") {
+      // S-13: the page path (never a query), the visible time on it, and what went wrong before.
+      if (typeof ev.url === "string") out.url = cleanUrl(ev.url.split(/[?#]/)[0], origin);
+      out.seconds = Math.max(0, Math.min(86_400, Math.trunc(num(ev.seconds))));
+      if (STUCK_AFTER.has(ev.issue as DebugEventKind)) out.issue = ev.issue as DebugEventKind;
+      events.push(out);
+      continue;
+    }
     if (ev.message != null) out.message = redact(ev.message);
     if (ev.source != null) out.source = redact(ev.source, 300);
     if (ev.stack != null) out.stack = redact(ev.stack, 800).split("\n").slice(0, 5).join("\n");
@@ -134,9 +212,29 @@ export function sanitizeContext(raw: unknown): DebugContext | null {
   };
 }
 
-/** Errors (the browser's and the app's own) and failed requests (what the inbox badge counts). */
+/**
+ * Errors (the browser's and the app's own), failed requests and rage clicks (what the inbox
+ * badge counts). Not `stuck`: it always follows an issue that's already counted.
+ */
 export function isIssue(e: DebugEvent): boolean {
-  return e.kind === "error" || e.kind === "app_error" || (e.kind === "network" && (e.status === 0 || (e.status ?? 0) >= 400));
+  return e.kind === "error" || e.kind === "app_error" || e.kind === "rage_click" || (e.kind === "network" && (e.status === 0 || (e.status ?? 0) >= 400));
+}
+
+const ISSUE_WORDS: Partial<Record<DebugEventKind, string>> = {
+  error: "a JavaScript error",
+  network: "a failed request",
+  app_error: "an error the app reported",
+  rage_click: "repeated clicks that did nothing",
+};
+
+/** "a failed request", for `stuck` events. */
+export function describeIssueKind(kind: DebugEventKind | undefined): string {
+  return (kind && ISSUE_WORDS[kind]) || "an earlier problem";
+}
+
+/** "3 min" / "45 s". */
+export function formatDuration(seconds: number): string {
+  return seconds >= 60 ? `${Math.round(seconds / 60)} min` : `${seconds} s`;
 }
 
 /** "14:02:11" in the visitor's timezone when known. */
@@ -162,6 +260,8 @@ export function describeEvents(context: DebugContext, options: { codes?: boolean
       return `[${at}] ${e.method ?? "GET"} ${e.url} → ${outcome}${e.durationMs != null ? ` in ${e.durationMs} ms` : ""}`;
     }
     if (e.kind === "app_error") return `[${at}] The app reported an error: ${e.message}${options.codes && e.code ? ` (code ${e.code})` : ""}`;
+    if (e.kind === "rage_click") return `[${at}] Clicked ${describeTarget(e.target)} ${e.count ?? 3} times in quick succession; the page didn't change`;
+    if (e.kind === "stuck") return `[${at}] Still on ${e.url ?? "the same page"} after ${formatDuration(e.seconds ?? 0)} since ${describeIssueKind(e.issue)}, with no successful form submit`;
     return `[${at}] JavaScript error: ${e.message}${e.source ? ` at ${e.source}` : ""}`;
   });
 }

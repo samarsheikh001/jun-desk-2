@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { describeBrowser, formatEventTime, isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
+import { describeBrowser, describeIssueKind, describeTarget, formatDuration, formatEventTime, isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
 import type { AiAction, ConversationSummary } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { navigate } from "../lib/router.ts";
@@ -29,6 +29,30 @@ function EventRow({ event, timezone }: { event: DebugEvent; timezone: string }) 
           <span className="status">{event.status ? event.status : "failed"}</span>
           {event.durationMs != null && <span className="muted"> · {event.durationMs} ms</span>}
           {event.message && <div className="muted small">{event.message}</div>}
+        </span>
+      </li>
+    );
+  }
+  if (event.kind === "rage_click") {
+    // S-02: clicked the same thing again and again; the page didn't change.
+    return (
+      <li className="ev bad">
+        <span className="ev-time">{time}</span>
+        <span>
+          <strong>Rage click</strong> ×{event.count} on <code>{describeTarget(event.target)}</code>
+          <div className="muted small">Clicked repeatedly within a second; nothing on the page changed</div>
+        </span>
+      </li>
+    );
+  }
+  if (event.kind === "stuck") {
+    // S-13: still on the page a while after something failed, with no successful submit.
+    return (
+      <li className="ev warn">
+        <span className="ev-time">{time}</span>
+        <span>
+          <strong>Stuck</strong> for {formatDuration(event.seconds ?? 0)} on <code>{event.url}</code>
+          <div className="muted small">After {describeIssueKind(event.issue)}; no successful form submit since</div>
         </span>
       </li>
     );

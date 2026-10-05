@@ -147,6 +147,30 @@ test("S-11 nudge: facts describe the failure; unsafe or rambling lines fall back
   assert.equal(cleanNudge("Row 9 for [email] wasn't imported. Want a hand?", "Row 9: missing name for [email]"), null);
 });
 
+test("S-02 / S-13 nudge: rage clicks and stuck pages as plain facts; one cache line per element / page and issue", async () => {
+  const { cleanNudge, nudgeCacheKey, nudgeFacts } = await import("./nudge.ts");
+  const page = { url: "https://app.acme.test/reports", title: "Reports" };
+  const rage = nudgeFacts({ t: 1, kind: "rage_click", count: 4, target: { tag: "button", id: "export-btn", text: "Export CSV" } }, page);
+  assert.match(rage, /clicked the "Export CSV" button 4 times in a row and nothing happened/);
+  assert.doesNotMatch(rage, /export-btn/, "ids are for agents, not the line");
+  assert.match(nudgeFacts({ t: 1, kind: "rage_click", count: 3, target: { tag: "a" } }, page), /clicked a link 3 times/);
+  assert.match(nudgeFacts({ t: 1, kind: "rage_click", count: 3, target: { tag: "div" } }, page), /clicked something on the page 3 times/);
+  const stuck = nudgeFacts({ t: 1, kind: "stuck", url: "/reports", seconds: 185, issue: "network" }, page);
+  assert.match(stuck, /on this page for 3 min after a failed request/);
+  assert.match(stuck, /Still working on this\? Want a hand\?/);
+  // The filter still applies; numbers on the button the visitor sees may show.
+  assert.equal(cleanNudge("Looks like that button isn't responding. Want a hand?"), "Looks like that button isn't responding. Want a hand?");
+  assert.equal(cleanNudge("Still working on this? Want a hand?"), "Still working on this? Want a hand?");
+  assert.equal(cleanNudge("Looks like the Pay 250 button isn't responding. Want a hand?", "Pay 250"), "Looks like the Pay 250 button isn't responding. Want a hand?");
+  assert.equal(cleanNudge("The button#export-btn click threw an error. Want a hand?"), null);
+  const key = (seconds: number) => nudgeCacheKey("ws", { t: 1, kind: "stuck", url: "/reports", seconds, issue: "network" }, page);
+  assert.equal(key(180), key(240));
+  assert.notEqual(
+    nudgeCacheKey("ws", { t: 1, kind: "rage_click", count: 3, target: { tag: "button", text: "Export" } }, page),
+    nudgeCacheKey("ws", { t: 1, kind: "rage_click", count: 3, target: { tag: "button", text: "Save" } }, page),
+  );
+});
+
 test("K-04: excluded pages match by exact URL or path prefix", async () => {
   const { isExcluded } = await import("./urls.ts");
   const rules = ["https://docs.acme.test/old-page?utm_source=x", "/blog/", "/changelog*"];

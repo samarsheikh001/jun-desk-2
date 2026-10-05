@@ -28,9 +28,10 @@
         <p>
           <button id="pay">Pay invoice</button>
           <button id="chart">Show usage chart</button>
+          <button id="export">Export CSV</button>
           <span id="status" class="note"></span>
         </p>
-        <p class="note">Try it: click a button (one request fails, one throws a JavaScript error), then ask in the chat "why can't I pay my invoice?". The widget shares what went wrong, masked, so the AI and your team can see it.</p>
+        <p class="note">Try it: click a button (one request fails, one throws a JavaScript error, and Export does nothing however often you click it), then ask in the chat "why can't I pay my invoice?". The widget shares what went wrong, masked, so the AI and your team can see it.</p>
       </div>
       <p class="note" id="missing" hidden>Add <code>?key=wk_…</code> to the URL. Settings → Install the chat widget has a link with your key.</p>
     </main>
@@ -54,6 +55,8 @@
         s.setAttribute("data-key", key);
         // ?consent=required tries consent-aware mode (call JunDesk.consent(true) in the console).
         if (new URLSearchParams(location.search).get("consent")) s.setAttribute("data-consent", "required");
+        // ?capture=off tries the site switch that turns off debug capture (and with it the nudges).
+        if (new URLSearchParams(location.search).get("capture") === "off") s.setAttribute("data-capture", "off");
         document.body.appendChild(s);
       } else {
         document.getElementById("missing").hidden = false;

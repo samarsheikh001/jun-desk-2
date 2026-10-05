@@ -2,9 +2,10 @@
  * Usage: <script src="https://<your-desk>/widget.js" data-key="wk_..." async></script>
  * Put it in <head> so it can see errors from the start of the page.
  * Shows a chat button; the chat itself (an iframe from the desk) loads on first open.
- * Captures recent JS errors, failed requests and page navigation in memory only, masked,
- * and shares them with support only when the visitor sends a message. data-capture="off"
- * disables capture. Shows the visitor on the desk's live visitor list (data-consent="required"
+ * Captures recent JS errors, failed requests, page navigation, rage clicks (S-02) and "stuck on
+ * a page after an error" (S-13) in memory only, masked, and shares them with support only when
+ * the visitor sends a message. data-capture="off" disables capture. Shows the visitor on the
+ * desk's live visitor list (data-consent="required"
  * waits for JunDesk.consent(true) and stores nothing before it).
  * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt) / .logout() / .consent(bool)
  *      / .reportError({ message, code? })
@@ -23,6 +24,9 @@
   // ---------- debug capture (P1). Same masking rules as shared/debug.ts. ----------
   var events = [];
   var capture = script.getAttribute("data-capture") !== "off";
+  // S-13 state for the current page (path). Tests on localhost can shorten the 3 minutes with ?jun_stuck_ms=.
+  var pagePath = location.pathname, pageIssue, seen = 0, stuckSent, stuckMs = 180000;
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) stuckMs = +(/[?&]jun_stuck_ms=(\d+)/.exec(location.search) || [])[1] || stuckMs;
   var nativeFetch = window.fetch;
 
   function redact(s, max) {
@@ -48,6 +52,9 @@
     e.t = Date.now();
     events.push(e);
     if (events.length > 40) events.shift();
+    // S-13: remember this page's latest problem (a successful submit clears it). Any failed
+    // request counts (a GET 404 doesn't nudge by itself), but not asset loads (ad blockers).
+    if (/error$|rage/.test(e.kind) || e.kind == "network" && !/^failed to load/.test(e.message)) pageIssue = e.kind;
     maybeNudge(e);
   }
   // Our own traffic (the chat iframe, uploads) isn't the customer's problem.
@@ -77,6 +84,7 @@
           var p = nativeFetch.apply(this, arguments);
           if (ours(url)) return p;
           return p.then(function (res) {
+            if (res.ok && method != "GET") pageIssue = 0; // a save went through (S-13)
             if (res.status >= 400) push({ kind: "network", method: method, url: cleanUrl(url), status: res.status, durationMs: Date.now() - started });
             return res;
           }, function (err) {
@@ -93,16 +101,64 @@
         if (info && !ours(info.url)) {
           x.addEventListener("loadend", function () {
             if (x.status >= 400 || x.status === 0) push({ kind: "network", method: info.method, url: cleanUrl(info.url), status: x.status, durationMs: Date.now() - started });
+            else if (x.status < 300 && info.method != "GET") pageIssue = 0;
           });
         }
         return send.apply(this, arguments);
       };
 
+      // S-02 rage clicks. Sentry's definitions (docs.sentry.io/product/issues/issue-details/replay-issues/rage-clicks/,
+      // checked 2026-10-05): a dead click is a click on a button/input/link with no DOM change or
+      // scroll within 7 s; 3+ such clicks in that time are a rage click. Ours is stricter on time:
+      // 3+ clicks on the same element within 1 s and 30 px, and nothing in the DOM changes or
+      // scrolls from the first click until 1 s after the last. Single dead clicks aren't recorded.
+      // Recorded: a safe description of the element (never values or arbitrary text) and the count.
+      var burst, changed, mo = new MutationObserver(function () { changed = 1; mo.disconnect(); });
+      window.addEventListener("scroll", function () { changed = 1; }, true);
+      window.addEventListener("click", function (ev) {
+        var el = ev.target, now = Date.now(), b = burst;
+        el = el && el.closest && (el.closest("button,a,[role=button],input") || el);
+        // Not typing, media, our own widget, or scripted clicks.
+        if (!el || !ev.isTrusted || el.closest("[data-jun-desk],[contenteditable],textarea,select,canvas,video,audio,input:not([type=submit],[type=button])")) return;
+        if (!b || b.el !== el || now - b.t > 1000 || Math.abs(ev.clientX - b.x) > 30 || Math.abs(ev.clientY - b.y) > 30) {
+          b = burst = { el: el, x: ev.clientX, y: ev.clientY, ts: [] };
+          changed = 0;
+          mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
+        }
+        b.t = now;
+        var n = b.ts.push(now);
+        if (n < 3 || now - b.ts[n - 3] > 1000) return;
+        clearTimeout(b.timer);
+        b.timer = setTimeout(function () {
+          var tag = el.tagName.toLowerCase(), role = el.getAttribute("role"), button = /^(a|button)$/.test(tag) || role == "button";
+          // A triple click that selected text isn't frustration.
+          if (burst !== b || changed || !consented || !button && String(getSelection())) return;
+          var t = { tag: tag }, text = button && String(el.innerText || "").replace(/\s+/g, " ").trim();
+          if (el.id) t.id = redact(el.id, 60);
+          if (el.getAttribute("aria-label")) t.label = redact(el.getAttribute("aria-label"), 60);
+          if (el.getAttribute("name")) t.name = redact(el.getAttribute("name"), 60);
+          if (role) t.role = role.slice(0, 20);
+          if (text && text.length <= 40) t.text = redact(text, 40);
+          push({ kind: "rage_click", target: t, count: b.ts.length });
+        }, 1000);
+      }, true);
+
+      // S-13 stuck on a form: on this page for 3+ visible minutes (hidden tab time doesn't count)
+      // after a real problem, with no successful submit since. A plain timer would be the cut timed pop-up (N-02).
+      window.addEventListener("submit", function () { pageIssue = 0; }, true);
+      setInterval(function () {
+        if (!document.hidden) seen += 1000;
+        if (seen >= stuckMs && pageIssue && !stuckSent && consented) {
+          stuckSent = 1;
+          push({ kind: "stuck", url: cleanUrl(location.pathname), seconds: Math.round(seen / 1000), issue: pageIssue });
+        }
+      }, 1000);
     } catch (e) { /* never break the host page */ }
   }
 
   // Page changes feed both the debug trail and the live visitor list.
   function nav() {
+    if (location.pathname != pagePath) { pagePath = location.pathname; pageIssue = seen = stuckSent = 0; }
     if (capture) push({ kind: "navigation", url: cleanUrl(location.href) });
     sendPage();
   }
@@ -159,7 +215,7 @@
   // ---------- proactive help (P-01): offer a chat when something really breaks ----------
   var nudged = false, nudgeTimer, nudgeEvent;
   function worthNudging(e) {
-    if (/error$/.test(e.kind)) return true; // JS errors and the app's own (reportError)
+    if (/error$|rage|stuck/.test(e.kind)) return true; // JS errors, the app's own (reportError), S-02, S-13
     // Failed API calls, not noisy asset loads or 404s on GETs.
     return e.kind === "network" && !/^failed to load/.test(e.message || "") &&
       (e.status === 0 || e.status >= 500 || (e.status >= 400 && e.method !== "GET"));
@@ -168,7 +224,7 @@
     if (nudged || open || !worthNudging(e)) return;
     nudgeEvent = e;
     clearTimeout(nudgeTimer);
-    nudgeTimer = setTimeout(showNudge, 1200); // errors come in bursts; wait for things to settle
+    nudgeTimer = setTimeout(showNudge, /rage|stuck/.test(e.kind) ? 0 : 1200); // errors come in bursts; wait for things to settle (rage clicks already waited)
   }
   function showCard(text, from) {
     var card = root.querySelector(".nudge");

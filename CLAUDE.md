@@ -50,7 +50,7 @@ Issue conventions (S-08, D-26): tracker credentials come from the Worker secrets
 
 Visitor conventions (M6, D-23): identity only ever comes from a verified JWT (never from page JavaScript); identified contacts never merge with each other; visitor sockets on the hub receive only `LiveServerEvent`s (invites, identify results), never inbox events (`#broadcast` goes to the `agent` tag). Consent mode means no storage and no live socket before consent. Check the served loader size after loader changes (`gzip -c dist/client/widget.js | wc -c` after `npm run build`).
 
-P1 conventions: never capture request/response bodies or storage; mask in the browser *and* on the server; debug context only reaches agents (`/api/conversations/:id/context`) and the AI prompt, never other visitors. The model's control lines (`HANDOFF:` at the start, `ESCALATE:` as the last line) are stripped from what streams to visitors (`streamVisible`).
+P1 conventions: never capture request/response bodies, storage, typed values or page text (rage clicks keep only tag, id, aria-label, name, role and a ≤ 40-char button/link label; `stuck` only the page path); mask in the browser *and* on the server; debug context only reaches agents (`/api/conversations/:id/context`) and the AI prompt, never other visitors. The model's control lines (`HANDOFF:` at the start, `ESCALATE:` as the last line) are stripped from what streams to visitors (`streamVisible`).
 
 Realtime conventions: the Worker authenticates every socket upgrade (agent cookie, or visitor token as the 2nd WebSocket subprotocol) and forwards to the DO with `x-jun-*` headers; DOs trust those headers. Messages get `seq` from the Conversation DO and are idempotent per `clientMsgId`. D1 stays the source of truth.
 

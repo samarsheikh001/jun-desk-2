@@ -137,6 +137,37 @@ await step("S-12: an app's reportError event is masked again, shown to agents, n
   assert.ok(!/"debugIssueCount":[1-9]/.test(visible), "visitors don't get the issue count");
 });
 
+await step("S-02 / S-13: rage clicks and stuck pages are masked again, shown to agents, never to visitors", async () => {
+  const rage = {
+    t: now - 1_500,
+    kind: "rage_click",
+    count: 4,
+    target: { tag: "BUTTON", id: "export-pat@customer.test", label: "Export", role: "button", text: "Export CSV", value: "hunter2", html: "<b>secret</b>" },
+    message: "should go",
+  };
+  const stuck = { t: now - 1_000, kind: "stuck", url: "/import/pat@customer.test?file=abc123", seconds: 181, issue: "rage_click", target: { tag: "a" }, message: "should go" };
+  const res = await new Client().call(`/widget/${widgetKey}/conversations/${conversationId}/messages`, {
+    body: { clientMsgId: "v-ctx-4", body: "The export button does nothing", context: context([rage, stuck]) },
+    headers: { "X-Visitor-Token": visitorToken },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+  const data = (await agent.call(`/conversations/${conversationId}/context`)).json;
+  const events = data.events as { kind: string }[];
+  assert.deepEqual(events.find((e) => e.kind === "rage_click"), { t: now - 1_500, kind: "rage_click", target: { tag: "button", id: "[email]", label: "Export", role: "button", text: "Export CSV" }, count: 4 });
+  assert.deepEqual(events.find((e) => e.kind === "stuck"), { t: now - 1_000, kind: "stuck", url: "/import/[email]", seconds: 181, issue: "rage_click" });
+  const raw = JSON.stringify(data);
+  for (const secret of ["pat@customer.test", "hunter2", "abc123", "should go", "<b>"]) assert.ok(!raw.includes(secret), `leaked ${secret}`);
+  // The rage click counts as an issue; being stuck doesn't (it follows one): 4 before, plus the rage click.
+  assert.equal(data.issueCount, 5);
+  const headers = { "X-Visitor-Token": visitorToken };
+  const visible = JSON.stringify([
+    (await new Client().call(`/widget/${widgetKey}/conversations/${conversationId}`, { headers })).json,
+    (await new Client().call(`/widget/${widgetKey}/conversations`, { headers })).json,
+  ]);
+  assert.ok(visible.includes("export button does nothing"));
+  for (const hidden of ["rage_click", "stuck", "Export CSV", "seconds"]) assert.ok(!visible.includes(hidden), `visitor sees ${hidden}`);
+});
+
 /** The loader's nudge request, from a customer's site. */
 const nudge = async (body: string) => {
   const res = await fetch(`${BASE}/api/widget/${widgetKey}/nudge`, { method: "POST", headers: { Origin: "https://customer.example", "Content-Type": "text/plain;charset=UTF-8" }, body });
@@ -169,6 +200,37 @@ await step("S-12: a nudge from the app's own error says what failed, without the
   assert.match(res.text!, /Want a hand\?$/);
   assert.match(res.text!, /42|email|import/i, res.text);
   assert.doesNotMatch(res.text!, /row_invalid|pat@|\[email\]|error|code|\/api|https?:/i, res.text);
+  assert.doesNotMatch(res.text!, /^Looks like something went wrong/, "the AI wrote it, not the generic line");
+});
+
+const TECH = /\/api|https?:|\b[1-5]\d\d\b|error|status|rage|click count|stuck_|button#|\[email\]|pat@/i;
+
+await step("S-02: a rage-click nudge says the button isn't responding, nothing technical", async () => {
+  const res = await nudge(
+    JSON.stringify({
+      event: { t: 1, kind: "rage_click", count: 4, target: { tag: "button", id: "export-pat@customer.test", text: "Export CSV" } },
+      page: { url: "https://app.customer.test/reports", title: "Reports" },
+    }),
+  );
+  console.log(`    nudge: ${res.text}`);
+  assert.equal(res.show, true);
+  assert.match(res.text!, /Want a hand\?$/);
+  assert.match(res.text!, /export|button|respond|working|nothing/i, res.text);
+  assert.doesNotMatch(res.text!, TECH, res.text);
+  assert.doesNotMatch(res.text!, /^Looks like something went wrong/, "the AI wrote it, not the generic line");
+});
+
+await step("S-13: a stuck nudge asks if they're still working on it, nothing technical", async () => {
+  const res = await nudge(
+    JSON.stringify({
+      event: { t: 1, kind: "stuck", url: "/settings/billing", seconds: 190, issue: "network" },
+      page: { url: "https://app.customer.test/settings/billing", title: "Billing settings" },
+    }),
+  );
+  console.log(`    nudge: ${res.text}`);
+  assert.equal(res.show, true);
+  assert.match(res.text!, /Want a hand\?$/);
+  assert.doesNotMatch(res.text!, TECH, res.text);
   assert.doesNotMatch(res.text!, /^Looks like something went wrong/, "the AI wrote it, not the generic line");
 });
 

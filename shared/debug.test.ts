@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cleanUrl, describeEvents, isIssue, redact, sanitizeContext } from "./debug.ts";
+import { cleanUrl, describeEvents, describeTarget, isIssue, redact, sanitizeContext } from "./debug.ts";
 
 test("redact masks emails, tokens, keys, secrets and card-like numbers", () => {
   const out = redact(
@@ -94,4 +94,64 @@ test("S-12 app errors: message masked and capped, code [\\w.-] only, nothing els
   assert.equal(describeEvents(ctx).at(-1), "[09:00:00] The app reported an error: Row 42: missing email for [email] (token=[redacted])", "the live AI never sees the code");
   assert.equal(describeEvents(ctx, { codes: true }).at(-1), "[09:00:00] The app reported an error: Row 42: missing email for [email] (token=[redacted]) (code import.row_invalid)");
   assert.equal(describeEvents({ ...ctx, events: [{ t: 0, kind: "app_error", message: "Upload too big" }] })[0], "[00:00:00] The app reported an error: Upload too big");
+});
+
+test("S-02 rage clicks: only the safe target fields, masked and capped; text only for buttons and links; an issue", () => {
+  const ctx = sanitizeContext({
+    page: { url: "https://a.dev/settings" },
+    timezone: "UTC",
+    events: [
+      {
+        t: Date.UTC(2026, 9, 5, 9, 0, 0),
+        kind: "rage_click",
+        count: 5,
+        target: { tag: "BUTTON", id: "save-pat@customer.test", label: "Save   changes", name: "token=abc123", role: "Button", text: " Save\n changes ", value: "hunter2", html: "<b>x</b>" },
+        message: "dropped",
+        url: "https://a.dev/secret?q=1",
+      },
+      // Text of a non-button element is never kept; nor a long label.
+      { t: 2, kind: "rage_click", count: 3, target: { tag: "div", text: "Pat Smith, 12 Main Street" } },
+      { t: 3, kind: "rage_click", count: 3, target: { tag: "a", text: "x".repeat(41) } },
+      { t: 4, kind: "rage_click", count: 3, target: { tag: "span", role: "button", text: "Export 4242 4242 4242 4242" } },
+      { t: 5, kind: "rage_click", count: 9999, target: { tag: "a", text: "Billing" } },
+      // Unusable targets are dropped.
+      { t: 6, kind: "rage_click", count: 3, target: { tag: "<script>" } },
+      { t: 7, kind: "rage_click", count: 3 },
+    ],
+  })!;
+  assert.equal(ctx.events.length, 5);
+  assert.deepEqual(ctx.events.at(-1), {
+    t: Date.UTC(2026, 9, 5, 9, 0, 0),
+    kind: "rage_click",
+    target: { tag: "button", id: "[email]", label: "Save changes", name: "token=[redacted]", role: "button", text: "Save changes" },
+    count: 5,
+  });
+  assert.deepEqual(ctx.events.find((e) => e.t === 2)!.target, { tag: "div" });
+  assert.deepEqual(ctx.events.find((e) => e.t === 3)!.target, { tag: "a" });
+  assert.equal(ctx.events.find((e) => e.t === 4)!.target!.text, "Export [number]");
+  assert.equal(ctx.events.find((e) => e.t === 5)!.count, 100);
+  assert.ok(ctx.events.every(isIssue));
+  assert.equal(
+    describeEvents(ctx).at(-1),
+    '[09:00:00] Clicked button#[email][role=button][name=token=[redacted]] (Save changes) "Save changes" 5 times in quick succession; the page didn\'t change',
+  );
+  assert.equal(describeTarget({ tag: "a", text: "Billing" }), 'a "Billing"');
+});
+
+test("S-13 stuck: page path only, seconds, issue kind; not an issue itself", () => {
+  const ctx = sanitizeContext({
+    page: { url: "https://a.dev/import?file=pat@customer.test" },
+    timezone: "UTC",
+    events: [
+      { t: Date.UTC(2026, 9, 5, 9, 3, 0), kind: "stuck", url: "/import/pat@customer.test?file=x#top", seconds: 183.6, issue: "network", message: "dropped", target: { tag: "a" } },
+      { t: 2, kind: "stuck", url: "https://a.dev/billing", seconds: -5, issue: "navigation" },
+      { t: 3, kind: "stuck", seconds: 1e9, issue: "rage_click" },
+    ],
+  })!;
+  assert.equal(ctx.events.length, 3);
+  assert.deepEqual(ctx.events.at(-1), { t: Date.UTC(2026, 9, 5, 9, 3, 0), kind: "stuck", url: "/import/[email]", seconds: 183, issue: "network" });
+  assert.deepEqual(ctx.events.find((e) => e.t === 2), { t: 2, kind: "stuck", url: "/billing", seconds: 0 });
+  assert.equal(ctx.events.find((e) => e.t === 3)!.seconds, 86_400);
+  assert.ok(!ctx.events.some(isIssue));
+  assert.equal(describeEvents(ctx).at(-1), "[09:03:00] Still on /import/[email] after 3 min since a failed request, with no successful form submit");
 });

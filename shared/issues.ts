@@ -4,7 +4,7 @@
 // requests, errors, environment, footer) are built from the masked debug context only, so
 // they can't contain anything the model made up.
 
-import { browserName, describeEvents, formatEventTime, isIssue, osName, redact, type DebugContext, type DebugEvent } from "./debug.ts";
+import { browserName, describeEvents, describeIssueKind, describeTarget, formatDuration, formatEventTime, isIssue, osName, redact, type DebugContext, type DebugEvent } from "./debug.ts";
 
 /** GitHub's own title limit. */
 export const ISSUE_TITLE_MAX = 256;
@@ -159,6 +159,8 @@ export function inferSteps(facts: Pick<IssueFacts, "environment" | "events">): s
       steps.push(`A JavaScript error is thrown: ${code(e.message ?? "unknown error")}`);
     } else if (e.kind === "app_error") {
       steps.push(`The app reports an error: ${appError(e)}`);
+    } else if (e.kind === "rage_click") {
+      steps.push(`Click ${code(describeTarget(e.target))}: nothing happens (clicked ${e.count ?? 3} times in a second, the page didn't change)`);
     }
   }
   if (!steps.some((s) => s.startsWith("Open ")) && facts.environment?.page.url) steps.unshift(`Open ${code(facts.environment.page.url)}`);
@@ -171,25 +173,31 @@ export function fallbackNarrative(facts: IssueFacts): IssueNarrative {
   const first = facts.transcript.find((m) => m.who === "Customer")?.body ?? "";
   const oneLine = redact(first.replace(/\s+/g, " ").trim(), 400);
   const title = oneLine ? (oneLine.length > 80 ? `${oneLine.slice(0, 79).trimEnd()}…` : oneLine) : "Problem reported in a support conversation";
-  // The failing request says most; else the last error.
-  // The app's own words say most (S-12); then the failing request; else the last error.
+  // The app's own words say most (S-12); then the failing request; then the last error; then a
+  // button that didn't respond (S-02).
   const failure =
     facts.events.findLast((e) => e.kind === "app_error") ??
     facts.events.findLast((e) => e.kind === "network" && isIssue(e)) ??
-    facts.events.findLast((e) => e.kind === "error");
+    facts.events.findLast((e) => e.kind === "error") ??
+    facts.events.findLast((e) => e.kind === "rage_click");
+  // S-13: they stayed on the page without getting it to work.
+  const stuck = facts.events.findLast((e) => e.kind === "stuck");
+  const stuckNote = stuck ? ` The customer then stayed on ${code(stuck.url ?? "the page")} for ${formatDuration(stuck.seconds ?? 0)} without a successful submit.` : "";
   const actual = !failure
     ? UNKNOWN
     : failure.kind === "network"
       ? `${code(`${failure.method ?? "GET"} ${failure.url ?? "?"}`)} ${failure.status ? `returned HTTP ${failure.status}` : "got no response"}.`
       : failure.kind === "app_error"
         ? `The app reported: ${appError(failure)}.`
-        : `JavaScript error: ${code(failure.message ?? "unknown error")}.`;
+        : failure.kind === "rage_click"
+          ? `Clicking ${code(describeTarget(failure.target))} did nothing (clicked ${failure.count ?? 3} times; the page didn't change).`
+          : `JavaScript error: ${code(failure.message ?? "unknown error")}.`;
   return {
     title,
     summary: oneLine ? `A customer reported in a support chat: “${oneLine}”` : UNKNOWN,
     steps: inferSteps(facts),
     expected: UNKNOWN,
-    actual,
+    actual: actual === UNKNOWN && stuck ? `The customer stayed on ${code(stuck.url ?? "the page")} for ${formatDuration(stuck.seconds ?? 0)} after ${describeIssueKind(stuck.issue)}, without a successful submit.` : actual + stuckNote,
   };
 }
 
