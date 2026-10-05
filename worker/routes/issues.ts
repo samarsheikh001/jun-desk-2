@@ -254,7 +254,7 @@ issues.post("/conversations/:cid/issue-draft", async (c) => {
   else if ((usage?.replies ?? 0) >= settings.monthlyReplyCap) notice = "The monthly AI cap is reached, so this is a template.";
   else {
     try {
-      const model = createModel(c.env, ref.workspaceId, settings);
+      const model = createModel(c.env, ref.workspaceId, settings, "draft");
       const result = await completeText({
         model: model.model,
         ...model.prompt(issuePrompt()),

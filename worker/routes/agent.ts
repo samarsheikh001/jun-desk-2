@@ -142,9 +142,10 @@ agent.post("/workspaces/:id/agent/eval", async (c) => {
     loadConfigFiles(c.env, workspaceId),
     c.env.DB.prepare("SELECT name FROM workspaces WHERE id = ?").bind(workspaceId).first<{ name: string }>(),
   ]);
-  let model;
+  let model, judgeModel;
   try {
-    model = createModel(c.env, workspaceId, settings);
+    model = createModel(c.env, workspaceId, settings, "answer");
+    judgeModel = createModel(c.env, workspaceId, settings, "judge");
   } catch (error) {
     if (error instanceof AiUnavailableError) throw new HttpError(400, "ai_unavailable", error.message);
     throw error;
@@ -161,6 +162,7 @@ agent.post("/workspaces/:id/agent/eval", async (c) => {
         workspaceId,
         workspaceName: workspace?.name ?? "this company",
         model,
+        judgeModel,
         live: parseConfig(liveFiles.files, liveFiles.version).config,
         candidate: parsed.config,
         sample,
