@@ -15,8 +15,7 @@ import { cleanNudge, cleanOpener, GENERIC_NUDGE, GENERIC_OPENER, nudgeCacheKey, 
 import { forLoader, matchesPath, storedOpeners } from "../../shared/openers.ts";
 import { completeText, createModel, loadAiSettings } from "../ai/providers.ts";
 import { describeOpening, isOpen, nextOpening, type BusinessHours } from "../../shared/hours.ts";
-
-export const DEFAULT_COLOR = "#2f5bea";
+import { widgetLook } from "../../shared/appearance.ts";
 import { storeUpload } from "./files.ts";
 
 // Public API used by the widget frame. Visitors are anonymous contacts identified by a
@@ -85,10 +84,12 @@ widget.get("/widget/:key/config", async (c) => {
   const now = Date.now();
   const open = isOpen(hours, now);
   const next = open ? null : nextOpening(hours, now);
+  const logoUrl = typeof s.logoKey === "string" ? `/api/widget/${encodeURIComponent(c.req.param("key"))}/logo?v=${s.logoKey}` : null;
+  const look = widgetLook(s, inbox.workspaceName, logoUrl);
   return c.json(
     {
-      workspaceName: typeof s.displayName === "string" ? s.displayName : inbox.workspaceName,
-      greeting: typeof s.greeting === "string" ? s.greeting : "Hi! How can we help?",
+      // W-04 appearance: name, greeting, colour, side, logo, theme, rounding, launcher, placeholder, suggestions.
+      ...look,
       // P-01: offer help when the page has an error (on unless turned off).
       proactive: s.proactive !== false,
       // P-01 page openers: only the pattern (as a regex), the delay and an id; text and hints stay on the desk.
@@ -97,11 +98,6 @@ widget.get("/widget/:key/config", async (c) => {
       csat: s.csat !== false,
       /** Whether new chats are answered by the AI first (the widget shows its typing dots right away). */
       ai: (await loadAiSettings(c.env, inbox.workspaceId)).enabled,
-      // W-04 branding.
-      color: typeof s.color === "string" ? s.color : DEFAULT_COLOR,
-      position: s.position === "left" ? "left" : "right",
-      replyTime: typeof s.replyTime === "string" ? s.replyTime : "We usually reply in a few minutes",
-      logoUrl: typeof s.logoKey === "string" ? `/api/widget/${encodeURIComponent(c.req.param("key"))}/logo?v=${s.logoKey}` : null,
       // I-10: shown in the widget header ("Back tomorrow at 09:00 (London time)").
       hours: hours?.enabled ? { open, back: next && hours ? describeOpening(next, hours.timezone, now) : null } : null,
     },

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpenIcon, BotIcon, ChartColumnIcon, InboxIcon, SearchIcon, SettingsIcon, UsersIcon } from "lucide-react";
+import { BookOpenIcon, BotIcon, ChartColumnIcon, InboxIcon, PaletteIcon, SearchIcon, SettingsIcon, UsersIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { DeskIcon } from "./components/DeskIcon.tsx";
@@ -7,6 +7,7 @@ import { ThemeButton } from "./components/ThemeButton.tsx";
 import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
 import { api, type Me } from "./api.ts";
 import { InboxPage } from "./inbox/InboxPage.tsx";
+import { AppearancePage } from "./appearance/AppearancePage.tsx";
 import { AgentPage } from "./agent/AgentPage.tsx";
 import { CommandPalette, ShortcutsHelp } from "./components/CommandPalette.tsx";
 import { bridge, isControlTarget, isTypingTarget, modKey } from "./lib/bridge.ts";
@@ -25,6 +26,7 @@ const NAV = [
   { id: "visitors", label: "Visitors", Icon: UsersIcon },
   { id: "knowledge", label: "Knowledge", Icon: BookOpenIcon },
   { id: "agent", label: "Agent", Icon: BotIcon },
+  { id: "appearance", label: "Appearance", Icon: PaletteIcon },
   { id: "reports", label: "Reports", Icon: ChartColumnIcon },
   { id: "settings", label: "Settings", Icon: SettingsIcon },
 ] as const;
@@ -184,6 +186,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     path.startsWith("/settings") ? "settings"
     : path.startsWith("/knowledge") ? "knowledge"
     : path.startsWith("/agent") ? "agent"
+    : path.startsWith("/appearance") ? "appearance"
     : path.startsWith("/visitors") ? "visitors"
     : path.startsWith("/reports") ? "reports"
     : path.startsWith("/welcome") ? "welcome"
@@ -246,6 +249,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <VisitorsPage workspaceId={workspace.workspaceId} visitors={visitors} />
       ) : section === "reports" ? (
         <ReportsPage workspaceId={workspace.workspaceId} />
+      ) : section === "appearance" ? (
+        <AppearancePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} />
       ) : section === "agent" ? (
         <AgentPage workspaceId={workspace.workspaceId} canEdit={canEdit} />
       ) : (

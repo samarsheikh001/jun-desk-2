@@ -4,7 +4,8 @@ import { AiPanel } from "./AiPanel.tsx";
 import { IssueTrackersPanel } from "./settings/IssueTrackersPanel.tsx";
 import { AssignmentPanel, SavedRepliesPanel, TagsPanel, TopicsPanel } from "./settings/InboxPanels.tsx";
 import { NotificationsPanel } from "./settings/NotificationsPanel.tsx";
-import { AppearancePanel, HoursPanel, type InboxSettings } from "./settings/WidgetPanels.tsx";
+import { HoursPanel, type InboxSettings } from "./settings/WidgetPanels.tsx";
+import { navigate } from "./lib/router.ts";
 import { OpenersPanel } from "./settings/OpenersPanel.tsx";
 import type { OpenerRule } from "../shared/openers.ts";
 import { useAction } from "./useAction.ts";
@@ -36,7 +37,7 @@ export function SettingsPage({ me }: { me: Me }) {
   return (
     <main className="content">
       {workspace && <InstallPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
-      {workspace && <WidgetSettings workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={workspace.role !== "agent"} />}
+      {workspace && <WidgetSettings workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
       {workspace && <AiPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
       {workspace && <AssignmentPanel workspaceId={workspace.workspaceId} canEdit={workspace.role !== "agent"} />}
       {workspace && <SavedRepliesPanel workspaceId={workspace.workspaceId} />}
@@ -113,7 +114,10 @@ function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: 
         <span className="spacer" />
         <a data-slot="button" className={buttonVariants({ variant: "outline", size: "sm" })} href={`/demo.html?key=${widgetKey}`} target="_blank" rel="noreferrer">Open demo page</a>
       </div>
-      <p className="muted small">Paste this before <code>&lt;/body&gt;</code> on your site. The loader is tiny; the chat itself loads only when a visitor opens it.</p>
+      <p className="muted small">
+        Paste this before <code>&lt;/body&gt;</code> on your site. The loader is tiny; the chat itself loads only when a visitor opens it. Colours, wording and the rest of its look are on the{" "}
+        <a href="/appearance" onClick={(e) => { e.preventDefault(); navigate("/appearance"); }}>Appearance</a> page.
+      </p>
       <div className="invite">
         <div className="row">
           <code>{snippet}</code>
@@ -365,18 +369,12 @@ function TokensPanel({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-/** W-04 appearance and I-10 hours share the widget inbox's settings. */
-function WidgetSettings({ workspaceId, workspaceName, canEdit }: { workspaceId: string; workspaceName: string; canEdit: boolean }) {
+/** I-10 hours (the widget's look, W-04, has its own Appearance page). */
+function WidgetSettings({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const [inbox, setInbox] = useState<{ widgetKey: string; settings: InboxSettings } | null>(null);
   useEffect(() => {
     api<{ inbox: { widgetKey: string; settings: InboxSettings } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => setInbox(r.inbox), () => {});
   }, [workspaceId]);
   if (!inbox) return null;
-  const onSaved = (settings: InboxSettings) => setInbox({ ...inbox, settings });
-  return (
-    <>
-      <AppearancePanel workspaceId={workspaceId} widgetKey={inbox.widgetKey} workspaceName={workspaceName} settings={inbox.settings} canEdit={canEdit} onSaved={onSaved} />
-      <HoursPanel workspaceId={workspaceId} settings={inbox.settings} canEdit={canEdit} onSaved={onSaved} />
-    </>
-  );
+  return <HoursPanel workspaceId={workspaceId} settings={inbox.settings} canEdit={canEdit} onSaved={(settings) => setInbox({ ...inbox, settings })} />;
 }

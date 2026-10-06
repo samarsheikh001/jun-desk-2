@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
 import { offersRating } from "../../shared/inbox.ts";
+import { radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
@@ -13,6 +14,8 @@ import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/threa
 const storageKey = (key: string) => `jun:visitor:${key}`;
 let memoryToken: string | null = null; // fallback when storage is blocked or not consented
 let persist = new URLSearchParams(window.location.search).get("persist") !== "0";
+/** The desk's Appearance page shows this frame with its unsaved settings (sent by postMessage). */
+const preview = new URLSearchParams(window.location.search).get("preview") === "1";
 
 function readToken(key: string): string | null {
   if (!persist) return memoryToken;
@@ -128,32 +131,34 @@ function hostContext(): Promise<unknown> {
 }
 const unread = (c: ConversationSummary) => c.lastMessageAuthor === "agent" && c.lastSeq > c.visitorReadSeq;
 
-interface WidgetConfig {
-  workspaceName: string;
-  greeting: string;
+interface WidgetConfig extends WidgetLook {
   ai: boolean;
-  color: string;
-  replyTime: string;
-  logoUrl: string | null;
   hours: { open: boolean; back: string | null } | null;
   /** W-12: ask for a rating when a conversation is resolved. */
   csat: boolean;
 }
 
-/** W-04: the desk's brand colour on the frame (with readable text on top of it). */
-function applyBrand(color: string): void {
-  if (!/^#[0-9a-f]{6}$/i.test(color)) return;
-  const n = parseInt(color.slice(1), 16);
-  const lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
-  document.documentElement.style.setProperty("--accent", color);
-  document.documentElement.style.setProperty("--accent-text", lum > 0.65 ? "#1c1c1a" : "#ffffff");
+/** W-04: brand colour (with readable text on it), light/dark/auto and corner rounding on the frame. */
+function applyLook(look: WidgetLook): void {
+  const root = document.documentElement;
+  if (/^#[0-9a-f]{6}$/i.test(look.color)) {
+    root.style.setProperty("--accent", look.color);
+    root.style.setProperty("--accent-text", textOn(look.color));
+  }
+  if (look.theme === "auto") delete root.dataset.theme;
+  else root.dataset.theme = look.theme;
+  for (const [name, value] of Object.entries(radiusVars(look.radius))) root.style.setProperty(name, value);
 }
 
 export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const api = useMemo(() => new WidgetApi(widgetKey), [widgetKey]);
-  const [config, setConfig] = useState<WidgetConfig | null>(null);
+  const [saved, setSaved] = useState<WidgetConfig | null>(null);
+  /** Appearance preview only: the desk's unsaved look, on top of the saved config. */
+  const [draft, setDraft] = useState<WidgetLook | null>(null);
+  const config = useMemo(() => (saved && draft ? { ...saved, ...draft } : saved), [saved, draft]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [view, setView] = useState<{ kind: "home" } | { kind: "thread"; id: string | null; opener?: Opener }>({ kind: "home" });
+  /** `first`: a suggested question the visitor tapped, sent as the new chat's first message. */
+  const [view, setView] = useState<{ kind: "home" } | { kind: "thread"; id: string | null; opener?: Opener; first?: string }>({ kind: "home" });
   const [open, setOpen] = useState(window.parent === window);
   const [error, setError] = useState<string | null>(null);
   /** The loader's live session (V-01), sent with a new conversation so the visitor list can show it. */
@@ -163,10 +168,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
 
   useEffect(() => {
     api.call<WidgetConfig>("/config").then(
-      (c) => {
-        applyBrand(c.color);
-        setConfig(c);
-      },
+      (c) => setSaved(c),
       (e: Error) => setError(e.message),
     );
   }, [api]);
@@ -192,6 +194,10 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     const onMessage = (e: MessageEvent) => {
       if (e.source !== window.parent) return;
       const data = e.data as Record<string, unknown> | null;
+      // The Appearance page's draft: same origin only (it's the desk itself).
+      if (preview && data?.type === "jun:preview" && e.origin === window.location.origin && data.look) {
+        setDraft(data.look as WidgetLook);
+      }
       if (data?.type === "jun:open") setOpen(true);
       if (data?.type === "jun:close") setOpen(false);
       if (data?.type === "jun:session" || data?.type === "jun:consent") {
@@ -223,7 +229,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
             text: opener.text.slice(0, 1000),
             ...(typeof opener.inviteId === "string" ? { inviteId: opener.inviteId } : {}),
             ...(typeof opener.from === "string" ? { from: opener.from.slice(0, 120) } : {}),
-            ...(opener.page === true ? { page: true } : {}),
+            ...(opener.page ? { page: true } : {}),
           },
         });
         postToHost({ type: "jun:proactive-shown" });
@@ -236,6 +242,10 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   }, [api]);
 
   useEffect(() => {
+    if (config) applyLook(config);
+  }, [config]);
+
+  useEffect(() => {
     postToHost({ type: "jun:unread", count: conversations.filter(unread).length });
   }, [conversations]);
 
@@ -245,6 +255,22 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
 
   if (error) return <div className="w-shell"><p className="error pad">{error}</p></div>;
   if (!config) return <div className="w-shell" />;
+
+  const threadProps = {
+    api,
+    csat: config.csat,
+    away: Boolean(config.hours && !config.hours.open),
+    placeholder: config.placeholder,
+    sessionId,
+    aiEnabled: config.ai,
+    open,
+    onStarted: (c: ConversationSummary) => {
+      upsert(c);
+      // Keep the proactive opener at the top of the conversation it started.
+      setView((v) => ({ kind: "thread", id: c.id, ...(v.kind === "thread" && v.opener ? { opener: v.opener } : {}) }));
+    },
+    onConversation: upsert,
+  };
 
   return (
     <div className="w-shell">
@@ -268,6 +294,13 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
             <h2>{config.greeting}</h2>
             <button onClick={() => setView({ kind: "thread", id: null })}>Send us a message</button>
           </div>
+          {config.suggestions.length > 0 && (
+            <div className="w-suggestions" aria-label="Suggested questions">
+              {config.suggestions.map((q) => (
+                <button key={q} className="ghost" onClick={() => setView({ kind: "thread", id: null, first: q })}>{q}</button>
+              ))}
+            </div>
+          )}
           {conversations.length > 0 && (
             <div className="w-history">
               <h3 className="small muted">Your conversations</h3>
@@ -287,21 +320,11 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       ) : (
         <WidgetThread
           key={view.id ?? "new"}
-          api={api}
+          {...threadProps}
           conversationId={view.id}
           summary={conversations.find((c) => c.id === view.id) ?? null}
-          csat={config.csat}
-          away={Boolean(config.hours && !config.hours.open)}
           opener={view.opener}
-          sessionId={sessionId}
-          aiEnabled={config.ai}
-          open={open}
-          onStarted={(c) => {
-            upsert(c);
-            // Keep the proactive opener at the top of the conversation it started.
-            setView((v) => ({ kind: "thread", id: c.id, ...(v.kind === "thread" && v.opener ? { opener: v.opener } : {}) }));
-          }}
-          onConversation={upsert}
+          first={view.kind === "thread" ? view.first : undefined}
         />
       )}
     </div>
@@ -315,6 +338,8 @@ function WidgetThread({
   csat,
   away,
   opener,
+  first,
+  placeholder,
   sessionId,
   aiEnabled,
   open,
@@ -327,6 +352,8 @@ function WidgetThread({
   csat: boolean;
   away: boolean;
   opener?: Opener | undefined;
+  first?: string | undefined;
+  placeholder: string;
   sessionId: string | null;
   aiEnabled: boolean;
   open: boolean;
@@ -395,6 +422,15 @@ function WidgetThread({
     }
   };
 
+  // A tapped suggestion is sent once, as if typed (the ref survives StrictMode's double effect).
+  const sentFirst = useRef(false);
+  useEffect(() => {
+    if (!first || conversationId || sentFirst.current) return;
+    sentFirst.current = true;
+    void send(first, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [first, conversationId]);
+
   if (initial === null && !error) return <div className="w-body muted pad">Loading…</div>;
   return (
     <>
@@ -442,7 +478,7 @@ function WidgetThread({
       {conversationId && (
         <EmailAsk api={api} conversationId={conversationId} contact={contact} away={away} waiting={handling === "human" ? lastVisitorWaiting(thread.messages) : null} />
       )}
-      <Composer placeholder="Write a message…" upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
+      <Composer placeholder={placeholder} upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
     </>
   );
 }

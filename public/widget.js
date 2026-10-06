@@ -231,8 +231,9 @@
   var nudged, nudgeTimer, nudgeEvent, openers; // push() and the ticker decide when (P-01)
   // The card's opener (what the chat starts with if they click it): { text, inviteId?, from?, page? }.
   var cardOpener;
-  function showCard(o) {
-    nudged = true;
+  // greeting: the W-04 greeting card, which isn't a nudge (help offers can still replace it).
+  function showCard(o, greeting) {
+    nudged = !greeting;
     cardOpener = o;
     card.querySelector("p").textContent = o.text;
     card.querySelector(".from").textContent = o.from || "";
@@ -248,7 +249,8 @@
       if (res.show && res.text && !nudged && !open) showCard(res);
     }).catch(function () {});
   }
-  function hideNudge() { card.style.display = "none"; }
+  // Dismissing a card or opening the chat also retires the greeting card (W-04) for this visit.
+  function hideNudge() { card.style.display = "none"; store("jun:g", 1); }
 
   // ---------- launcher ----------
   var host = document.createElement("div");
@@ -257,17 +259,19 @@
   root.innerHTML =
     "<style>" +
     ":host{all:initial}.w{--c:#2f5bea;--t:#fff;visibility:hidden}.w.on{visibility:visible}" +
-    "button,.frame{border:0}button{cursor:pointer}.btn,.frame,.nudge{position:fixed;right:20px;bottom:88px;z-index:2147483000}.frame,.nudge{background:#fff;display:none}" +
+    "button,.frame{border:0}button{cursor:pointer}.btn,.frame,.nudge{position:fixed;right:20px;bottom:88px;z-index:2147483000}.frame,.nudge{background:#fff;color:#1c1c1a;display:none}" +
+    // W-04 dark theme ("auto" keeps the light card; the chat itself follows the system). Before .btn, which keeps its colours.
+    ".dark>*{background:#222;color:#eee}" +
     ".btn{bottom:20px;width:56px;height:56px;border-radius:50%;" +
-    "background:var(--c);color:var(--t);box-shadow:0 6px 20px rgba(0,0,0,.2);display:grid;place-items:center;transition:transform .15s}" +
+    "background:var(--c);color:var(--t);box-shadow:0 6px 20px #0003;display:grid;place-items:center;transition:transform .15s}" +
     ".btn:hover{transform:scale(1.05)}" +
     ".badge{position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#e5484d;" +
     "color:#fff;font:600 11px/18px system-ui,sans-serif;display:none}" +
-    ".frame{width:380px;height:min(640px,calc(100vh - 120px));border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.25)}" +
-    ".nudge{max-width:280px;padding:14px 16px;border-radius:14px;color:#1c1c1a;" +
+    ".frame{width:380px;height:min(640px,100vh - 120px);border-radius:var(--r,16px);box-shadow:0 12px 40px rgba(0,0,0,.25)}" +
+    ".nudge{max-width:280px;padding:14px 16px;border-radius:var(--r,16px);" +
     "box-shadow:0 10px 30px rgba(0,0,0,.18);font:14px/1.45 system-ui,sans-serif}" +
     // Left side (W-04); the full-screen frame on phones wins over it (same specificity, later).
-    ".l>*{right:auto;left:20px}" +
+    ".left>*{right:auto;left:20px}" +
     "@media(max-width:480px){.frame{right:0;left:0;bottom:0;width:100vw;height:100vh;border-radius:0}}" +
     ".nudge p{margin:0 18px 10px 0}.from{font-size:12px;color:#6b6b66;margin-bottom:4px}.go{border-radius:8px;padding:7px 12px;background:var(--c);color:var(--t);font:600 13px system-ui,sans-serif}" +
     ".x{position:absolute;top:6px;right:8px;background:none;font-size:18px;line-height:1;color:#6b6b66}" +
@@ -289,8 +293,13 @@
       wrap.style.setProperty("--c", c);
       wrap.style.setProperty("--t", lum > 0.65 ? "#1c1c1a" : "#fff");
     }
-    if (cfg) openers = cfg.openers;
-    if (cfg && cfg.position === "left") wrap.classList.add("l");
+    if (cfg) {
+      openers = cfg.openers;
+      // W-04: side, corner rounding, dark theme, and the greeting card launcher (until dismissed).
+      wrap.classList.add(cfg.position, cfg.theme); // "left", "dark"
+      wrap.style.setProperty("--r", cfg.radius + "px");
+      if (cfg.launcher === "card" && !open && !nudged && !store("jun:g")) showCard({ text: cfg.greeting, page: 1 }, 1);
+    }
     wrap.classList.add("on");
   }
   setTimeout(brand, 1500);

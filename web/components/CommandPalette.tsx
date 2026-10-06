@@ -31,13 +31,13 @@ const NAVIGATION: { label: string; path: string; hint?: string }[] = [
   { label: "Visitors", path: "/visitors", hint: "g v" },
   { label: "Knowledge", path: "/knowledge" },
   { label: "Agent", path: "/agent" },
+  { label: "Appearance", path: "/appearance" },
   { label: "Reports", path: "/reports", hint: "g r" },
   { label: "Settings", path: "/settings", hint: "g s" },
 ];
 /** Settings sections, found by their heading (so panels need no ids). */
 const SETTINGS_SECTIONS = [
   "Install the chat widget",
-  "Widget appearance",
   "Business hours",
   "AI assistant",
   "Assignment",

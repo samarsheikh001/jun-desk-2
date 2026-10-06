@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { DEFAULT_AWAY_MESSAGE, describeOpening, isOpen, nextOpening, WEEKDAYS, type BusinessHours, type DayHours, type Weekday } from "../../shared/hours.ts";
-import { api, ApiError } from "../api.ts";
+import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { Card } from "@/components/ui/card.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 
-// W-04 widget appearance and I-10 business hours (Settings).
+// I-10 business hours (Settings). The widget's look (W-04) is on the Appearance page.
 
 export interface InboxSettings {
   color?: string;
@@ -20,127 +20,6 @@ export interface InboxSettings {
   hours?: BusinessHours;
   /** W-12: ask for a rating when a conversation is resolved (default on). */
   csat?: boolean;
-}
-
-const DEFAULT_COLOR = "#2f5bea";
-
-export function AppearancePanel({ workspaceId, widgetKey, workspaceName, settings, canEdit, onSaved }: {
-  workspaceId: string;
-  widgetKey: string;
-  workspaceName: string;
-  settings: InboxSettings;
-  canEdit: boolean;
-  onSaved: (s: InboxSettings) => void;
-}) {
-  const [color, setColor] = useState(settings.color ?? DEFAULT_COLOR);
-  const [position, setPosition] = useState<"left" | "right">(settings.position ?? "right");
-  const [name, setName] = useState(settings.displayName ?? "");
-  const [greeting, setGreeting] = useState(settings.greeting ?? "");
-  const [replyTime, setReplyTime] = useState(settings.replyTime ?? "");
-  const [csat, setCsat] = useState(settings.csat !== false);
-  const [saved, setSaved] = useState(false);
-  const { busy, error, run } = useAction();
-
-  const save = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    run(async () => {
-      const r = await api<{ settings: InboxSettings }>(`/workspaces/${workspaceId}/inbox`, {
-        method: "PATCH",
-        body: { color, position, displayName: name, greeting, replyTime, csat },
-      });
-      onSaved(r.settings);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    });
-  };
-
-  const uploadLogo = (file: File) =>
-    run(async () => {
-      const response = await fetch(`/api/workspaces/${workspaceId}/inbox/logo`, {
-        method: "POST",
-        headers: { "Content-Type": file.type || "application/octet-stream", "X-Jun-Upload": "1" },
-        body: file,
-        credentials: "same-origin",
-      });
-      const json = (await response.json().catch(() => ({}))) as { settings?: InboxSettings; error?: { code: string; message: string } };
-      if (!response.ok) throw new ApiError(json.error?.code ?? "http_error", json.error?.message ?? "Upload failed.");
-      onSaved(json.settings!);
-    });
-
-  const textOn = useMemo(() => {
-    const n = parseInt(color.slice(1), 16);
-    return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 > 0.65 ? "#1c1c1a" : "#fff";
-  }, [color]);
-  const logo = settings.logoKey ? `/api/widget/${widgetKey}/logo?v=${settings.logoKey}` : null;
-
-  return (
-    <Card className="panel">
-      <h2>Widget appearance</h2>
-      <p className="muted small">Changes show on your site within a minute; no need to update the snippet.</p>
-      <div className="appearance">
-        <form onSubmit={save} className="ai-form">
-          <label className="field">
-            <span>Name shown in the chat</span>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={workspaceName} maxLength={80} disabled={!canEdit} />
-          </label>
-          <label className="field">
-            <span>Greeting</span>
-            <Input value={greeting} onChange={(e) => setGreeting(e.target.value)} placeholder="Hi! How can we help?" maxLength={200} disabled={!canEdit} />
-          </label>
-          <label className="field">
-            <span>Reply time</span>
-            <Input value={replyTime} onChange={(e) => setReplyTime(e.target.value)} placeholder="We usually reply in a few minutes" maxLength={80} disabled={!canEdit} />
-          </label>
-          <div className="row">
-            <label className="field">
-              <span>Colour</span>
-              <span className="row">
-                <input type="color" value={color} onChange={(e) => setColor(e.target.value)} disabled={!canEdit} aria-label="Brand colour" />
-                <Input value={color} onChange={(e) => setColor(e.target.value)} pattern="#[0-9a-fA-F]{6}" style={{ width: 100 }} disabled={!canEdit} aria-label="Brand colour (hex)" />
-              </span>
-            </label>
-            <fieldset className="field" disabled={!canEdit}>
-              <span>Button position</span>
-              <span className="row small">
-                <label className="check"><input type="radio" checked={position === "right"} onChange={() => setPosition("right")} /> Right</label>
-                <label className="check"><input type="radio" checked={position === "left"} onChange={() => setPosition("left")} /> Left</label>
-              </span>
-            </fieldset>
-          </div>
-          <div className="field">
-            <span>Logo <span className="muted">(PNG, JPEG, WebP or GIF, up to 512 KB)</span></span>
-            <span className="row">
-              {logo && <img src={logo} alt="Current logo" className="logo-thumb" />}
-              {canEdit && <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLogo(f); e.target.value = ""; }} aria-label="Upload logo" />}
-              {canEdit && logo && <Button variant="outline" size="sm" type="button" disabled={busy} onClick={() => run(async () => onSaved((await api<{ settings: InboxSettings }>(`/workspaces/${workspaceId}/inbox/logo`, { method: "DELETE" })).settings))}>Remove</Button>}
-            </span>
-          </div>
-          <label className="check small">
-            <input type="checkbox" checked={csat} onChange={(e) => setCsat(e.target.checked)} disabled={!canEdit} />
-            Ask "How did we do?" when a conversation is resolved
-          </label>
-          {error && <p className="error small">{error}</p>}
-          {canEdit && <div className="row"><Button disabled={busy}>Save</Button>{saved && <span className="muted small">Saved ✓</span>}</div>}
-        </form>
-        <div className={`wpreview ${position}`} aria-label="Preview">
-          <div className="wpreview-frame">
-            <div className="wpreview-head" style={{ background: color, color: textOn }}>
-              {logo && <img src={logo} alt="" />}
-              <div>
-                <strong>{name || workspaceName}</strong>
-                <div className="small">{replyTime || "We usually reply in a few minutes"}</div>
-              </div>
-            </div>
-            <div className="wpreview-body">
-              <strong>{greeting || "Hi! How can we help?"}</strong>
-              <span className="wpreview-cta" style={{ background: color, color: textOn }}>Send us a message</span>
-            </div>
-          </div>
-          <div className="wpreview-btn" style={{ background: color, color: textOn }}>💬</div>
-        </div>
-      </div>
-    </Card>
-  );
 }
 
 const ALL_DAYS: Weekday[] = [1, 2, 3, 4, 5, 6, 0];

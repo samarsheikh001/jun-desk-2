@@ -67,11 +67,17 @@ await step("K-04: a website source lists its pages and indexed text; a page can 
   await agent.call(`${kb()}/${site.id}/sync`, { body: {} });
 });
 
-await step("W-04: branding is validated, served cross-origin to the loader, and the logo is safe", async () => {
+await step("W-04: appearance is validated, served cross-origin to the loader, and the logo is safe", async () => {
   const inbox = `/workspaces/${workspaceId}/inbox`;
   assert.equal((await agent.call(inbox, { method: "PATCH", body: { color: "blue" } })).status, 400);
   assert.equal((await agent.call(inbox, { method: "PATCH", body: { position: "top" } })).status, 400);
-  const ok = await agent.call(inbox, { method: "PATCH", body: { color: "#FF6600", position: "left", greeting: "Hey there 👋", replyTime: "Replies in under an hour", displayName: "Acme Help" } });
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { radius: 40 } })).status, 400);
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { theme: "neon" } })).status, 400);
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { suggestions: ["1", "2", "3", "4", "5"] } })).status, 400);
+  const ok = await agent.call(inbox, {
+    method: "PATCH",
+    body: { color: "#FF6600", position: "left", greeting: "Hey there 👋", replyTime: "Replies in under an hour", displayName: "Acme Help", theme: "dark", radius: 6, launcher: "card", placeholder: "Ask us anything", suggestions: ["How much is it?", " "] },
+  });
   assert.equal(ok.status, 200, JSON.stringify(ok.json));
 
   const config = await fetch(`${BASE}/api/widget/${widgetKey}/config`, { headers: { Origin: "https://customer.example" } });
@@ -83,6 +89,11 @@ await step("W-04: branding is validated, served cross-origin to the loader, and 
   assert.equal(c.replyTime, "Replies in under an hour");
   assert.equal(c.workspaceName, "Acme Help");
   assert.equal(c.logoUrl, null);
+  assert.equal(c.theme, "dark");
+  assert.equal(c.radius, 6);
+  assert.equal(c.launcher, "card");
+  assert.equal(c.placeholder, "Ask us anything");
+  assert.deepEqual(c.suggestions, ["How much is it?"]);
 
   // A 1×1 PNG.
   const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="), (ch) => ch.charCodeAt(0));
@@ -99,7 +110,7 @@ await step("W-04: branding is validated, served cross-origin to the loader, and 
   assert.equal((await agent.call(`${inbox}/logo`, { method: "DELETE" })).status, 200);
   assert.equal((await fetch(`${BASE}${logoUrl}`)).status, 404);
   // Back to defaults for the other suites.
-  await agent.call(inbox, { method: "PATCH", body: { color: "#2f5bea", position: "right", greeting: "", replyTime: "", displayName: "" } });
+  await agent.call(inbox, { method: "PATCH", body: { color: "#2f5bea", position: "right", greeting: "", replyTime: "", displayName: "", theme: "auto", radius: 16, launcher: "button", placeholder: "", suggestions: [] } });
 });
 
 await step("I-10: outside business hours a chat with the team gets one away reply; the widget says when you're back", async () => {
