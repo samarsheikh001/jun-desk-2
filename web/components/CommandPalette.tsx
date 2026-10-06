@@ -5,6 +5,7 @@ import { api } from "../api.ts";
 import { bridge, modKey, type ThreadBridge } from "../lib/bridge.ts";
 import { rankScored, SHORTCUT_HELP } from "../lib/commands.ts";
 import { navigate } from "../lib/router.ts";
+import { setThemePref, THEME_LABEL, THEME_PREFS } from "../lib/theme.ts";
 import { Button } from "@/components/ui/button.tsx";
 
 interface Item {
@@ -121,6 +122,7 @@ export function CommandPalette({
       ...NAVIGATION.map<Item>((n) => ({ id: `n-${n.path}`, label: `Go to ${n.label}`, hint: n.hint, run: () => navigate(n.path) })),
       ...SETTINGS_SECTIONS.map<Item>((s) => ({ id: `s-${s}`, label: `Settings: ${s}`, run: () => goToSettingsSection(s) })),
       { id: "help", label: "Keyboard shortcuts", hint: "?", run: onHelp },
+      ...THEME_PREFS.map<Item>((t) => ({ id: `theme-${t}`, label: `Theme: ${THEME_LABEL[t]}`, keywords: ["appearance", "light", "dark", "mode"], run: () => setThemePref(t) })),
     ];
     return {
       title: "",

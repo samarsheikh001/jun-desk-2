@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenIcon, BotIcon, ChartColumnIcon, InboxIcon, SearchIcon, SettingsIcon, UsersIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.tsx";
 import { DeskIcon } from "./components/DeskIcon.tsx";
+import { ThemeButton } from "./components/ThemeButton.tsx";
 import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
 import { api, type Me } from "./api.ts";
 import { InboxPage } from "./inbox/InboxPage.tsx";
@@ -216,6 +217,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
             <Button variant="outline" size="sm" className="palette-open" onClick={() => openOverlay("palette")} aria-keyshortcuts="Control+K Meta+K" title="Search and commands">
               <SearchIcon aria-hidden="true" /><span className="palette-open-label">Search</span> <kbd>{modKey()} K</kbd>
             </Button>
+            <ThemeButton />
             <Button variant="outline" size="icon-sm" className="shortcuts-open" onClick={openHelp} aria-label="Keyboard shortcuts" aria-keyshortcuts="Shift+?" title="Keyboard shortcuts (?)">?</Button>
           </div>
           {showGetStarted && section !== "welcome" && (
