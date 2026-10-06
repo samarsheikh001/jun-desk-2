@@ -94,6 +94,15 @@ await step("W-04: appearance is validated, served cross-origin to the loader, an
   assert.equal(c.launcher, "card");
   assert.equal(c.placeholder, "Ask us anything");
   assert.deepEqual(c.suggestions, ["How much is it?"]);
+  // The loader's text colour on the button comes from the desk, for a data-color override too.
+  assert.equal(c.text, "#ffffff");
+  const light = (await (await fetch(`${BASE}/api/widget/${widgetKey}/config?color=%23ffe066`)).json()) as Record<string, unknown>;
+  assert.equal(light.text, "#1c1c1a");
+  assert.equal(light.color, "#ff6600", "the override changes only the text colour it's paired with");
+  // D-32: the "Ask anything…" bar launcher.
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { launcher: "bar" } })).status, 200);
+  assert.equal(((await (await fetch(`${BASE}/api/widget/${widgetKey}/config`)).json()) as Record<string, unknown>).launcher, "bar");
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { launcher: "banner" } })).status, 400);
 
   // A 1×1 PNG.
   const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="), (ch) => ch.charCodeAt(0));

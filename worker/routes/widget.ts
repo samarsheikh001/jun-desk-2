@@ -15,7 +15,7 @@ import { cleanNudge, cleanOpener, GENERIC_NUDGE, GENERIC_OPENER, nudgeCacheKey, 
 import { forLoader, matchesPath, storedOpeners } from "../../shared/openers.ts";
 import { completeText, createModel, loadAiSettings } from "../ai/providers.ts";
 import { describeOpening, isOpen, nextOpening, type BusinessHours } from "../../shared/hours.ts";
-import { widgetLook } from "../../shared/appearance.ts";
+import { textOn, widgetLook } from "../../shared/appearance.ts";
 import { storeUpload } from "./files.ts";
 
 // Public API used by the widget frame. Visitors are anonymous contacts identified by a
@@ -86,10 +86,14 @@ widget.get("/widget/:key/config", async (c) => {
   const next = open ? null : nextOpening(hours, now);
   const logoUrl = typeof s.logoKey === "string" ? `/api/widget/${encodeURIComponent(c.req.param("key"))}/logo?v=${s.logoKey}` : null;
   const look = widgetLook(s, inbox.workspaceName, logoUrl);
+  // The loader's data-color attribute overrides the colour on that site; it sends it as ?color=.
+  const override = c.req.query("color");
   return c.json(
     {
       // W-04 appearance: name, greeting, colour, side, logo, theme, rounding, launcher, placeholder, suggestions.
       ...look,
+      // Readable text on the button's colour (the loader keeps no colour maths of its own).
+      text: textOn(override && /^#[0-9a-f]{6}$/i.test(override) ? override : look.color),
       // P-01: offer help when the page has an error (on unless turned off).
       proactive: s.proactive !== false,
       // P-01 page openers: only the pattern (as a regex), the delay and an id; text and hints stay on the desk.

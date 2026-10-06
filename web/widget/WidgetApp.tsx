@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
 import { offersRating } from "../../shared/inbox.ts";
 import { radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
+import { BarHead, Chips, Glass, Typewriter, useBarFrame } from "./bar.tsx";
 
 // The chat UI inside the widget iframe. The visitor's token is created only when they
 // first send something, so just opening the chat stores nothing in their browser.
@@ -138,6 +139,9 @@ interface WidgetConfig extends WidgetLook {
   csat: boolean;
 }
 
+/** In a frame on a host page (the loader's, or the Appearance preview), as the "Ask anything…" bar. */
+const asBar = (look: WidgetLook) => look.launcher === "bar" && window.parent !== window;
+
 /** W-04: brand colour (with readable text on it), light/dark/auto and corner rounding on the frame. */
 function applyLook(look: WidgetLook): void {
   const root = document.documentElement;
@@ -145,7 +149,10 @@ function applyLook(look: WidgetLook): void {
     root.style.setProperty("--accent", look.color);
     root.style.setProperty("--accent-text", textOn(look.color));
   }
-  if (look.theme === "auto") delete root.dataset.theme;
+  // The bar has one look (a white bar, the chat on dark glass). Its page stays light: a frame
+  // whose colour scheme differs from the host page's gets an opaque backdrop.
+  root.classList.toggle("bar", asBar(look));
+  if (look.theme === "auto" || asBar(look)) delete root.dataset.theme;
   else root.dataset.theme = look.theme;
   for (const [name, value] of Object.entries(radiusVars(look.radius))) root.style.setProperty(name, value);
 }
@@ -272,6 +279,31 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     onConversation: upsert,
   };
 
+  // W-04 bar launcher (D-32): one conversation at a time, opened from the bar.
+  if (asBar(config)) {
+    const id = view.kind === "thread" ? view.id : null;
+    const setBarOpen = (next: boolean) => {
+      setOpen(next);
+      postToHost({ type: next ? "jun:open" : "jun:close" });
+    };
+    const away = config.hours && !config.hours.open ? `back ${config.hours.back ?? "soon"}` : null;
+    return (
+      <WidgetThread
+        key={id ?? "new"}
+        {...threadProps}
+        conversationId={id}
+        summary={conversations.find((c) => c.id === id) ?? null}
+        opener={view.kind === "thread" ? view.opener : undefined}
+        bar={{
+          head: <BarHead name={config.workspaceName} logoUrl={config.logoUrl} sub={away} onClose={() => setBarOpen(false)} />,
+          suggestions: config.suggestions,
+          side: config.position,
+          setOpen: setBarOpen,
+        }}
+      />
+    );
+  }
+
   return (
     <div className="w-shell">
       <header className="w-head">
@@ -345,6 +377,7 @@ function WidgetThread({
   open,
   onStarted,
   onConversation,
+  bar,
 }: {
   api: WidgetApi;
   conversationId: string | null;
@@ -359,6 +392,8 @@ function WidgetThread({
   open: boolean;
   onStarted: (c: ConversationSummary) => void;
   onConversation: (c: ConversationSummary) => void;
+  /** W-04 bar launcher: the chat panel's header, the suggested questions, and opening or folding it. */
+  bar?: { head: ReactNode; suggestions: string[]; side: "left" | "right"; setOpen: (open: boolean) => void };
 }) {
   const [initial, setInitial] = useState<Message[] | null>(conversationId ? null : []);
   const [error, setError] = useState<string | null>(null);
@@ -431,25 +466,51 @@ function WidgetThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [first, conversationId]);
 
-  if (initial === null && !error) return <div className="w-body muted pad">Loading…</div>;
-  return (
-    <>
-      <div className="w-body">
-        {/* Once the conversation exists, an invite is its first real message: don't show it twice. */}
-        {opener && !(opener.inviteId && thread.messages.length > 0) ? (
-          opener.inviteId ? (
-            <div className="msg other w-opener">
-              <div className="meta small muted">{opener.from}</div>
-              <div className="bubble">{opener.text}</div>
-            </div>
-          ) : (
-            <div className="msg other ai w-opener">
-              <div className="bubble">{opener.page ? opener.text : `${opener.text} Tell me what you were trying to do and I'll take a look.`}</div>
-            </div>
-          )
-        ) : (
-          thread.messages.length === 0 && thread.pending.length === 0 && <p className="muted small pad">Ask anything. A teammate will reply here.</p>
-        )}
+  // W-04 bar: the chat panel shows once there's something in it; the frame sizes itself to fit.
+  const hasChat = Boolean(conversationId || starting || opener);
+  const panel = Boolean(bar && open && hasChat);
+  const bottom = useRef<HTMLDivElement>(null);
+  const pill = useRef<HTMLDivElement>(null);
+  useBarFrame(Boolean(bar), bar?.side ?? "right", open, panel, bottom);
+  const setBarOpen = bar?.setOpen;
+  // The box takes focus when the bar opens (and again once a new chat's thread swaps in).
+  useEffect(() => {
+    if (setBarOpen && open) pill.current?.querySelector("textarea")?.focus();
+  }, [setBarOpen, open]);
+  // Esc folds the chat back into the bar; so does a click on the page while nothing's been asked.
+  useEffect(() => {
+    if (!setBarOpen || !open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setBarOpen(false);
+    };
+    // Not when a file picker or the screen-capture prompt took the focus.
+    const onBlur = () => {
+      if (!panel && !document.activeElement?.closest(".composer-actions")) setBarOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [setBarOpen, open, panel]);
+
+  if (initial === null && !error && !bar) return <div className="w-body muted pad">Loading…</div>;
+
+  // Once the conversation exists, an invite is its first real message: don't show it twice.
+  const openerMessage = opener && !(opener.inviteId && thread.messages.length > 0) ? (
+    opener.inviteId ? (
+      <div className="msg other w-opener">
+        <div className="meta small muted">{opener.from}</div>
+        <div className="bubble">{opener.text}</div>
+      </div>
+    ) : (
+      <div className="msg other ai w-opener">
+        <div className="bubble">{opener.page ? opener.text : `${opener.text} Tell me what you were trying to do and I'll take a look.`}</div>
+      </div>
+    )
+  ) : null;
+  const messages = (
         <MessageList
           messages={thread.messages}
           pending={starting && !conversationId ? [{ clientMsgId: "starting", body: starting, attachments: [] }] : thread.pending}
@@ -463,8 +524,9 @@ function WidgetThread({
           onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
           onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
         />
-        {error && <p className="error small pad">{error}</p>}
-      </div>
+  );
+  const extras = (
+    <>
       {/* W-07: a person is always one click away while the AI is answering. */}
       {conversationId && handling === "ai" && (
         <div className="w-human">
@@ -478,7 +540,56 @@ function WidgetThread({
       {conversationId && (
         <EmailAsk api={api} conversationId={conversationId} contact={contact} away={away} waiting={handling === "human" ? lastVisitorWaiting(thread.messages) : null} />
       )}
-      <Composer placeholder={placeholder} upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
+    </>
+  );
+  const composer = (
+    <Composer pill={Boolean(bar)} placeholder={placeholder} upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
+  );
+
+  if (bar) {
+    return (
+      <div className="b-root">
+        {panel && (
+          <main className="b-main">
+            <Glass />
+            <div className="b-panel">
+              {bar.head}
+              <div className="b-tab">
+                <div className="b-log" role="log">
+                  {openerMessage}
+                  {messages}
+                  {error && <p className="error small b-pad">{error}</p>}
+                  {extras}
+                </div>
+              </div>
+            </div>
+          </main>
+        )}
+        <div className="b-bottom" ref={bottom}>
+          <div className="b-sizer">
+            {error && !panel && open && <p className="b-error" role="alert">{error}</p>}
+            {open && !hasChat && bar.suggestions.length > 0 && <Chips questions={bar.suggestions} onPick={(q) => void send(q, [])} />}
+            {/* Closed, the whole bar opens the chat (a click, or Tab into its box). */}
+            <div className={`b-pill ${open ? "open" : ""}`} ref={pill} onClick={open ? undefined : () => bar.setOpen(true)} onFocus={open ? undefined : () => bar.setOpen(true)}>
+              {composer}
+              {!open && <Typewriter phrases={bar.suggestions} fallback={placeholder} />}
+            </div>
+          </div>
+          <div className="b-notice" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="w-body">
+        {openerMessage ?? (thread.messages.length === 0 && thread.pending.length === 0 && <p className="muted small pad">Ask anything. A teammate will reply here.</p>)}
+        {messages}
+        {error && <p className="error small pad">{error}</p>}
+      </div>
+      {extras}
+      {composer}
     </>
   );
 }

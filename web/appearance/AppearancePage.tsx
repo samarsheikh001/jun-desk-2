@@ -152,10 +152,11 @@ export function AppearancePage({ workspaceId, workspaceName, canEdit }: { worksp
                 <NativeSelectOption value="left">Left</NativeSelectOption>
               </NativeSelect>
             </Field>
-            <Field label="Closed state" hint="The greeting card shows your greeting above the button until the visitor dismisses it or opens the chat (once per visit)." htmlFor="appear-launcher">
+            <Field label="Closed state" hint={look.launcher === "bar" ? "An \"Ask anything…\" bar instead of a button, showing your suggested questions. The chat opens above it on dark glass. Theme and rounding don't apply to it." : "The greeting card shows your greeting above the button until the visitor dismisses it or opens the chat (once per visit)."} htmlFor="appear-launcher">
               <NativeSelect id="appear-launcher" value={look.launcher} disabled={off} onChange={(e) => { edit({ launcher: e.target.value as LauncherStyle }); setOpen(false); }}>
                 <NativeSelectOption value="button">Chat button only</NativeSelectOption>
                 <NativeSelectOption value="card">Greeting card</NativeSelectOption>
+                <NativeSelectOption value="bar">Ask bar</NativeSelectOption>
               </NativeSelect>
             </Field>
           </section>
@@ -222,14 +223,22 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
   // The frame asks for the look when it's ready (also after reloading itself).
   const lookRef = useRef(look);
   lookRef.current = look;
+  const openRef = useRef(open);
+  openRef.current = open;
   const post = useCallback((message: unknown) => frame.current?.contentWindow?.postMessage(message, window.location.origin), []);
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.source !== frame.current?.contentWindow || e.origin !== window.location.origin) return;
       const data = e.data as { type?: string; id?: string } | null;
-      if (data?.type === "jun:ready") post({ type: "jun:preview", look: lookRef.current });
+      if (data?.type === "jun:ready") {
+        post({ type: "jun:preview", look: lookRef.current });
+        post({ type: openRef.current ? "jun:open" : "jun:close" });
+      }
       if (data?.type === "jun:close") onOpen(false);
+      // The bar launcher opens itself, and sizes and clips its frame like the loader does.
+      if (data?.type === "jun:open") onOpen(true);
+      if (data?.type === "jun:css" && frame.current) frame.current.style.cssText = String((data as { css?: unknown }).css ?? "");
       // No host page here, so no debug context: answer at once instead of letting it time out.
       if (data?.type === "jun:context-request") post({ type: "jun:context", id: data.id, context: undefined });
     };
@@ -241,6 +250,11 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
   useEffect(() => post({ type: open ? "jun:open" : "jun:close" }), [open, post]);
   useEffect(() => setCardHidden(false), [look.launcher, look.greeting]);
 
+  const bar = look.launcher === "bar";
+  // Leaving the bar: drop the size it gave its frame.
+  useEffect(() => {
+    if (!bar && frame.current) frame.current.style.cssText = "";
+  }, [bar]);
   const brand = { "--c": look.color, "--t": textOn(look.color), "--r": `${look.radius}px` } as CSSProperties;
   return (
     <div className="appear-preview" aria-label="Preview">
@@ -250,7 +264,7 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
           className="appear-frame"
           title="Widget preview"
           src={`/widget?key=${encodeURIComponent(widgetKey)}&preview=1&persist=0`}
-          hidden={!open}
+          hidden={!open && !bar}
         />
         {!open && look.launcher === "card" && !cardHidden && (
           <div className="appear-card" role="dialog" aria-label="Greeting card preview">
@@ -259,11 +273,13 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
             <button className="appear-card-go" onClick={() => onOpen(true)}>Chat with us</button>
           </div>
         )}
-        <button className="appear-launcher" aria-label={open ? "Close chat" : "Open chat"} aria-expanded={open} onClick={() => onOpen(!open)}>
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-        </button>
+        {!bar && (
+          <button className="appear-launcher" aria-label={open ? "Close chat" : "Open chat"} aria-expanded={open} onClick={() => onOpen(!open)}>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
+        )}
       </div>
       <p className="appear-note muted small">This is the real widget with your unsaved changes. Messages you send here start real chats in your inbox.</p>
     </div>

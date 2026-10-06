@@ -34,6 +34,9 @@ test("appearance: writing is strict, and empty text clears a field", () => {
   const settings: Record<string, unknown> = { greeting: "Old" };
   applyAppearance(settings, { color: "#FF6600", theme: "dark", radius: 4, launcher: "card", greeting: " ", placeholder: " Ask   us ", suggestions: [" How much? ", ""] });
   assert.deepEqual(settings, { color: "#ff6600", theme: "dark", radius: 4, launcher: "card", placeholder: "Ask us", suggestions: ["How much?"] });
+  applyAppearance(settings, { launcher: "bar" });
+  assert.equal(settings.launcher, "bar");
+  assert.equal(widgetLook(settings, "Acme", null).launcher, "bar");
   for (const body of [{ color: "blue" }, { position: "top" }, { theme: "neon" }, { launcher: "banner" }, { radius: 25 }, { radius: 2.5 }, { radius: "4" }, { placeholder: "x".repeat(61) }, { suggestions: "a" }, { suggestions: ["1", "2", "3", "4", "5"] }, { suggestions: ["x".repeat(81)] }]) {
     assert.throws(() => applyAppearance({}, body), Error, JSON.stringify(body));
   }

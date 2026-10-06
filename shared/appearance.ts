@@ -4,7 +4,8 @@
 // from before each option existed, so a desk that never touched them doesn't change.
 
 export type WidgetTheme = "auto" | "light" | "dark";
-export type LauncherStyle = "button" | "card";
+/** `bar`: an "Ask anything…" bar instead of the round button (the Fin-style launcher, D-32). */
+export type LauncherStyle = "button" | "card" | "bar";
 
 export const APPEARANCE_DEFAULTS = {
   color: "#2f5bea",
@@ -40,7 +41,7 @@ export interface WidgetLook {
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const THEMES: readonly WidgetTheme[] = ["auto", "light", "dark"];
-const LAUNCHERS: readonly LauncherStyle[] = ["button", "card"];
+const LAUNCHERS: readonly LauncherStyle[] = ["button", "card", "bar"];
 const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 
 /** Readable text on a brand colour (the loader uses the same rule). */
@@ -97,7 +98,7 @@ export function applyAppearance(settings: Record<string, unknown>, body: Record<
     settings.theme = body.theme;
   }
   if (body.launcher !== undefined) {
-    if (!LAUNCHERS.includes(body.launcher as LauncherStyle)) throw new Error("Launcher must be button or card.");
+    if (!LAUNCHERS.includes(body.launcher as LauncherStyle)) throw new Error("Launcher must be button, card or bar.");
     settings.launcher = body.launcher;
   }
   if (body.radius !== undefined) {

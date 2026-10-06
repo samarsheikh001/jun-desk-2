@@ -23,7 +23,7 @@
 
   // ---------- debug capture (P1). Same masking rules as shared/debug.ts. ----------
   var events = [];
-  var capture = script.getAttribute("data-capture") !== "off";
+  var capture = script.getAttribute("data-capture") != "off";
   // S-13 state for the current page (path). Tests on localhost can shorten the 3 minutes with ?jun_stuck_ms=.
   var pagePath = location.pathname, pageIssue, seen = 0, stuckSent, stuckMs = 180000;
   if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) stuckMs = +(/[?&]jun_stuck_ms=(\d+)/.exec(location.search) || [])[1] || stuckMs;
@@ -46,7 +46,7 @@
     if (!x) return redact(String(u).split(/[?#]/)[0], 300);
     x.searchParams.forEach(function (_, k) { if (q.indexOf(k) < 0 && q.length < 10) q.push(k); });
     var path = redact(x.pathname, 300) + (q.length ? "?" + q.map(function (k) { return redact(k, 40) + "=…"; }).join("&") : "");
-    return x.origin === location.origin ? path : x.origin + path;
+    return x.origin == location.origin ? path : x.origin + path;
   }
   // Registrable domain, roughly: the last two labels, or three for "co.uk"-style suffixes.
   function site(h) { var p = h.split("."), n = p.length; return p.slice(n > 2 && p[n - 2].length < 4 && p[n - 1].length < 3 ? -3 : -2).join("."); }
@@ -69,14 +69,14 @@
     nudgeTimer = setTimeout(showNudge, /rage|stuck/.test(k) ? 0 : 1200); // errors come in bursts; wait for things to settle (rage clicks already waited)
   }
   // Our own traffic (the chat iframe, uploads) isn't the customer's problem.
-  function ours(u) { var x = parse(u); return x && x.origin === origin && /^\/(api\/(widget|files)|widget)/.test(x.pathname); }
+  function ours(u) { var x = parse(u); return x && x.origin == origin && /^\/(api\/(widget|files)|widget)/.test(x.pathname); }
   function stackOf(err) { return redact(err && err.stack || "", 800).split("\n").slice(0, 5).join("\n") || undefined; }
 
   if (capture) {
     try {
       window.addEventListener("error", function (e) {
         var el = e.target;
-        if (el && el !== window && (el.src || el.href)) {
+        if (el && el != window && (el.src || el.href)) {
           if (!ours(el.src || el.href)) push({ kind: "network", method: "GET", url: cleanUrl(el.src || el.href), status: 0, message: "failed to load " + String(el.tagName).toLowerCase() });
         } else {
           push({ kind: "error", message: redact(e.message || (e.error && e.error.message)), source: e.filename ? cleanUrl(e.filename) + ":" + e.lineno : undefined, stack: stackOf(e.error) });
@@ -127,7 +127,7 @@
         el = el && el.closest && (el.closest("button,a,[role=button],input") || el);
         // Not typing, media, our own widget, or scripted clicks.
         if (!el || !ev.isTrusted || el.closest("[data-jun-desk],[contenteditable],textarea,select,canvas,video,audio,input:not([type=submit],[type=button])")) return;
-        if (!b || b.el !== el || now - b.t > 1000 || Math.abs(ev.clientX - b.x) > 30 || Math.abs(ev.clientY - b.y) > 30) {
+        if (!b || b.el != el || now - b.t > 1000 || Math.abs(ev.clientX - b.x) > 30 || Math.abs(ev.clientY - b.y) > 30) {
           b = burst = { el: el, x: ev.clientX, y: ev.clientY, ts: [] };
           changed = 0;
           mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
@@ -139,7 +139,7 @@
         b.timer = setTimeout(function () {
           var tag = el.tagName.toLowerCase(), role = el.getAttribute("role"), button = /^(a|button)$/.test(tag) || role == "button";
           // A triple click that selected text isn't frustration.
-          if (burst !== b || changed || !consented || !button && String(getSelection())) return;
+          if (burst != b || changed || !consented || !button && String(getSelection())) return;
           var t = { tag: tag }, text = button && String(el.innerText || "").replace(/\s+/g, " ").trim();
           if (el.id) t.id = redact(el.id, 60);
           if (el.getAttribute("aria-label")) t.label = redact(el.getAttribute("aria-label"), 60);
@@ -165,8 +165,8 @@
       push({ kind: "stuck", url: cleanUrl(location.pathname), seconds: seen / 1000, issue: pageIssue });
     }
     // P-01: the first opener rule (Settings) for this path whose visible seconds are up; the desk
-    // sends its line. Not after an error nudge, a card, or once the chat was opened (frame.src).
-    if (openers && !nudged && !nudgeTimer && !frame.src && consented) openers.some(function (r) {
+    // sends its line. Not after an error nudge, a card, or once the chat was opened (setOpen clears them).
+    if (openers && !nudged && !nudgeTimer && consented) openers.some(function (r) {
       return seen >= r.delay * 1000 && RegExp(r.match).test(pagePath) && (nudgeEvent = { kind: "opener", id: r.id }, openers = 0, !showNudge());
     });
   }, 1000);
@@ -187,13 +187,13 @@
 
   // ---------- live visitor (V-01), identity (V-03), consent (V-06) ----------
   // data-consent="required": store nothing and stay off the visitor list until JunDesk.consent(true).
-  var consented = script.getAttribute("data-consent") !== "required";
+  var consented = script.getAttribute("data-consent") != "required";
   var userToken = script.getAttribute("data-user-token") || null;
   var sid, started, live, liveTries = 0;
   function store(k, v) { try { if (!consented) return null; if (v != null) sessionStorage.setItem(k, v); return sessionStorage.getItem(k); } catch (e) { return null; } }
   // 96 random bits as "12-255-0-…" (the desk accepts [A-Za-z0-9_-]{8,64}).
   function rid() { return crypto.getRandomValues(new Uint8Array(12)).join("-"); }
-  function liveSend(m) { if (live && live.readyState === 1) live.send(JSON.stringify(m)); }
+  function liveSend(m) { if (live && live.readyState == 1) live.send(JSON.stringify(m)); }
   function tz() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ""; } }
   function sendPage() {
     liveSend({ t: "page", url: location.origin + cleanUrl(location.href), title: redact(document.title, 200), ref: document.referrer ? cleanUrl(document.referrer) : "", start: started, lang: navigator.language, tz: tz() });
@@ -207,13 +207,13 @@
     ws.onmessage = function (e) {
       var m; try { m = JSON.parse(e.data); } catch (x) { return; }
       // V-07: a teammate started a chat from the desk's visitor list.
-      if (m.t === "invite" && !open) showCard({ text: String(m.body).slice(0, 1000), inviteId: m.id, from: m.from });
+      if (m.t == "invite" && !open) showCard({ text: String(m.body).slice(0, 1000), inviteId: m.id, from: m.from });
     };
     // Reconnect with backoff, unless this socket was replaced or dropped on purpose.
-    ws.onclose = function () { if (live !== ws) return; live = null; if (liveTries < 8) setTimeout(connect, 1000 * Math.pow(2, liveTries++)); };
+    ws.onclose = function () { if (live != ws) return; live = null; if (liveTries < 8) setTimeout(connect, 1000 * Math.pow(2, liveTries++)); };
   }
   function disconnect() { var ws = live; live = null; if (ws) ws.close(); }
-  setInterval(function () { if (live && live.readyState === 1) live.send("ping"); }, 30000);
+  setInterval(function () { if (live && live.readyState == 1) live.send("ping"); }, 30000);
 
   function snapshot() {
     return {
@@ -273,6 +273,8 @@
     // Left side (W-04); the full-screen frame on phones wins over it (same specificity, later).
     ".left>*{right:auto;left:20px}" +
     "@media(max-width:480px){.frame{right:0;left:0;bottom:0;width:100vw;height:100vh;border-radius:0}}" +
+    // W-04 "bar" launcher (D-32): no button; the frame, always shown, draws the bar itself.
+    ".bar .btn{display:none}.bar .frame{display:block}" +
     ".nudge p{margin:0 18px 10px 0}.from{font-size:12px;color:#6b6b66;margin-bottom:4px}.go{border-radius:8px;padding:7px 12px;background:var(--c);color:var(--t);font:600 13px system-ui,sans-serif}" +
     ".x{position:absolute;top:6px;right:8px;background:none;font-size:18px;line-height:1;color:#6b6b66}" +
     "</style><div class=\"w\">" +
@@ -288,22 +290,21 @@
   // Hidden until then (at most 1.5 s) so the button doesn't flash in the default colour.
   function brand(cfg) {
     var c = color || (cfg && cfg.color);
-    if (c && /^#[0-9a-f]{6}$/i.test(c)) {
-      var n = parseInt(c.slice(1), 16), lum = (0.299 * (n >> 16) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255;
-      wrap.style.setProperty("--c", c);
-      wrap.style.setProperty("--t", lum > 0.65 ? "#1c1c1a" : "#fff");
-    }
+    if (c && /^#[0-9a-f]{6}$/i.test(c)) wrap.style.setProperty("--c", c);
     if (cfg) {
-      openers = cfg.openers;
+      // Readable text on that colour: the desk works it out (textOn), for data-color too (?color=).
+      wrap.style.setProperty("--t", cfg.text);
+      openers = !open && cfg.openers;
       // W-04: side, corner rounding, dark theme, and the greeting card launcher (until dismissed).
-      wrap.classList.add(cfg.position, cfg.theme); // "left", "dark"
+      wrap.classList.add(cfg.position, cfg.theme, cfg.launcher); // "left", "dark", "bar"
+      if (cfg.launcher == "bar") load();
       wrap.style.setProperty("--r", cfg.radius + "px");
-      if (cfg.launcher === "card" && !open && !nudged && !store("jun:g")) showCard({ text: cfg.greeting, page: 1 }, 1);
+      if (cfg.launcher == "card" && !open && !nudged && !store("jun:g")) showCard({ text: cfg.greeting, page: 1 }, 1);
     }
     wrap.classList.add("on");
   }
   setTimeout(brand, 1500);
-  nativeFetch(origin + "/api/widget/" + encodeURIComponent(key) + "/config").then(function (r) { return r.json(); }).then(brand, function () { brand(); });
+  nativeFetch(origin + "/api/widget/" + encodeURIComponent(key) + "/config?color=" + encodeURIComponent(color || "")).then(function (r) { return r.json(); }).then(brand, function () { brand(); });
   var badge = root.querySelector(".badge");
   var frame = root.querySelector("iframe"), open;
 
@@ -311,13 +312,15 @@
     if (frame.contentWindow) frame.contentWindow.postMessage(message, origin);
   }
 
+  // The chat loads on first open (the bar launcher draws itself, so it loads straight away).
+  function load() {
+    if (!frame.src) frame.src = origin + "/widget?key=" + encodeURIComponent(key) + (consented ? "" : "&persist=0");
+  }
   var pendingOpener;
   function setOpen(next) {
     open = next;
-    if (open) hideNudge();
-    // The chat loads on first open.
-    if (open && !frame.src) frame.src = origin + "/widget?key=" + encodeURIComponent(key) + (consented ? "" : "&persist=0");
-    frame.style.display = open ? "block" : "none";
+    if (open) hideNudge(), load(), openers = 0;
+    frame.style.display = open ? "block" : "";
     button.setAttribute("aria-expanded", open);
     button.setAttribute("aria-label", open ? "Close chat" : "Open chat");
     post({ type: open ? "jun:open" : "jun:close" });
@@ -332,18 +335,20 @@
   });
 
   window.addEventListener("message", function (e) {
-    if (e.origin !== origin || !e.data || e.source !== frame.contentWindow) return;
+    if (e.origin != origin || !e.data || e.source != frame.contentWindow) return;
     var type = e.data.type;
     // The frame says when it's listening; tell it whether it's currently shown.
-    if (type === "jun:ready") {
+    if (type == "jun:ready") {
       post({ type: "jun:session", sessionId: sid || null, userToken: userToken, persist: consented });
       post({ type: open ? "jun:open" : "jun:close" });
       if (pendingOpener) post({ type: "jun:proactive", opener: pendingOpener, sessionId: sid });
     }
-    if (type === "jun:proactive-shown") pendingOpener = null;
-    if (type === "jun:close") setOpen(false);
-    if (type === "jun:context-request") post({ type: "jun:context", id: e.data.id, context: snapshot() });
-    if (type === "jun:unread") {
+    if (type == "jun:proactive-shown") pendingOpener = null;
+    if (type == "jun:open" || type == "jun:close") setOpen(type == "jun:open");
+    // The bar frame sizes and clips itself (it knows what it shows); only our own frame gets here.
+    if (type == "jun:css") frame.style.cssText = e.data.css;
+    if (type == "jun:context-request") post({ type: "jun:context", id: e.data.id, context: snapshot() });
+    if (type == "jun:unread") {
       var n = Number(e.data.count) || 0;
       badge.textContent = n > 9 ? "9+" : n;
       badge.style.display = n > 0 && !open ? "block" : "none";
@@ -375,7 +380,7 @@
         var m = err && typeof err.message == "string" && err.message.trim();
         if (!m || !capture || !consented) return;
         var e = { kind: "app_error", message: redact(m, 300) };
-        var c = typeof err.code === "string" && redact(err.code, 60).replace(/[^\w.-]/g, "");
+        var c = typeof err.code == "string" && redact(err.code, 60).replace(/[^\w.-]/g, "");
         if (c) e.code = c;
         push(e);
       } catch (x) { /* never break the host page */ }

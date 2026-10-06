@@ -37,6 +37,7 @@ export function Composer({
   screenshot = false,
   control,
   suggestScroller: SuggestScroller,
+  pill = false,
 }: {
   placeholder: string;
   disabled?: boolean;
@@ -56,6 +57,8 @@ export function Composer({
    * the widget, which shares this component, keeps its own markup and bundle.
    */
   suggestScroller?: ComponentType<{ className: string; children: ReactNode }>;
+  /** The widget's "Ask anything…" bar (W-04 bar launcher, D-32): the box first, then icon buttons. */
+  pill?: boolean;
 }) {
   const [body, setBody] = useState("");
   const [note, setNote] = useState(false);
@@ -242,7 +245,7 @@ export function Composer({
   };
 
   return (
-    <div className={`composer ${note ? "note" : ""}`}>
+    <div className={`composer ${note ? "note" : ""} ${pill ? "pill" : ""}`}>
       {notes && (
         <div className="composer-modes" role="tablist">
           <button role="tab" aria-selected={!note} className={`mode ${note ? "" : "active"}`} onClick={() => switchMode(false)}>Reply</button>
@@ -285,6 +288,40 @@ export function Composer({
         );
         return SuggestScroller ? <SuggestScroller className="suggest">{list}</SuggestScroller> : list;
       })()}
+      {pill ? (
+        <div className="composer-row">
+          <textarea
+            ref={input}
+            rows={1}
+            value={body}
+            placeholder={placeholder}
+            disabled={disabled}
+            aria-label="Message"
+            onChange={(e) => change(e.target.value)}
+            onKeyDown={onKeyDown}
+            onPaste={(e) => {
+              if (e.clipboardData.files.length > 0) {
+                e.preventDefault();
+                void addFiles(e.clipboardData.files);
+              }
+            }}
+          />
+          <div className="composer-actions">
+            <button type="button" title="Attach files" aria-label="Attach files" disabled={disabled} onClick={() => fileInput.current?.click()}>
+              <svg width="16" height="16" fill="none" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fillRule="evenodd" clipRule="evenodd" d="M7.67 2.507a.85.85 0 0 1 0 1.202L3.524 7.855a2.464 2.464 0 0 0 3.485 3.484l5.925-5.926a.836.836 0 0 0-1.181-1.182L5.87 10.113A.85.85 0 0 1 4.669 8.91l5.881-5.88a2.536 2.536 0 0 1 3.585 3.586L8.201 12.55a4.164 4.164 0 0 1-5.889-5.888l.006-.005 4.149-4.15a.85.85 0 0 1 1.202 0Z" /></svg>
+            </button>
+            <input ref={fileInput} type="file" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
+            {canShoot && (
+              <button type="button" title="Send a screenshot" aria-label="Send a screenshot" disabled={disabled || shooting || shot !== null} onClick={() => void takeScreenshot()}>
+                <svg width="16" height="16" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true"><path d="M2 5.5A1.5 1.5 0 0 1 3.5 4h1.6l1-1.5h3.8l1 1.5h1.6A1.5 1.5 0 0 1 14 5.5v6a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" /><circle cx="8" cy="8.5" r="2.25" /></svg>
+              </button>
+            )}
+          </div>
+          <button className="composer-send" aria-label="Send" disabled={disabled || uploading > 0 || (!body.trim() && attachments.length === 0)} onClick={() => void submit()}>
+            <svg width="16" height="16" aria-hidden="true"><path fill="currentColor" fillRule="evenodd" clipRule="evenodd" d="M7.4 1.899a.85.85 0 0 1 1.201 0l4.5 4.5A.85.85 0 1 1 11.9 7.6L8.85 4.552V13.5a.85.85 0 0 1-1.7 0V4.552L4.101 7.601A.85.85 0 1 1 2.9 6.399z" /></svg>
+          </button>
+        </div>
+      ) : (
       <div className="composer-row">
         <button className="ghost icon" title="Attach files" aria-label="Attach files" disabled={disabled} onClick={() => fileInput.current?.click()}>📎</button>
         <input ref={fileInput} type="file" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
@@ -315,6 +352,7 @@ export function Composer({
         />
         <button disabled={disabled || uploading > 0 || (!body.trim() && attachments.length === 0)} onClick={() => void submit()}>{note ? "Add note" : "Send"}</button>
       </div>
+      )}
     </div>
   );
 }
