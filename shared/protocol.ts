@@ -136,6 +136,8 @@ export interface LiveVisitor {
   startedAt: number;
   country: string | null;
   city: string | null;
+  /** Approximate [lat, lng] from Cloudflare's IP geolocation, rounded to 1 decimal (~10 km): the Visitors globe. */
+  location: [number, number] | null;
   userAgent: string;
   language: string | null;
   timezone: string | null;

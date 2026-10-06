@@ -281,12 +281,16 @@ widget.get("/widget/:key/live", async (c) => {
         .run(),
     );
   }
-  const cf = (c.req.raw as Request & { cf?: { country?: string; city?: string } }).cf;
+  const cf = (c.req.raw as Request & { cf?: { country?: string; city?: string; latitude?: string; longitude?: string } }).cf;
+  const lat = Number(cf?.latitude);
+  const lng = Number(cf?.longitude);
+  const round = (n: number) => Math.round(n * 10) / 10;
   return connectVisitorLive(c.env, c.req.raw, inbox.workspaceId, {
     sessionId,
     inboxId: inbox.inboxId,
     country: cf?.country ?? null,
     city: cf?.city ?? null,
+    location: cf?.latitude && cf.longitude && Number.isFinite(lat) && Number.isFinite(lng) ? [round(lat), round(lng)] : null,
     userAgent: (c.req.header("user-agent") ?? "").slice(0, 300),
   });
 });

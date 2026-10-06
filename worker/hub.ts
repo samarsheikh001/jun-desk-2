@@ -17,6 +17,7 @@ export interface VisitorConnect {
   inboxId: string;
   country: string | null;
   city: string | null;
+  location: [number, number] | null;
   userAgent: string;
 }
 
@@ -96,6 +97,7 @@ export class WorkspaceHub extends DurableObject<Env> {
           startedAt: now,
           country: info.country,
           city: info.city,
+          location: info.location ?? null,
           userAgent: info.userAgent.slice(0, 200),
           language: null,
           timezone: null,

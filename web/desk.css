@@ -554,6 +554,45 @@ button.small:not([data-slot]) { min-height: 28px; padding: 2px 10px; font-size: 
 .visitor-action { text-align: right; white-space: nowrap; }
 .visitor-invite { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
 .visitor-invite input { flex: 1; min-width: 240px; }
+/* The live globe (VisitorGlobe.tsx, MapLibre). Markers are plain DOM placed by MapLibre; ones on the
+   far side of the globe fade out (opacityWhenCovered). */
+.visitor-globe-panel { display: grid; grid-template-columns: minmax(0, 600px) minmax(0, 1fr); gap: 24px; align-items: center; }
+.visitor-globe { position: relative; width: 100%; max-width: 600px; aspect-ratio: 1; justify-self: center; }
+/* Sized, not absolutely placed: MapLibre's own CSS (loaded later) makes the map position: relative. */
+.visitor-globe-host { width: 100%; height: 100%; font: inherit; }
+.visitor-globe-host .maplibregl-canvas { cursor: grab; }
+.visitor-globe-host .maplibregl-canvas:active { cursor: grabbing; }
+.visitor-globe-host .maplibregl-cooperative-gesture-screen { font-family: inherit; font-size: 13px; border-radius: 50%; }
+.visitor-globe-failed { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; }
+.globe-marker { position: relative; width: 12px; height: 12px; transition: opacity 0.3s; }
+.globe-marker:hover, .globe-marker[data-focus] { z-index: 1; }
+/* Violet: stands out on both the green land and the blue sea. */
+.globe-marker-dot {
+  --globe-marker: #7c5cff;
+  position: absolute; inset: 0; border-radius: 50%; background: var(--globe-marker);
+  box-shadow: 0 0 0 2px #fff; animation: globe-pulse 2s ease-out infinite;
+}
+@keyframes globe-pulse { 0% { box-shadow: 0 0 0 2px #fff, 0 0 0 2px rgb(124 92 255 / 0.6); } 100% { box-shadow: 0 0 0 2px #fff, 0 0 0 14px rgb(124 92 255 / 0); } }
+.globe-marker[data-count]:not([data-count="1"]) { width: 16px; height: 16px; }
+.globe-marker-label {
+  position: absolute; bottom: calc(100% + 6px); left: 50%; translate: -50% 0;
+  padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--popover);
+  color: var(--popover-foreground); font-size: 11px; line-height: 16px; white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity 0.15s;
+}
+/* Labels only for the dot you point at (or the visitor hovered in the table): many at once overlap. */
+.globe-marker:hover .globe-marker-label, .globe-marker[data-focus] .globe-marker-label { opacity: 1; }
+.globe-marker[data-focus] .globe-marker-dot { scale: 1.4; }
+.globe-marker[data-focus] .globe-marker-label { border-color: #7c5cff; font-weight: 500; }
+.visitor-globe-stats { display: grid; gap: 16px; align-content: center; }
+.visitor-live { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.visitor-live-count { font-size: 40px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--success); align-self: center; animation: live-pulse 2s ease-out infinite; }
+@keyframes live-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--success) 60%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }
+@media (prefers-reduced-motion: reduce) { .live-dot, .globe-marker-dot { animation: none; } }
+.visitor-countries { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-width: 320px; }
+.visitor-countries li { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.visitor-countries li:last-child { border-bottom: 0; }
 .identity { display: grid; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .identity h3 { margin: 0; }
 .opener-rule { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -768,6 +807,7 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
   .team-table tr { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 8px; padding: 8px 0; }
   .team-table td { padding: 0; text-align: left !important; }
   .team-table td:first-child { grid-column: 1 / -1; }
+  .visitor-globe-panel { grid-template-columns: minmax(0, 1fr); }
   .team-table td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted-foreground); }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   dialog.palette { width: 100vw; margin: 0 0 auto; max-height: 85dvh; border-radius: 0 0 calc(var(--radius) * 1.4) calc(var(--radius) * 1.4); }

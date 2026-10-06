@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { LiveVisitor } from "../../shared/protocol.ts";
 import { api, describeError } from "../api.ts";
 import { describeBrowser } from "../../shared/debug.ts";
@@ -6,6 +6,10 @@ import { Card } from "@/components/ui/card.tsx";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
+import { globeSpots } from "../lib/globe-spots.ts";
+
+// MapLibre is big (~220 KB gzipped): only this page loads it.
+const VisitorGlobe = lazy(() => import("./VisitorGlobe.tsx"));
 
 // V-01 live visitors and V-07 agent-started chats. The list itself comes from the workspace
 // hub socket (Shell keeps it), so it updates as people browse.
@@ -19,6 +23,21 @@ const duration = (ms: number) => {
 
 /** "Visitor #4821" from the session id (stable while they browse). */
 const sessionLabel = (id: string) => `Visitor #${(parseInt(id.slice(0, 6), 16) % 9000) + 1000}`;
+const visitorName = (v: LiveVisitor) => v.contact?.name ?? v.contact?.email ?? sessionLabel(v.sessionId);
+
+const countryName = (() => {
+  let names: Intl.DisplayNames | null = null;
+  try {
+    names = new Intl.DisplayNames(undefined, { type: "region" });
+  } catch {}
+  return (code: string) => {
+    try {
+      return names?.of(code) ?? code;
+    } catch {
+      return code;
+    }
+  };
+})();
 
 function flag(country: string | null): string {
   if (!country || !/^[A-Z]{2}$/.test(country)) return "";
@@ -67,15 +86,46 @@ export function VisitorsPage({ workspaceId, visitors }: { workspaceId: string; v
   const [now, setNow] = useState(Date.now());
   const [inviting, setInviting] = useState<string | null>(null);
   const [invited, setInvited] = useState<Set<string>>(new Set());
+  const [hovered, setHovered] = useState<string | null>(null);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
   const sorted = [...visitors].sort((a, b) => Number(Boolean(b.contact?.verified)) - Number(Boolean(a.contact?.verified)) || a.startedAt - b.startedAt);
+  const spots = useMemo(() => globeSpots(visitors, (v) => (v.contact ? visitorName(v) : v.city ?? (v.country ? countryName(v.country) : sessionLabel(v.sessionId)))), [visitors]);
+  const countries = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const v of visitors) if (v.country) counts.set(v.country, (counts.get(v.country) ?? 0) + 1);
+    return [...counts].sort((a, b) => b[1] - a[1]);
+  }, [visitors]);
 
   return (
     <div className="content wide">
+      <Card className="panel visitor-globe-panel">
+        <Suspense fallback={<div className="visitor-globe" />}>
+          <VisitorGlobe spots={spots} countries={countries.map(([code]) => code)} focus={hovered} />
+        </Suspense>
+        <div className="visitor-globe-stats">
+          <div className="visitor-live">
+            <span className="live-dot" aria-hidden />
+            <span className="visitor-live-count">{visitors.length}</span>
+            <span className="muted">{visitors.length === 1 ? "visitor" : "visitors"} on your site now</span>
+          </div>
+          {countries.length > 0 ? (
+            <ul className="visitor-countries">
+              {countries.slice(0, 5).map(([code, n]) => (
+                <li key={code}>
+                  <span>{flag(code)} {countryName(code)}</span>
+                  <span className="muted">{n}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted small">When someone opens a page with the widget, they light up on the globe.</p>
+          )}
+        </div>
+      </Card>
       <Card className="panel">
         <div className="row">
           <h2>Visitors on your site</h2>
@@ -97,10 +147,10 @@ export function VisitorsPage({ workspaceId, visitors }: { workspaceId: string; v
             </TableHeader>
             <TableBody>
               {sorted.map((v) => (
-                <TableRow key={v.sessionId}>
+                <TableRow key={v.sessionId} onMouseEnter={() => setHovered(v.sessionId)} onMouseLeave={() => setHovered((h) => (h === v.sessionId ? null : h))}>
                   <TableCell>
                     <div className="strong">
-                      {v.contact?.name ?? v.contact?.email ?? sessionLabel(v.sessionId)}
+                      {visitorName(v)}
                       {v.contact?.verified && <span className="verified" title="Identity verified by your site">✓</span>}
                     </div>
                     <div className="muted small">

@@ -45,6 +45,7 @@
     "cn": "^0.4.0",
     "hono": "^4.13.13",
     "lucide-react": "^1.52.0",
+    "maplibre-gl": "^6.12.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "workers-ai-provider": "^4.0.0",
