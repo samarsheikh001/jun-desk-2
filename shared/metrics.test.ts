@@ -366,8 +366,8 @@ test("topics (A-02): counts, share of labelled chats, AI resolution per topic", 
   );
   assert.deepEqual(r.topics, {
     list: [
-      { id: "top_b", name: "Billing", count: 3, share: 3 / 4, aiResolutionRate: 1 / 2 },
-      { id: "top_l", name: "Login", count: 1, share: 1 / 4, aiResolutionRate: 1 },
+      { id: "top_b", name: "Billing", count: 3, share: 3 / 4, aiResolutionRate: 1 / 2, aiResolved: 1 },
+      { id: "top_l", name: "Login", count: 1, share: 1 / 4, aiResolutionRate: 1, aiResolved: 1 },
     ],
     labeled: 4,
     unlabeled: 2,

@@ -91,6 +91,8 @@ export interface TopicCount {
   share: number;
   /** AI resolved / AI conversations within this topic (same definitions as the headline), or null. */
   aiResolutionRate: number | null;
+  /** Of this topic's conversations, the ones the AI resolved alone. */
+  aiResolved: number;
 }
 
 export interface MetricsReport {
@@ -422,7 +424,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
       return {
         list: [...topics.values()]
           .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-          .map((t) => ({ id: t.id, name: t.name, count: t.count, share: t.count / labeled, aiResolutionRate: rate(t.aiResolved, t.ai) })),
+          .map((t) => ({ id: t.id, name: t.name, count: t.count, share: t.count / labeled, aiResolutionRate: rate(t.aiResolved, t.ai), aiResolved: t.aiResolved })),
         labeled,
         unlabeled,
       };

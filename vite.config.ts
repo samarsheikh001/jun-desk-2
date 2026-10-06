@@ -44,6 +44,9 @@ export default defineConfig({
   // Only the browser build has two pages; the Worker build keeps its own entry.
   environments: {
     client: {
+      // The Dashboard's chart is lazy-loaded, so dev would only discover these on first open
+      // and answer "504 Outdated Optimize Dep" until a reload: pre-bundle them at startup.
+      optimizeDeps: { include: ["motion/react", "d3-scale", "d3-shape"] },
       build: { rollupOptions: { input: { main: "index.html", widget: "widget.html" } } },
     },
   },

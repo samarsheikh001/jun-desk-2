@@ -191,17 +191,18 @@
   ::selection { background: color-mix(in oklch, var(--primary) 20%, transparent); }
 
   /* Native controls that stay native (the composer and transcript are shared with the widget, so they
-     keep their markup): the same look as the shadcn Button / Input / Textarea / NativeSelect. */
-  :where(button):not([data-slot]) {
+     keep their markup): the same look as the shadcn Button / Input / Textarea / NativeSelect. Not inside
+     Dither Kit charts (.dither): their legend buttons keep the kit's own utilities. */
+  :where(button):not([data-slot], .dither button) {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     min-height: 32px; padding: 4px 10px; border: 1px solid transparent; border-radius: var(--radius);
     background: var(--primary); color: var(--primary-foreground);
     font-size: 14px; font-weight: 500; line-height: 20px; white-space: nowrap; cursor: pointer;
     transition: background-color 150ms, border-color 150ms, box-shadow 150ms;
   }
-  :where(button):not([data-slot]):hover { background: color-mix(in oklch, var(--primary) 80%, transparent); }
-  :where(button):not([data-slot]):active:not(:disabled) { transform: translateY(1px); }
-  :where(button):not([data-slot]):disabled { opacity: 0.5; cursor: not-allowed; }
+  :where(button):not([data-slot], .dither button):hover { background: color-mix(in oklch, var(--primary) 80%, transparent); }
+  :where(button):not([data-slot], .dither button):active:not(:disabled) { transform: translateY(1px); }
+  :where(button):not([data-slot], .dither button):disabled { opacity: 0.5; cursor: not-allowed; }
   :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), textarea, select):not([data-slot]) {
     min-height: 32px; min-width: 0; padding: 4px 10px; border: 1px solid var(--input); border-radius: var(--radius);
     background: transparent; color: var(--foreground); outline: none;
@@ -546,17 +547,87 @@ button.small:not([data-slot]) { min-height: 28px; padding: 2px 10px; font-size: 
 .agent-versions li { display: grid; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 
 /* ---------- visitors (M6) ---------- */
-[data-slot="table-container"]:has(> .visitors) { margin-top: 12px; }
-.visitors td { white-space: normal; vertical-align: top; padding-block: 10px; }
-.visitors th, .team-table th { color: var(--muted-foreground); font-size: 12px; }
-.visitors code { font-size: 12px; word-break: break-all; }
-.visitor-action { text-align: right; white-space: nowrap; }
-.visitor-invite { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.team-table th { color: var(--muted-foreground); font-size: 12px; }
+/* The header's "● Live" pill; grey and still while nobody's on the site. */
+.live-pill {
+  display: inline-flex; align-items: center; gap: 7px; height: 24px; padding: 0 10px; border-radius: 999px;
+  font: 500 11px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--success);
+  background: color-mix(in oklch, var(--success) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--success) 25%, transparent);
+}
+.live-pill .live-dot { width: 6px; height: 6px; }
+.live-pill.idle { color: var(--muted-foreground); background: var(--muted); box-shadow: none; }
+.live-pill.idle .live-dot { background: var(--muted-foreground); animation: none; }
+/* Hero: the globe, then the count and the top countries. */
+.visitor-hero { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 24px 48px; align-items: center; }
+@media (max-width: 1100px) { .visitor-hero { grid-template-columns: minmax(0, 1fr); } .visitor-hero .visitor-hero-stats { max-width: none; } }
+.visitor-hero-stats { display: grid; gap: 4px; align-content: center; max-width: 440px; }
+.visitor-live-count { font: 500 72px/1 var(--font-mono); letter-spacing: -0.05em; font-variant-numeric: tabular-nums; margin: 4px 0 8px; }
+.visitor-mini { display: grid; grid-template-columns: repeat(4, minmax(0, auto)); justify-content: space-between; gap: 12px 20px; margin: 8px 0 0; padding: 14px 0; border-block: 1px solid var(--border); }
+.visitor-mini div { display: grid; gap: 2px; }
+.visitor-mini dt { font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
+.visitor-mini dd { margin: 0; font: 500 22px/1.2 var(--font-mono); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.visitor-hero-note { margin: 16px 0 0; }
+/* Country codes, not flag emoji: Windows draws those as two loose letters. */
+.visitor-cc {
+  display: inline-grid; place-items: center; min-width: 26px; height: 18px; margin-right: 10px; padding: 0 4px; border-radius: 5px; vertical-align: 1px;
+  font: 600 10px var(--font-mono); letter-spacing: 0.04em; color: var(--muted-foreground); background: var(--muted); box-shadow: inset 0 0 0 1px var(--border);
+}
+.visitor-avatar .visitor-cc { position: absolute; right: -8px; bottom: -6px; margin: 0; min-width: 0; height: 15px; font-size: 9px; color: var(--foreground); background: var(--background); }
+.visitors-page .dash-rows .page-path { font: 13px/20px var(--font-mono); overflow-wrap: anywhere; }
+/* Everyone on the site: avatar, who, page, time on site, action; the invite opens under its row. */
+.visitor-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; }
+.visitor-list li {
+  display: grid; grid-template-columns: 44px minmax(0, 1.1fr) minmax(0, 1.4fr) 96px 110px; gap: 4px 16px; align-items: center;
+  padding: 14px 12px; margin: 0 -12px; border-radius: 12px; transition: background-color 0.15s;
+}
+.visitor-list li + li { box-shadow: 0 -1px 0 var(--border); }
+.visitor-list li:hover, .visitor-list li.focus { background: color-mix(in oklch, var(--tint) 8%, transparent); box-shadow: none; }
+.visitor-list li:hover + li, .visitor-list li.focus + li { box-shadow: none; }
+.visitor-avatar {
+  position: relative; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
+  font: 600 14px var(--font-mono); color: var(--tint);
+  background:
+    radial-gradient(circle, color-mix(in oklch, var(--tint) 45%, transparent) 0.7px, transparent 1.1px) 0 0 / 4px 4px,
+    color-mix(in oklch, var(--tint) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tint) 30%, transparent);
+}
+.visitor-who, .visitor-page { display: grid; gap: 2px; min-width: 0; }
+.visitor-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: 15px; font-weight: 600; }
+.visitor-name .verified { margin-left: -4px; }
+.visitor-page-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visitor-list code { font: 12px var(--font-mono); color: var(--muted-foreground); background: none; padding: 0; overflow-wrap: anywhere; }
+.visitor-time { display: grid; gap: 2px; justify-items: end; text-align: right; }
+.visitor-time-n { font: 500 17px/1.2 var(--font-mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.visitor-action { display: flex; justify-content: flex-end; white-space: nowrap; }
+.visitor-invite { grid-column: 2 / -1; display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .visitor-invite input { flex: 1; min-width: 240px; }
+.visitors-empty {
+  display: flex; align-items: center; gap: 18px; margin-top: 12px; padding: 20px; border-radius: 14px; border: 1px dashed var(--border);
+  background: radial-gradient(circle, color-mix(in oklch, var(--muted-foreground) 22%, transparent) 0.6px, transparent 1px) 0 0 / 6px 6px;
+}
+.visitors-empty p { margin: 0; font-size: 14px; line-height: 1.5; }
+/* A radar ping: the dot in the middle, a ring that keeps going out. */
+.visitors-empty-art {
+  position: relative; flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
+  background: color-mix(in oklch, var(--stream-2) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--stream-2) 30%, transparent);
+}
+.visitors-empty-art span { width: 8px; height: 8px; border-radius: 50%; background: var(--stream-2); box-shadow: 0 0 10px var(--stream-2); }
+.visitors-empty-art::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--stream-2); animation: ping 2.4s ease-out infinite; }
+@keyframes ping { from { transform: scale(0.3); opacity: 1; } to { transform: scale(1.25); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .visitors-empty-art::after { animation: none; opacity: 0; } }
 /* The live globe (VisitorGlobe.tsx, MapLibre). Markers are plain DOM placed by MapLibre; ones on the
    far side of the globe fade out (opacityWhenCovered). */
-.visitor-globe-panel { display: grid; grid-template-columns: minmax(0, 600px) minmax(0, 1fr); gap: 24px; align-items: center; }
-.visitor-globe { position: relative; width: 100%; max-width: 600px; aspect-ratio: 1; justify-self: center; }
+.visitor-globe { position: relative; isolation: isolate; width: 100%; max-width: 560px; aspect-ratio: 1; justify-self: center; }
+/* A dotted halo behind the globe, fading out from its rim, like the charts' dither. */
+.visitor-globe::before {
+  content: ""; position: absolute; inset: -2%; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, color-mix(in oklch, var(--stream-2) 55%, transparent) 0.7px, transparent 1.1px) 0 0 / 5px 5px;
+  mask: radial-gradient(closest-side, transparent 86%, #000 90%, transparent 100%);
+}
+.visitor-globe::after {
+  content: ""; position: absolute; inset: 4%; border-radius: 50%; pointer-events: none; z-index: -1;
+  box-shadow: 0 0 80px -10px var(--stream-glow);
+}
 /* Sized, not absolutely placed: MapLibre's own CSS (loaded later) makes the map position: relative. */
 .visitor-globe-host { width: 100%; height: 100%; font: inherit; }
 .visitor-globe-host .maplibregl-canvas { cursor: grab; }
@@ -583,15 +654,9 @@ button.small:not([data-slot]) { min-height: 28px; padding: 2px 10px; font-size: 
 .globe-marker:hover .globe-marker-label, .globe-marker[data-focus] .globe-marker-label { opacity: 1; }
 .globe-marker[data-focus] .globe-marker-dot { scale: 1.4; }
 .globe-marker[data-focus] .globe-marker-label { border-color: #7c5cff; font-weight: 500; }
-.visitor-globe-stats { display: grid; gap: 16px; align-content: center; }
-.visitor-live { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.visitor-live-count { font-size: 40px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
 .live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--success); align-self: center; animation: live-pulse 2s ease-out infinite; }
 @keyframes live-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--success) 60%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }
 @media (prefers-reduced-motion: reduce) { .live-dot, .globe-marker-dot { animation: none; } }
-.visitor-countries { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-width: 320px; }
-.visitor-countries li { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.visitor-countries li:last-child { border-bottom: 0; }
 .identity { display: grid; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .identity h3 { margin: 0; }
 .opener-rule { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -673,16 +738,12 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
   --stream-1: oklch(0.70 0.15 255);
   --stream-2: oklch(0.58 0.215 260);
   --stream-glow: oklch(0.72 0.16 252 / 0.6);
-  --kpi-violet: oklch(0.58 0.2 293);
-  --kpi-pink: oklch(0.62 0.21 3);
 }
 :root[data-theme="dark"] {
   --stream-0: oklch(0.42 0.12 260);
   --stream-1: oklch(0.55 0.17 259);
   --stream-2: oklch(0.68 0.18 255);
   --stream-glow: oklch(0.55 0.2 260 / 0.45);
-  --kpi-violet: oklch(0.72 0.16 293);
-  --kpi-pink: oklch(0.74 0.16 3);
 }
 .dash-card { --pad: 32px; min-width: 0; padding: 24px 0 0; font-size: 14px; border-top: 1px solid var(--border); }
 /* The stream runs edge to edge across the main area: the hero sits first, without a rule. */
@@ -697,6 +758,11 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 .dash-foot { margin: 16px 0 0; font-size: 12px; color: var(--muted-foreground); }
 .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 24px 40px; align-items: start; }
 
+.dither-day { height: 280px; margin-top: 12px; }
+.dither-donut { height: 220px; margin: 8px 0 4px; }
+.dither-radar { height: 300px; margin-top: 8px; }
+.dither-bars { height: 240px; margin: 12px 0 8px; }
+.dither-bars.short { height: 180px; }
 /* The stream: full-bleed across the main area, with the pills and axis on the same x. */
 .stream { margin: 12px calc(-1 * var(--pad)) 0; }
 .stream-plot { position: relative; outline: none; touch-action: pan-y; cursor: default; }
@@ -732,39 +798,132 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 
 /* Headline numbers. */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 24px 32px; margin-top: 28px; }
+/* Wide screens: every headline number on one row, however many there are. */
+@media (min-width: 1000px) { .kpis { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); } }
 .kpi { display: grid; gap: 4px; min-width: 0; }
-.kpi-label { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; color: color-mix(in oklch, var(--foreground) 72%, transparent); }
-.kpi-icon { display: inline-flex; }
-.kpi-icon svg { width: 16px; height: 16px; }
-.kpi-icon.green { color: var(--success); }
-.kpi-icon.blue { color: var(--stream-2); }
-.kpi-icon.violet { color: var(--kpi-violet); }
-.kpi-icon.amber { color: var(--warning); }
-.kpi-icon.pink { color: var(--kpi-pink); }
+.kpi-label { font-size: 15px; font-weight: 600; color: color-mix(in oklch, var(--foreground) 72%, transparent); }
 .kpi-value { font: 500 34px/1.15 var(--font-mono); letter-spacing: -0.04em; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.kpi-value.off { color: var(--muted-foreground); }
+.kpi-value.off { color: var(--muted-foreground); font-size: 22px; line-height: 39px; letter-spacing: -0.02em; }
+/* Under each number: a sparkline or a dithered meter, on one baseline across the row. */
+.kpi-viz { height: 28px; display: flex; align-items: flex-end; margin: 6px 0 4px; }
+.kpi-spark { width: 100%; height: 28px; }
+:root { --tone-green: var(--success); --tone-purple: oklch(0.62 0.2 293); --tone-orange: var(--warning); --tone-red: var(--destructive); }
+:root[data-theme="dark"] { --tone-purple: oklch(0.72 0.16 293); }
+.meter-dither {
+  --fill: var(--stream-2); position: relative; width: 100%; height: 8px; image-rendering: pixelated;
+  background: radial-gradient(circle, color-mix(in oklch, var(--muted-foreground) 35%, transparent) 0.6px, transparent 1px) 0 0 / 4px 4px;
+}
+.meter-dither.green { --fill: var(--tone-green); }
+.meter-dither.purple { --fill: var(--tone-purple); }
+.meter-dither.orange { --fill: var(--tone-orange); }
+.meter-dither::after {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: max(4px, calc(var(--value, 0) * 100%));
+  background:
+    conic-gradient(var(--fill) 25%, transparent 0 50%, var(--fill) 0 75%, transparent 0) 0 0 / 4px 4px,
+    linear-gradient(90deg, color-mix(in oklch, var(--fill) 10%, transparent), var(--fill) 85%);
+  box-shadow: 0 0 14px -2px color-mix(in oklch, var(--fill) 70%, transparent);
+  transform-origin: left; animation: bar-in 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+/* Split: 👍 green from the left to --split, 👎 red from the right for the rest. */
+.meter-dither.split::before, .meter-dither.split::after {
+  content: ""; position: absolute; top: 0; bottom: 0; animation: bar-in 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  background:
+    conic-gradient(var(--c) 25%, transparent 0 50%, var(--c) 0 75%, transparent 0) 0 0 / 4px 4px,
+    linear-gradient(var(--d), color-mix(in oklch, var(--c) 15%, transparent), var(--c) 80%);
+  box-shadow: 0 0 14px -2px color-mix(in oklch, var(--c) 70%, transparent);
+}
+.meter-dither.split::after { --c: var(--tone-green); --d: 90deg; inset: 0 auto 0 0; width: calc(var(--split) * 100% - 2px); transform-origin: left; }
+.meter-dither.split::before { --c: var(--tone-red); --d: 270deg; inset: 0 0 0 auto; width: calc((1 - var(--split)) * 100% - 2px); transform-origin: right; }
+.meter-dither.empty::before, .meter-dither.empty::after { display: none; }
+@media (prefers-reduced-motion: reduce) { .meter-dither::before, .meter-dither::after { animation: none; } }
+
+/* Ratings (CSAT): the split, then the latest 👎 comments as quotes. */
+.ratings-split { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 8px 0 10px; font: 12px var(--font-mono); color: var(--muted-foreground); }
+.ratings-n { font: 500 24px/1 var(--font-mono); letter-spacing: -0.03em; }
+.ratings-side.good .ratings-n { color: var(--tone-green); }
+.ratings-side.bad .ratings-n { color: var(--tone-red); }
+.ratings-split + .meter-dither { height: 10px; }
+.ratings-sub { margin: 24px 0 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); }
+.quotes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.quotes a {
+  position: relative; display: grid; gap: 6px; padding: 12px 14px 12px 20px; border-radius: 12px; color: var(--foreground); text-decoration: none;
+  background: color-mix(in oklch, var(--tone-red) 7%, transparent); transition: background-color 0.15s;
+}
+.quotes a::before {
+  content: ""; position: absolute; left: 8px; top: 12px; bottom: 12px; width: 4px; image-rendering: pixelated;
+  background: conic-gradient(var(--tone-red) 25%, transparent 0 50%, var(--tone-red) 0 75%, transparent 0) 0 0 / 4px 4px;
+  box-shadow: 0 0 10px -2px var(--tone-red);
+}
+.quotes a:hover, .quotes a:focus-visible { background: color-mix(in oklch, var(--tone-red) 13%, transparent); }
+.quote-text { font-size: 15px; overflow-wrap: anywhere; }
+.quote-text::before { content: "“"; }
+.quote-text::after { content: "”"; }
+.quote-meta { font: 11px var(--font-mono); color: var(--muted-foreground); }
+.ratings-empty {
+  display: flex; align-items: center; gap: 18px; margin-top: 8px; padding: 20px; border-radius: 14px;
+  border: 1px dashed var(--border);
+  background: radial-gradient(circle, color-mix(in oklch, var(--muted-foreground) 22%, transparent) 0.6px, transparent 1px) 0 0 / 6px 6px;
+}
+.ratings-empty p { margin: 0; font-size: 14px; line-height: 1.5; }
+.ratings-empty-art { display: flex; gap: 6px; flex: none; }
+.ratings-empty-art span {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; font-size: 20px;
+  background: color-mix(in oklch, var(--tone-green) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tone-green) 30%, transparent);
+}
+.ratings-empty-art span + span { background: color-mix(in oklch, var(--tone-red) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tone-red) 30%, transparent); transform: rotate(6deg) translateY(4px); }
+.ratings-empty-art span:first-child { transform: rotate(-6deg); }
 .kpi-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 13px; color: var(--muted-foreground); }
 .kpi-change { display: inline-flex; align-items: center; gap: 1px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .kpi-change svg { width: 14px; height: 14px; stroke-width: 2.5; }
 .kpi-change.up { color: var(--success); }
 .kpi-change.down { color: var(--destructive); }
 
-/* Hairline rows: label, then the numbers in mono; a thin bar under each row shows its share. */
-.dash-rows { list-style: none; margin: 4px 0 0; padding: 0; }
-.dash-rows li {
-  display: flex; align-items: baseline; gap: 12px; padding: 13px 0; border-top: 1px solid var(--border);
-  background: linear-gradient(var(--stream-2), var(--stream-2)) no-repeat left bottom / calc(var(--share, 0) * 100%) 2px;
+/* Rows: label, then the numbers in mono. On .bars lists each row carries a dithered share bar in its
+   own colour (--swatch, else the stream blue): 2px pixels that thicken into solid, like the charts. */
+.dash-rows { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
+.dash-rows li { --swatch: var(--stream-2); position: relative; display: flex; align-items: center; gap: 10px; padding: 12px 0; }
+.dash-rows:not(.bars) li + li { border-top: 1px solid var(--border); }
+.dash-rows.bars li { padding-bottom: 24px; }
+.dash-rows.bars li::before, .dash-rows.bars li::after {
+  content: ""; position: absolute; left: 0; bottom: 10px; height: 6px; pointer-events: none; image-rendering: pixelated;
 }
-.dash-rows li:first-child { border-top: 0; }
+/* Track: a faint dot grid the length of the row. */
+.dash-rows.bars li::before {
+  right: 0;
+  background: radial-gradient(circle, color-mix(in oklch, var(--muted-foreground) 35%, transparent) 0.6px, transparent 1px) 0 0 / 4px 4px;
+}
+/* Fill: a 2px checkerboard over a fade from clear to solid, so the dither gets denser to the right. */
+.dash-rows.bars li::after {
+  width: max(4px, calc(var(--share, 0) * 100%));
+  background:
+    conic-gradient(var(--swatch) 25%, transparent 0 50%, var(--swatch) 0 75%, transparent 0) 0 0 / 4px 4px,
+    linear-gradient(90deg, color-mix(in oklch, var(--swatch) 10%, transparent), var(--swatch) 85%);
+  box-shadow: 0 0 14px -2px color-mix(in oklch, var(--swatch) 70%, transparent);
+  transform-origin: left; animation: bar-in 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.dash-rows.bars li:nth-child(2)::after { animation-delay: 60ms; }
+.dash-rows.bars li:nth-child(3)::after { animation-delay: 120ms; }
+.dash-rows.bars li:nth-child(4)::after { animation-delay: 180ms; }
+.dash-rows.bars li:nth-child(n + 5)::after { animation-delay: 240ms; }
+@keyframes bar-in { from { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .dash-rows.bars li::after { animation: none; } }
 .dash-rows.links li { padding: 0; }
-.dash-rows.links a { display: flex; flex: 1; align-items: baseline; gap: 12px; min-width: 0; padding: 13px 10px; margin: 0 -10px; border-radius: 10px; color: var(--foreground); text-decoration: none; }
-.dash-rows.links a:hover, .dash-rows.links a:focus-visible { background: var(--muted); }
-.dash-row-label { flex: 1; min-width: 0; font-size: 15px; overflow-wrap: anywhere; }
-.dash-row-label.page-path { font: 13px/20px var(--font-mono); overflow-wrap: break-word; }
-.dash-row-share, .dash-row-tag { font: 12px var(--font-mono); color: var(--muted-foreground); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.dash-row-tag { display: inline-flex; align-items: center; gap: 3px; color: var(--stream-2); }
-.dash-row-tag svg { width: 12px; height: 12px; }
-.dash-row-value { min-width: 3ch; text-align: right; font: 500 16px var(--font-mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dash-rows.links.bars li::before, .dash-rows.links.bars li::after { bottom: 10px; }
+.dash-rows.links a { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 12px 10px; margin: 0 -10px; border-radius: 10px; color: var(--foreground); text-decoration: none; transition: background-color 0.15s; }
+.dash-rows.links.bars a { padding-bottom: 26px; margin-bottom: -2px; }
+.dash-rows.links a:hover, .dash-rows.links a:focus-visible { background: color-mix(in oklch, var(--swatch) 9%, transparent); }
+.dash-row-label { flex: 1; min-width: 0; font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.dash-row-label.page-path { font: 13px/20px var(--font-mono); font-weight: 400; overflow-wrap: break-word; }
+.dash-row-share { font: 12px var(--font-mono); color: var(--muted-foreground); white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
+/* "AI 78%": a small pill in the AI-resolved green, apart from the topic colours. */
+.dash-row-tag {
+  display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px; white-space: nowrap;
+  font: 500 11px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--success);
+  background: color-mix(in oklch, var(--success) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--success) 25%, transparent);
+}
+.dash-row-tag::before { content: ""; width: 5px; height: 5px; border-radius: 1px; background: currentColor; box-shadow: 0 0 6px currentColor; }
+.dash-swatch { display: inline-block; width: 8px; height: 8px; margin-right: 10px; border-radius: 2px; background: var(--swatch); box-shadow: 0 0 8px color-mix(in oklch, var(--swatch) 60%, transparent); vertical-align: 1px; }
+.dash-row-value { min-width: 3ch; text-align: right; font: 500 20px/1 var(--font-mono); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .page-host { white-space: nowrap; color: var(--muted-foreground); }
 .topic-actions { display: inline-flex; gap: 6px; margin-left: auto; }
 .topic-actions select { max-width: 180px; }
@@ -869,11 +1028,14 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
   .appear-stage { min-height: 600px; }
 }
 @media (max-width: 700px) {
-  .visitor-globe-panel { grid-template-columns: minmax(0, 1fr); }
-  .visitors thead { display: none; }
-  .visitors tr { display: grid; gap: 4px; padding: 8px 0; }
-  .visitors td { padding: 2px 0; }
-  .visitor-action { text-align: left; }
+  .visitor-list li { grid-template-columns: 44px minmax(0, 1fr) auto; row-gap: 10px; }
+  .visitor-page { grid-column: 2 / -1; grid-row: 2; }
+  .visitor-time { grid-column: 3; grid-row: 1; }
+  .visitor-action { grid-column: 2 / -1; justify-content: flex-start; }
+  .visitor-action:empty { display: none; }
+  .visitor-invite { grid-column: 1 / -1; }
+  .visitor-mini { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .visitor-live-count { font-size: 56px; }
   .thread-head { flex-wrap: wrap; row-gap: 8px; }
   .issue-dialog form { padding: 14px; }
   .issue-chip-title { max-width: 140px; }
