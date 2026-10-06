@@ -96,11 +96,12 @@ test("shortcuts: no single keys while a dialog is open", () => {
   assert.equal(run(key("?", { shiftKey: true }), { inbox: true, modal: "other" }).command, null);
 });
 
-test("shortcuts: g then i/v/r/s; the prefix expires and takes precedence over r", () => {
+test("shortcuts: g then i/v/d/s; the prefix expires and takes precedence over r", () => {
   const g = run(key("g"));
   assert.deepEqual(g, { command: null, state: { prefix: "g", at: 1000 } });
   assert.equal(run(key("i"), inbox, g.state, 1100).command, "go-inbox");
-  assert.equal(run(key("r"), inbox, g.state, 1100).command, "go-reports", "g r is Reports, not reply");
+  assert.equal(run(key("d"), inbox, g.state, 1100).command, "go-dashboard");
+  assert.equal(run(key("r"), inbox, g.state, 1100).command, "go-dashboard", "g r (the old Reports shortcut) is Dashboard, not reply");
   assert.equal(run(key("s"), inbox, g.state, 1100).command, "go-settings");
   assert.equal(run(key("x"), inbox, g.state, 1100).command, null, "unknown second key: nothing");
   assert.deepEqual(run(key("x"), inbox, g.state, 1100).state, INITIAL_SHORTCUT_STATE);

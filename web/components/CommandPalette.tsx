@@ -27,12 +27,12 @@ interface Group { label: string; items: Item[]; limit?: number }
 interface Page { title: string; placeholder: string; groups: (query: string) => Group[] }
 
 const NAVIGATION: { label: string; path: string; hint?: string }[] = [
+  { label: "Dashboard", path: "/dashboard", hint: "g d" },
   { label: "Inbox", path: "/inbox", hint: "g i" },
   { label: "Visitors", path: "/visitors", hint: "g v" },
   { label: "Knowledge", path: "/knowledge" },
   { label: "Agent", path: "/agent" },
   { label: "Appearance", path: "/appearance" },
-  { label: "Reports", path: "/reports", hint: "g r" },
   { label: "Settings", path: "/settings", hint: "g s" },
 ];
 /** Settings sections, found by their heading (so panels need no ids). */

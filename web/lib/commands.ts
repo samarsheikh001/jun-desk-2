@@ -103,7 +103,7 @@ export type ShortcutCommand =
   | "search"
   | "go-inbox"
   | "go-visitors"
-  | "go-reports"
+  | "go-dashboard"
   | "go-settings";
 
 /** What the dispatcher needs from a keydown event (a KeyboardEvent fits, plus two DOM facts). */
@@ -138,7 +138,7 @@ export const INITIAL_SHORTCUT_STATE: ShortcutState = { prefix: null, at: 0 };
 /** How long "g" waits for its second key. */
 export const PREFIX_TIMEOUT_MS = 1500;
 
-const GO: Record<string, ShortcutCommand> = { i: "go-inbox", v: "go-visitors", r: "go-reports", s: "go-settings" };
+const GO: Record<string, ShortcutCommand> = { i: "go-inbox", v: "go-visitors", d: "go-dashboard", r: "go-dashboard", s: "go-settings" };
 const INBOX: Record<string, ShortcutCommand> = {
   j: "next",
   k: "previous",
@@ -187,7 +187,7 @@ export const SHORTCUT_HELP: { group: string; keys: { keys: string[]; alt?: strin
       { keys: ["?"], label: "Keyboard shortcuts" },
       { keys: ["g", "i"], label: "Go to Inbox" },
       { keys: ["g", "v"], label: "Go to Visitors" },
-      { keys: ["g", "r"], label: "Go to Reports" },
+      { keys: ["g", "d"], label: "Go to Dashboard" },
       { keys: ["g", "s"], label: "Go to Settings" },
     ],
   },

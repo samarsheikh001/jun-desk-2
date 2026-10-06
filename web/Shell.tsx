@@ -22,12 +22,12 @@ import { VisitorsPage } from "./visitors/VisitorsPage.tsx";
 import { STEP_ORDER, useOnboarding, WelcomePage } from "./welcome/WelcomePage.tsx";
 
 const NAV = [
+  { id: "dashboard", label: "Dashboard", Icon: ChartColumnIcon },
   { id: "inbox", label: "Inbox", Icon: InboxIcon },
   { id: "visitors", label: "Visitors", Icon: UsersIcon },
   { id: "knowledge", label: "Knowledge", Icon: BookOpenIcon },
   { id: "agent", label: "Agent", Icon: BotIcon },
   { id: "appearance", label: "Appearance", Icon: PaletteIcon },
-  { id: "reports", label: "Reports", Icon: ChartColumnIcon },
   { id: "settings", label: "Settings", Icon: SettingsIcon },
 ] as const;
 
@@ -131,7 +131,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         case "help": return openOverlay("help");
         case "go-inbox": return navigate("/inbox");
         case "go-visitors": return navigate("/visitors");
-        case "go-reports": return navigate("/reports");
+        case "go-dashboard": return navigate("/dashboard");
         case "go-settings": return navigate("/settings");
         case "next": return inbox?.move(1);
         case "previous": return inbox?.move(-1);
@@ -188,7 +188,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     : path.startsWith("/agent") ? "agent"
     : path.startsWith("/appearance") ? "appearance"
     : path.startsWith("/visitors") ? "visitors"
-    : path.startsWith("/reports") ? "reports"
+    : path.startsWith("/dashboard") || path.startsWith("/reports") ? "dashboard"
     : path.startsWith("/welcome") ? "welcome"
     : "inbox";
   const ob = onboarding.state;
@@ -247,7 +247,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <WelcomePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} onboarding={onboarding.state} reload={onboarding.reload} />
       ) : section === "visitors" ? (
         <VisitorsPage workspaceId={workspace.workspaceId} visitors={visitors} />
-      ) : section === "reports" ? (
+      ) : section === "dashboard" ? (
         <ReportsPage workspaceId={workspace.workspaceId} />
       ) : section === "appearance" ? (
         <AppearancePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} />

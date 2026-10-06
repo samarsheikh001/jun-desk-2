@@ -31,7 +31,7 @@ const JOBS: { job: AiJob; label: string; hint: string }[] = [
   { job: "brief", label: "Handoff briefs", hint: "Fast job: a short summary for your team." },
   { job: "nudge", label: "Nudges and openers", hint: "Fast job: one line when a visitor gets stuck." },
   { job: "draft", label: "Issue drafts", hint: "Bug reports written from a conversation." },
-  { job: "topics", label: "Topic labels", hint: "Fast job: labels for Reports." },
+  { job: "topics", label: "Topic labels", hint: "Fast job: labels for the Dashboard." },
   { job: "judge", label: "Eval grading", hint: "Checks eval replies against your criteria." },
   { job: "suggestions", label: "Suggested questions", hint: "Drafts the widget's questions from your knowledge (Appearance)." },
 ];

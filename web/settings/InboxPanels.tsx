@@ -164,7 +164,7 @@ export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; can
         {canEdit && <Button variant="outline" size="sm" disabled={busy} onClick={labelNow}>{busy ? "Working…" : "Label now"}</Button>}
       </div>
       <p className="muted small">
-        The AI gives each chat a short topic once it's resolved or quiet for 10 minutes, reusing these when one fits (up to {max}). See them in Reports and filter the inbox by them. Visitors never see topics.
+        The AI gives each chat a short topic once it's resolved or quiet for 10 minutes, reusing these when one fits (up to {max}). See them on the Dashboard and filter the inbox by them. Visitors never see topics.
       </p>
       {notice && <p className="ok-text small">{notice}</p>}
       {error && <p className="error small">{error}</p>}
