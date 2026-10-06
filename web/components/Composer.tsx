@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import type { Attachment } from "../../shared/protocol.ts";
 import { canCaptureScreen, captureScreen } from "../lib/screenshot.ts";
 import { formatSize } from "../lib/thread.ts";
@@ -57,7 +57,10 @@ export function Composer({
    * the widget, which shares this component, keeps its own markup and bundle.
    */
   suggestScroller?: ComponentType<{ className: string; children: ReactNode }>;
-  /** The widget's "Ask anything…" bar (W-04 bar launcher, D-32): the box first, then icon buttons. */
+  /**
+   * The widget's composer (the chat window and the W-04 bar, D-32): one box with "+" (files,
+   * screenshot), the input and Send; the input moves above the buttons once the text wraps.
+   */
   pill?: boolean;
 }) {
   const [body, setBody] = useState("");
@@ -79,6 +82,15 @@ export function Composer({
   useEffect(() => () => {
     if (shot) URL.revokeObjectURL(shot.url);
   }, [shot]);
+  // The widget's "+" menu and its two-row layout (pill only).
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [tool, setTool] = useState(0);
+  const [toolBox, setToolBox] = useState<{ top: number; height: number } | null>(null);
+  const [wide, setWide] = useState(false);
+  const plus = useRef<HTMLButtonElement>(null);
+  const toolRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const measure = useRef<HTMLSpanElement>(null);
+  const inlineWidth = useRef(Infinity);
 
   const before = body.slice(0, caret);
   const suggestions = useMemo<Suggestion[]>(() => {
@@ -208,6 +220,54 @@ export function Composer({
     }
   };
 
+  // Focus stays on "+" while the file picker or the capture prompt is up, so the bar (which
+  // folds when the frame loses focus) can tell it apart from a click elsewhere on the page.
+  const tools = [
+    { key: "files", label: "Add photos & files", desc: "From your device", icon: CLIP, run: () => fileInput.current?.click() },
+    ...(canShoot ? [{ key: "shot", label: "Take a screenshot", desc: "You check it before it's sent", icon: CAMERA, run: () => void takeScreenshot() }] : []),
+  ];
+  const runTool = (i: number) => {
+    setPlusOpen(false);
+    plus.current?.focus();
+    tools[i]?.run();
+  };
+
+  // A single highlight glides to the active row of the "+" menu.
+  useLayoutEffect(() => {
+    const row = toolRefs.current[tool];
+    if (plusOpen && row) setToolBox({ top: row.offsetTop, height: row.offsetHeight });
+  }, [plusOpen, tool]);
+  useEffect(() => {
+    if (plusOpen) toolRefs.current[tool]?.focus();
+  }, [plusOpen, tool]);
+  useEffect(() => {
+    if (!plusOpen) return;
+    const close = (e: PointerEvent) => {
+      if (!(e.target as Element).closest(".composer-plus, .composer-menu")) setPlusOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [plusOpen]);
+
+  // The input sits between "+" and Send until its text would wrap (or has a line break), then
+  // takes the whole first row; it grows with the text up to its CSS max-height, then scrolls.
+  useLayoutEffect(() => {
+    const el = input.current;
+    const m = measure.current;
+    if (!pill || !el || !m) return;
+    const style = getComputedStyle(el);
+    if (!wide) inlineWidth.current = el.clientWidth;
+    m.style.font = style.font;
+    m.style.letterSpacing = style.letterSpacing;
+    const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const needsRow = body.includes("\n") || m.offsetWidth + padding + 2 > inlineWidth.current;
+    if (needsRow !== wide) setWide(needsRow);
+    el.style.height = "0px";
+    const max = parseFloat(style.maxHeight) || 120;
+    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+    el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
+  }, [pill, body, wide]);
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return; // an IME is composing: its keys aren't ours
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -253,7 +313,7 @@ export function Composer({
           {note && <span className="muted small">Only your team sees notes. Type @ to mention someone.</span>}
         </div>
       )}
-      {(attachments.length > 0 || uploading > 0 || error) && (
+      {!pill && (attachments.length > 0 || uploading > 0 || error) && (
         <div className="composer-files">
           {attachments.map((a) => (
             <span key={a.key} className="chip">
@@ -289,38 +349,103 @@ export function Composer({
         return SuggestScroller ? <SuggestScroller className="suggest">{list}</SuggestScroller> : list;
       })()}
       {pill ? (
-        <div className="composer-row">
-          <textarea
-            ref={input}
-            rows={1}
-            value={body}
-            placeholder={placeholder}
-            disabled={disabled}
-            aria-label="Message"
-            onChange={(e) => change(e.target.value)}
-            onKeyDown={onKeyDown}
-            onPaste={(e) => {
-              if (e.clipboardData.files.length > 0) {
-                e.preventDefault();
-                void addFiles(e.clipboardData.files);
-              }
-            }}
-          />
-          <div className="composer-actions">
-            <button type="button" title="Attach files" aria-label="Attach files" disabled={disabled} onClick={() => fileInput.current?.click()}>
-              <svg width="16" height="16" fill="none" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fillRule="evenodd" clipRule="evenodd" d="M7.67 2.507a.85.85 0 0 1 0 1.202L3.524 7.855a2.464 2.464 0 0 0 3.485 3.484l5.925-5.926a.836.836 0 0 0-1.181-1.182L5.87 10.113A.85.85 0 0 1 4.669 8.91l5.881-5.88a2.536 2.536 0 0 1 3.585 3.586L8.201 12.55a4.164 4.164 0 0 1-5.889-5.888l.006-.005 4.149-4.15a.85.85 0 0 1 1.202 0Z" /></svg>
-            </button>
-            <input ref={fileInput} type="file" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
-            {canShoot && (
-              <button type="button" title="Send a screenshot" aria-label="Send a screenshot" disabled={disabled || shooting || shot !== null} onClick={() => void takeScreenshot()}>
-                <svg width="16" height="16" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true"><path d="M2 5.5A1.5 1.5 0 0 1 3.5 4h1.6l1-1.5h3.8l1 1.5h1.6A1.5 1.5 0 0 1 14 5.5v6a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" /><circle cx="8" cy="8.5" r="2.25" /></svg>
-              </button>
+        <>
+          {plusOpen && (
+            <div
+              className="composer-menu"
+              role="menu"
+              aria-label="Add to your message"
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setTool((i) => (i + (e.key === "ArrowDown" ? 1 : tools.length - 1)) % tools.length);
+                } else if (e.key === "Escape" || e.key === "Tab") {
+                  e.preventDefault();
+                  e.nativeEvent.stopImmediatePropagation(); // Esc closes the menu, not the bar
+                  setPlusOpen(false);
+                  plus.current?.focus();
+                }
+              }}
+            >
+              <span aria-hidden="true" className="composer-menu-glide" style={toolBox ? { top: toolBox.top, height: toolBox.height } : { opacity: 0 }} />
+              {tools.map((t, i) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="menuitem"
+                  tabIndex={i === tool ? 0 : -1}
+                  ref={(el) => {
+                    toolRefs.current[i] = el;
+                  }}
+                  onMouseEnter={() => setTool(i)}
+                  onClick={() => runTool(i)}
+                >
+                  <span className="composer-menu-icon">{t.icon}</span>
+                  <span className="composer-menu-label">{t.label}</span>
+                  <span className="composer-menu-desc">{t.desc}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className={`composer-box ${wide ? "wide" : ""}`}>
+            <span ref={measure} className="composer-measure" aria-hidden="true">{body}</span>
+            {(attachments.length > 0 || uploading > 0 || error) && (
+              <div className="composer-files">
+                {attachments.map((a) => (
+                  <span key={a.key} className="composer-file">
+                    {FILE}
+                    <span className="composer-file-name">{a.name}</span>
+                    <span className="muted">{formatSize(a.size)}</span>
+                    <button type="button" aria-label={`Remove ${a.name}`} onClick={() => setAttachments((x) => x.filter((y) => y.key !== a.key))}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    </button>
+                  </span>
+                ))}
+                {uploading > 0 && <span className="muted small">Uploading…</span>}
+                {error && <span className="error small">{error}</span>}
+              </div>
             )}
+            <div className="composer-grid">
+              <button
+                ref={plus}
+                type="button"
+                className={`composer-plus ${plusOpen ? "active" : ""}`}
+                title={tools.length > 1 ? "Add files or a screenshot" : "Attach files"}
+                aria-label={tools.length > 1 ? "Add files or a screenshot" : "Attach files"}
+                aria-haspopup={tools.length > 1 ? "menu" : undefined}
+                aria-expanded={tools.length > 1 ? plusOpen : undefined}
+                disabled={disabled || shooting}
+                onClick={() => {
+                  if (tools.length === 1) return runTool(0);
+                  setTool(0);
+                  setPlusOpen((o) => !o);
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              </button>
+              <input ref={fileInput} type="file" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
+              <textarea
+                ref={input}
+                rows={1}
+                value={body}
+                placeholder={placeholder}
+                disabled={disabled}
+                aria-label="Message"
+                onChange={(e) => change(e.target.value)}
+                onKeyDown={onKeyDown}
+                onPaste={(e) => {
+                  if (e.clipboardData.files.length > 0) {
+                    e.preventDefault();
+                    void addFiles(e.clipboardData.files);
+                  }
+                }}
+              />
+              <button className="composer-send" aria-label="Send" disabled={disabled || uploading > 0 || (!body.trim() && attachments.length === 0)} onClick={() => void submit()}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+              </button>
+            </div>
           </div>
-          <button className="composer-send" aria-label="Send" disabled={disabled || uploading > 0 || (!body.trim() && attachments.length === 0)} onClick={() => void submit()}>
-            <svg width="16" height="16" aria-hidden="true"><path fill="currentColor" fillRule="evenodd" clipRule="evenodd" d="M7.4 1.899a.85.85 0 0 1 1.201 0l4.5 4.5A.85.85 0 1 1 11.9 7.6L8.85 4.552V13.5a.85.85 0 0 1-1.7 0V4.552L4.101 7.601A.85.85 0 1 1 2.9 6.399z" /></svg>
-          </button>
-        </div>
+        </>
       ) : (
       <div className="composer-row">
         <button className="ghost icon" title="Attach files" aria-label="Attach files" disabled={disabled} onClick={() => fileInput.current?.click()}>📎</button>
@@ -356,3 +481,10 @@ export function Composer({
     </div>
   );
 }
+
+const icon = (d: ReactNode) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
+);
+const CLIP = icon(<path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />);
+const CAMERA = icon(<><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.1l1.5-2h7.8l1.5 2h2.1A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" /><circle cx="12" cy="12.5" r="3.25" /></>);
+const FILE = icon(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>);

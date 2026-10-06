@@ -581,7 +581,7 @@ function WidgetThread({
     };
     // Not when a file picker or the screen-capture prompt took the focus.
     const onBlur = () => {
-      if (!panel && !document.activeElement?.closest(".composer-actions")) setBarOpen(false);
+      if (!panel && !document.activeElement?.closest(".composer-plus")) setBarOpen(false);
     };
     document.addEventListener("keydown", onKey);
     window.addEventListener("blur", onBlur);

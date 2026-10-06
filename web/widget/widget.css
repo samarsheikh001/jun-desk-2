@@ -132,24 +132,58 @@ html.mini body { overflow: hidden; }
 .w-shell .w-email button:not(.w-x, .ghost):hover, .w-shell .w-csat button:not(.w-x, .w-thumb, .ghost):hover { background: var(--accent-hover); }
 .w-shell button.w-thumb { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; font-size: 15px; line-height: 1; }
 
-/* The composer (.composer2): the field (.composer-wrap) holds the box and the attach and
-   screenshot buttons (.composer-ic); the send button sits beside it. The field is drawn behind
-   them, since the shared Composer puts all three in one row. */
+/* The composer (pill mode of the shared Composer): one box (.composer-box) with "+", the input and
+   Send in a grid; once the text wraps (.wide) the input takes the first row and the buttons go
+   under it. "+" opens .composer-menu (files, screenshot) with one gliding highlight. The parts
+   every launcher shares come first; the window and the bar then set their own look. */
+.composer.pill { position: relative; }
+.composer-box { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.composer-measure { position: absolute; visibility: hidden; white-space: pre; pointer-events: none; }
+.composer-grid { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: end; column-gap: 4px; row-gap: 6px; }
+.composer-grid > .composer-plus { grid-area: 1 / 1; }
+.composer-grid > textarea { grid-area: 1 / 2; min-width: 0; width: 100%; resize: none; overflow-wrap: anywhere; }
+.composer-grid > .composer-send { grid-area: 1 / 3; }
+.composer-box.wide .composer-grid > textarea { grid-area: 1 / 1 / 2 / -1; }
+.composer-box.wide .composer-grid > .composer-plus { grid-area: 2 / 1; }
+.composer-box.wide .composer-grid > .composer-send { grid-area: 2 / 3; }
+.composer.pill .composer-plus, .composer.pill .composer-send { display: grid; place-items: center; padding: 0; border: 0; transition: background-color 150ms, color 150ms, transform 150ms; }
+.composer.pill .composer-plus:active:not(:disabled), .composer.pill .composer-send:active:not(:disabled) { transform: scale(0.94); }
+.composer.pill .composer-plus svg { width: 17px; height: 17px; }
+.composer.pill .composer-send svg { width: 16px; height: 16px; }
+.composer.pill .composer-files { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 2px 2px 0; }
+.composer-file { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 26px; padding: 0 2px 0 7px; font-size: 12px; animation: c-pop 200ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+.composer-file svg { width: 13px; height: 13px; }
+.composer-file-name { min-width: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer.pill .composer-file button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: inherit; opacity: 0.6; }
+.composer.pill .composer-file button:hover { opacity: 1; }
+.composer.pill .composer-file button svg { width: 10px; height: 10px; }
+.composer-menu { position: absolute; z-index: 5; padding: 4px; animation: c-pop 180ms cubic-bezier(0.23, 1, 0.32, 1) both; transform-origin: bottom left; }
+.composer-menu-glide { position: absolute; left: 4px; right: 4px; pointer-events: none; transition: top 220ms cubic-bezier(0.23, 1, 0.32, 1), height 220ms cubic-bezier(0.23, 1, 0.32, 1), opacity 150ms ease; }
+.composer.pill .composer-menu button { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; height: 36px; padding: 0 8px; border: 0; background: transparent; text-align: left; white-space: nowrap; }
+.composer.pill .composer-menu button:hover { background: transparent; }
+.composer.pill .composer-menu button:focus-visible { outline: none; }
+.composer-menu-icon { display: grid; place-items: center; width: 22px; flex-shrink: 0; }
+.composer-menu-icon svg { width: 16px; height: 16px; }
+.composer-menu-label { flex-shrink: 0; font-size: 13px; font-weight: 500; }
+.composer-menu-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; opacity: 0.6; }
+@keyframes c-pop { from { opacity: 0; transform: scale(0.96) translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* The chat window (button and card launchers) */
 .w-shell .composer.pill { padding: 12px 16px 8px; border-top: 1px solid var(--border-soft); background: var(--surface); flex-shrink: 0; }
-.w-shell .composer.pill .composer-row { position: relative; display: flex; align-items: center; gap: 0; }
-.w-shell .composer.pill .composer-row::before { content: ""; position: absolute; inset: 0 48px 0 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--field); pointer-events: none; }
-.w-shell .composer.pill .composer-row:focus-within::before { border-color: #a3a3a3; }
-.w-shell .composer.pill .composer-row > * { position: relative; }
-.w-shell .composer.pill textarea { flex: 1; min-width: 0; margin: 4px 0 4px 4px; padding: 8px; border: 0; border-radius: 0; background: transparent; font-size: 13px; line-height: 1.5; outline: none; }
+/* No outline or shadow: a flat filled box. */
+.w-shell .composer-box { padding: 6px; border-radius: var(--radius); background: var(--hover); }
+.w-shell .composer.pill textarea { min-height: 30px; max-height: 120px; margin: 0; padding: 5px 6px; border: 0; border-radius: 0; background: transparent; font-size: 13px; line-height: 20px; outline: none; }
 .w-shell .composer.pill textarea::placeholder { color: var(--muted); }
-.w-shell .composer-actions { display: flex; margin: 4px 4px 4px 0; }
-.w-shell .composer-actions button { display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; padding: 0; border: 0; background: transparent; color: var(--muted); }
-.w-shell .composer-actions button:hover { background: var(--hover); }
-.w-shell .composer-send { display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; margin-left: 8px; padding: 0; background: var(--accent); color: var(--accent-text); border: 0; border-radius: var(--radius-sm); }
-.w-shell .composer-send:hover { background: var(--accent-hover); }
-.w-shell .composer-send:disabled { opacity: 0.35; }
-.w-shell .composer-files { margin-bottom: 8px; }
-.w-shell .composer-files .chip { border-color: var(--border); border-radius: var(--radius-xs); background: var(--bg); font-size: 12px; }
+.w-shell .composer-plus { width: 30px; height: 30px; border-radius: var(--radius-xs); background: transparent; color: var(--muted); }
+.w-shell .composer-plus:hover:not(:disabled), .w-shell .composer-plus.active { background: var(--hover); color: var(--text); }
+.w-shell .composer-send { width: 30px; height: 30px; border-radius: var(--radius-xs); background: var(--accent); color: var(--accent-text); }
+.w-shell .composer-send:hover:not(:disabled) { background: var(--accent-hover); }
+.w-shell .composer.pill .composer-send:disabled { opacity: 1; background: var(--border); color: var(--muted); }
+.w-shell .composer-file { border-radius: var(--radius-xs); background: var(--surface); box-shadow: 0 0 0 1px var(--border); color: var(--text-soft); }
+.w-shell .composer-menu { left: 16px; right: 16px; bottom: calc(100% - 6px); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), 0 1px 3px rgb(0 0 0 / 0.06); }
+.w-shell .composer-menu-glide { border-radius: var(--radius-xs); background: var(--hover); }
+.w-shell .composer-menu button { border-radius: var(--radius-xs); color: var(--text); }
+.w-shell .composer-menu-icon { color: var(--text-soft); }
 .w-shell .composer-shot { border-color: var(--border); border-radius: var(--radius-md); background: var(--quote); }
 .w-shell .composer-shot-actions button { padding: 5px 9px; font-size: 12px; }
 .w-shell .composer-shot-actions button:not(.ghost) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
@@ -245,27 +279,32 @@ html.bar body {
 .b-pill::before { content: ""; position: absolute; inset: 0px; border-radius: inherit; pointer-events: none; z-index: 0; opacity: 0.15; mix-blend-mode: overlay; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.5' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E"); }
 .b-pill > * { position: relative; z-index: 1; }
 .b-pill .composer { border: 0; background: transparent; padding: 0; }
-.b-pill .composer-row { display: flex; align-items: center; gap: 0; width: 100%; min-height: 48px; border-radius: 24px; }
-.b-pill textarea { flex: 1 1 0%; min-width: 0; margin: 0; padding: 8px 16px; border: 0; border-radius: 0; outline: none; background: transparent; color: rgb(20, 22, 26); font: 14px/150% system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; max-height: 154px; resize: none; }
+.b-pill .composer-box { padding: 8px; min-height: 48px; justify-content: center; }
+.b-pill textarea { min-height: 32px; margin: 0; padding: 6px 8px; border: 0; border-radius: 0; outline: none; background: transparent; color: rgb(20, 22, 26); font: 14px/20px system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; max-height: 154px; }
 .b-pill textarea:focus { outline: none; }
 .b-pill textarea::placeholder { color: rgb(108, 111, 116); opacity: 1; }
 .b-pill:not(.open) textarea { opacity: 0; }
 .b-hint { position: absolute; top: 13px; left: 16px; right: 60px; height: 20px; overflow: hidden; pointer-events: none; user-select: none; white-space: nowrap; font-size: 14px; line-height: 150%; color: rgb(108, 111, 116); mask-image: linear-gradient(to right, black 85%, transparent 100%); }
 .b-hint-text { line-height: 20px; animation: b-fade 300ms ease-out; }
 @keyframes b-fade { from { opacity: 0; } to { opacity: 1; } }
-.b-pill .composer-actions { display: flex; align-items: center; gap: 8px; margin-right: 8px; animation: 300ms cubic-bezier(0.4, 0, 0.2, 1) 0s 1 normal both running b-fade; }
-.b-pill:not(.open) .composer-actions { display: none; }
-.b-pill .composer-actions button { color: rgb(20, 22, 26); display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border-radius: 16px; opacity: 1; background: transparent; transition: background-color 200ms; }
-.b-pill .composer-actions button:hover { background-color: rgba(9, 14, 21, 0.1); }
-.b-pill .composer-actions button:active { background-color: rgba(9, 14, 21, 0.2); }
-.b-pill .composer-send { flex-shrink: 0; margin: 8px 8px 8px 4px; height: 32px; width: 32px; padding: 0; border-radius: 16px; border: none; display: flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-text); transition: color 0.2s, background-color 0.2s, box-shadow 0.2s ease-in-out; }
+/* Closed, the bar is the hint and Send; "+" fades in when it opens. */
+.b-pill:not(.open) .composer-plus { visibility: hidden; }
+.b-pill.open .composer-plus { animation: 300ms cubic-bezier(0.4, 0, 0.2, 1) both b-fade; }
+.b-pill .composer-plus { width: 32px; height: 32px; border-radius: 16px; background: transparent; color: rgb(20, 22, 26); }
+.b-pill .composer-plus:hover:not(:disabled), .b-pill .composer-plus.active { background-color: rgba(9, 14, 21, 0.1); }
+.b-pill .composer-send { height: 32px; width: 32px; border-radius: 16px; background: var(--accent); color: var(--accent-text); }
 .b-pill .composer-send:hover:not(:disabled) { opacity: 0.9; }
 .b-pill .composer-send:focus { box-shadow: rgba(0, 0, 0, 0.3) 0px 0px 1px 2px; }
 .b-pill .composer-send:focus:not(:focus-visible) { box-shadow: none; }
-.b-pill .composer-send:disabled { opacity: 1; border-radius: 9999px; cursor: default; background-color: rgba(9, 14, 21, 0.1); color: rgb(108, 111, 116); }
-.b-pill .composer-files { margin: 10px 16px 0; }
+.b-pill .composer-send:disabled { opacity: 1; cursor: default; background-color: rgba(9, 14, 21, 0.1); color: rgb(108, 111, 116); }
+.b-pill .composer-file { border-radius: 13px; background: rgba(9, 14, 21, 0.06); color: rgb(20, 22, 26); }
+.b-pill .composer-files { padding: 2px 4px 0; }
+/* The pill clips its children, so the menu sits in it, over the box. */
+.b-pill .composer-menu { position: relative; margin: 8px 8px 0; color: rgb(20, 22, 26); }
+.b-pill .composer-menu-glide { border-radius: 12px; background: rgba(9, 14, 21, 0.06); }
+.b-pill .composer-menu button { border-radius: 12px; color: inherit; }
 .b-pill .composer-shot { margin: 10px 10px 0; }
-@media (prefers-reduced-motion: reduce) { .b-chip, .b-log .msg.own, .b-hint-text, .b-pill .composer-actions { animation: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .b-chip, .b-log .msg.own, .b-hint-text, .b-pill .composer-plus { animation: none; opacity: 1; } }
 
 /* ---------- AI answers (web/widget/answer.tsx) ----------
    Words resolve out of a blur as they stream; [n] citations are inline source chips (favicon +
