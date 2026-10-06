@@ -7,6 +7,7 @@ import { cn } from "cn"
  * scrolls both when its root gets a height from a grid/flex parent and when it only has a
  * max-height (popovers, dialogs). Children sit in Base UI's Content element, whose resizes
  * update the scrollbar (content that loads later); put their flex/grid layout on `contentClassName`.
+ * Vertical only: content is as wide as the viewport.
  */
 function ScrollArea({
   className,
@@ -31,7 +32,9 @@ function ScrollArea({
         {...viewportProps}
         className="min-h-0 w-full flex-auto rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
       >
-        <ScrollAreaPrimitive.Content data-slot="scroll-area-content" className={contentClassName}>
+        {/* Base UI sizes Content to fit-content for horizontal scrolling; we only scroll vertically,
+            so children get the viewport's width (otherwise wide selects push the content past it). */}
+        <ScrollAreaPrimitive.Content data-slot="scroll-area-content" className={contentClassName} style={{ minWidth: 0 }}>
           {children}
         </ScrollAreaPrimitive.Content>
       </ScrollAreaPrimitive.Viewport>

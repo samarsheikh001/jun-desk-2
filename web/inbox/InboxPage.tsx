@@ -176,7 +176,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
           <Button variant="outline" size="sm" aria-label="Dismiss" onClick={() => setToast(null)}>×</Button>
         </div>
       )}
-      <ScrollArea render={<aside />} className="conv-list" contentClassName="conv-list-body">
+      <aside className="conv-list">
         <div className="conv-filters">
         <Input
           ref={searchInput}
@@ -249,6 +249,8 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
           <NativeSelectOption value="bad">Rated 👎 Bad</NativeSelectOption>
         </NativeSelect>
         </div>
+        {/* Only the conversations scroll; the filters above keep their place. */}
+        <ScrollArea className="conv-list-scroll" contentClassName="conv-list-body">
         {list === null || shown === null ? (
           <p className="muted small pad">Loading…</p>
         ) : shown.length === 0 && search.trim() ? (
@@ -290,7 +292,8 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
             ))}
           </ul>
         )}
-      </ScrollArea>
+        </ScrollArea>
+      </aside>
       {conversationId ? (
         <Thread
           key={conversationId}
