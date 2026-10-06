@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 
 type ProviderId = "openai" | "workers-ai" | "chatgpt";
-type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge";
+type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge" | "suggestions";
 
 interface AiState {
   settings: { enabled: boolean; provider: ProviderId; model: string | null; models: Partial<Record<AiJob, string>>; instructions: string; monthlyReplyCap: number };
@@ -33,6 +33,7 @@ const JOBS: { job: AiJob; label: string; hint: string }[] = [
   { job: "draft", label: "Issue drafts", hint: "Bug reports written from a conversation." },
   { job: "topics", label: "Topic labels", hint: "Fast job: labels for Reports." },
   { job: "judge", label: "Eval grading", hint: "Checks eval replies against your criteria." },
+  { job: "suggestions", label: "Suggested questions", hint: "Drafts the widget's questions from your knowledge (Appearance)." },
 ];
 // "Suggested for ChatGPT": the small model for fast jobs, the workspace model for the rest.
 const CHATGPT_FAST_MODEL = "gpt-6-luna";

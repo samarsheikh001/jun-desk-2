@@ -16,9 +16,10 @@ export const DEFAULT_MODELS: Record<ProviderId, string> = {
 /**
  * Every AI call names its job. `answer`: visitor replies (runAgent, live and in evals);
  * `brief`: handoff brief; `nudge`: nudges and AI openers; `draft`: issue drafts;
- * `topics`: topic labels; `judge`: eval grading.
+ * `topics`: topic labels; `judge`: eval grading; `suggestions`: the widget's suggested
+ * questions drafted from the knowledge base (W-15).
  */
-export const AI_JOBS = ["answer", "brief", "nudge", "draft", "topics", "judge"] as const;
+export const AI_JOBS = ["answer", "brief", "nudge", "draft", "topics", "judge", "suggestions"] as const;
 export type AiJob = (typeof AI_JOBS)[number];
 export type JobModels = Partial<Record<AiJob, string>>;
 

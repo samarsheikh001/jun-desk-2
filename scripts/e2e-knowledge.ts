@@ -1,7 +1,8 @@
 // End-to-end test of K-02 (files in the knowledge base) against a running dev server: upload
 // Markdown, text, DOCX and PDF fixtures (scripts/fixtures/kb), see them indexed and searchable,
 // the AI answers from one in a widget chat (E2E_AI_PROVIDER, default ChatGPT), limits and roles,
-// and delete. PDFs are converted by Workers AI (toMarkdown), so this needs Cloudflare access.
+// W-15 suggested questions drafted from the indexed knowledge, and delete. PDFs are converted by
+// Workers AI (toMarkdown), so this needs Cloudflare access.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -60,6 +61,20 @@ await step("owner signs in, a teammate (agent role) joins, the AI is on", async 
   assert.equal((await teammate.register(`/invites/${token}`, new SoftAuthenticator(), { name: `Kim ${run}`, email: `kim-${run}@acme.test` })).status, 200);
   const ai = await owner.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: AI_PROVIDER, model: null, monthlyReplyCap: 1_000_000 } });
   assert.equal(ai.status, 200, JSON.stringify(ai.json));
+});
+
+const draftSuggestions = (client: Client) => client.call(`/workspaces/${workspaceId}/inbox/suggestions/draft`, { body: {} });
+
+await step("W-15: drafting suggested questions needs knowledge (a fresh desk gets a clear 400)", async () => {
+  // Only checkable on a fresh database: a rerun keeps the files a previous run left indexed.
+  if ((await sources()).some((s) => s.chunkCount > 0)) {
+    console.log("    skipped: knowledge from an earlier run is still indexed");
+    return;
+  }
+  const res = await draftSuggestions(owner);
+  assert.equal(res.status, 400, JSON.stringify(res.json));
+  assert.equal(res.json.error.code, "no_knowledge");
+  assert.match(res.json.error.message, /knowledge source/i);
 });
 
 await step("only owners and admins upload; signed-out requests are refused", async () => {
@@ -144,6 +159,24 @@ await step("search finds each file's content", async () => {
     // PDF pages become sections (toMarkdown's file-name and "Contents" wrappers are dropped).
     if (file.name.endsWith(".pdf")) assert.equal(hit.heading, "Page 1");
   }
+});
+
+await step("W-15: the AI drafts up to 4 suggested questions from the knowledge, without saving them; owners and admins only", async () => {
+  assert.equal((await draftSuggestions(teammate)).status, 403);
+  assert.equal((await draftSuggestions(new Client())).status, 401);
+  const usage = async () => (await owner.call(`/workspaces/${workspaceId}/ai`)).json.usage as { inputTokens: number };
+  const before = (await owner.call(`/workspaces/${workspaceId}/inbox`)).json.inbox.settings.suggestions;
+  const usageBefore = await usage();
+  const res = await draftSuggestions(owner);
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+  const suggestions = res.json.suggestions as unknown[];
+  console.log(`    drafted: ${JSON.stringify(suggestions)}`);
+  assert.ok(Array.isArray(suggestions) && suggestions.length >= 1 && suggestions.length <= 4, JSON.stringify(res.json));
+  for (const q of suggestions) assert.ok(typeof q === "string" && q.trim() === q && q.length > 0 && q.length <= 80, JSON.stringify(q));
+  assert.equal(new Set(suggestions.map((q) => (q as string).toLowerCase())).size, suggestions.length, "no duplicates");
+  // Nothing saved: the widget's questions only change when an admin saves them.
+  assert.deepEqual((await owner.call(`/workspaces/${workspaceId}/inbox`)).json.inbox.settings.suggestions, before);
+  assert.ok((await usage()).inputTokens > usageBefore.inputTokens, "input tokens recorded");
 });
 
 await step("re-index (and a rename) indexes again; non-admins can't", async () => {

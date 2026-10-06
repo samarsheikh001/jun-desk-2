@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { AiAction, ConversationStatus } from "../../shared/protocol.ts";
+import { draftSuggestions } from "../ai/suggestions.ts";
 import { requireUser } from "../auth/session.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
 import { loadDebugContext, loadIssues, loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
@@ -38,6 +39,7 @@ const agent = (c: AppContext): Participant => ({ role: "agent", userId: c.get("u
 
 export const conversations = new Hono<AppEnv>();
 conversations.use("/workspaces/:id/inbox", requireUser);
+conversations.use("/workspaces/:id/inbox/suggestions/draft", requireUser);
 conversations.use("/workspaces/:id/conversations", requireUser);
 conversations.use("/workspaces/:id/files", requireUser);
 conversations.use("/workspaces/:id/ws", requireUser);
@@ -102,6 +104,31 @@ conversations.patch("/workspaces/:id/inbox", async (c) => {
   }
   await c.env.DB.prepare("UPDATE inboxes SET settings = ? WHERE id = ?").bind(JSON.stringify(settings), inbox.id).run();
   return c.json({ settings });
+});
+
+// W-15: suggested questions drafted from the knowledge base (owners/admins). Not saved: the
+// Appearance page puts them in its draft for the admin to edit and save.
+const SUGGESTION_SKIPS = {
+  no_knowledge: "Add a knowledge source first (Knowledge page), then draft questions from it.",
+  ai_off: "Turn on the AI assistant first (Settings → AI assistant).",
+  cap_reached: "The monthly AI cap is reached, so the AI can't draft questions until next month.",
+} as const;
+
+conversations.post("/workspaces/:id/inbox/suggestions/draft", async (c) => {
+  const workspaceId = c.req.param("id");
+  const role = await c.env.DB.prepare("SELECT role FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, c.get("user").id).first<{ role: string }>();
+  if (!role) throw new HttpError(404, "not_found", "Workspace not found.");
+  if (role.role === "agent") throw new HttpError(403, "forbidden", "Only owners and admins can change this.");
+  let draft: Awaited<ReturnType<typeof draftSuggestions>>;
+  try {
+    draft = await draftSuggestions(c.env, workspaceId);
+  } catch (error) {
+    console.warn("suggested questions draft failed:", (error as Error).message);
+    throw new HttpError(502, "ai_failed", "The AI couldn't draft questions just now (it failed or took too long). Try again in a minute.");
+  }
+  if ("skipped" in draft) throw new HttpError(400, draft.skipped, SUGGESTION_SKIPS[draft.skipped]);
+  if (!draft.suggestions.length) throw new HttpError(502, "ai_unusable", "The AI's answer had no usable questions. Try again.");
+  return c.json({ suggestions: draft.suggestions });
 });
 
 conversations.get("/workspaces/:id/conversations", async (c) => {

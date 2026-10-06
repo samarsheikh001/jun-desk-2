@@ -10,8 +10,9 @@ import {
   type Handling,
   type Message,
   type MessageMeta,
+  type Source,
 } from "../shared/protocol.ts";
-import { asksForHuman, briefPrompt, HANDOFF_MESSAGES, resolveCitations } from "./ai/agent.ts";
+import { asksForHuman, briefPrompt, HANDOFF_MESSAGES, resolveCitations, streamCitations } from "./ai/agent.ts";
 import type { ToolUser } from "./ai/config.ts";
 import { loadAgentConfig } from "./ai/config-store.ts";
 import { AiUnavailableError, completeText, createModel, loadAiSettings, type AgentModel, type AiSettings } from "./ai/providers.ts";
@@ -84,7 +85,7 @@ export class Conversation extends DurableObject<Env> {
   #ref: ConversationRef | undefined;
   #seqLoaded: Promise<void> | undefined;
   /** The AI reply being streamed right now, so late joiners can catch up. */
-  #streaming: { streamId: string; text: string } | undefined;
+  #streaming: { streamId: string; text: string; sources: Source[] } | undefined;
   #thinking = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -532,6 +533,7 @@ export class Conversation extends DurableObject<Env> {
       // Stream what the visitor may see: nothing that could be a HANDOFF line, never an ESCALATE line.
       const streamId = newId("str");
       let shown = "";
+      let cited = 0;
       const actions: Promise<void>[] = [];
       const result = await runAgent({
         env: this.env,
@@ -543,14 +545,18 @@ export class Conversation extends DurableObject<Env> {
         technical: technical.lines,
         ...(technical.timezone ? { timezone: technical.timezone } : {}),
         user,
-        onVisible: (visible) => {
-          if (shown && visible.startsWith(shown)) {
-            this.#broadcast({ type: "ai_delta", streamId, text: visible.slice(shown.length) });
+        // Citations stream already resolved (numbered by first use, with their sources).
+        onVisible: (visible, hits) => {
+          const { text, sources } = streamCitations(visible, hits);
+          if (!text || text === shown) return;
+          if (shown && text.startsWith(shown)) {
+            this.#broadcast({ type: "ai_delta", streamId, text: text.slice(shown.length), ...(sources.length !== cited ? { sources } : {}) });
           } else {
-            this.#broadcast({ type: "ai_delta", streamId, text: visible, replace: true });
+            this.#broadcast({ type: "ai_delta", streamId, text, replace: true, sources });
           }
-          shown = visible;
-          this.#streaming = { streamId, text: visible };
+          shown = text;
+          cited = sources.length;
+          this.#streaming = { streamId, text, sources };
         },
         onAction: (action) => actions.push(this.#recordAction(ref, last.seq, config.version, action)),
       });
@@ -571,7 +577,11 @@ export class Conversation extends DurableObject<Env> {
         authorName: null,
         body,
         clientMsgId: `ai:${last.seq}`, // one answer per visitor message, even if this turn is retried
-        meta: { ...(sources.length ? { sources } : {}), ...(config.version !== null ? { configVersion: config.version } : {}) },
+        meta: {
+          ...(sources.length ? { sources } : {}),
+          ...(outcome.followUps.length ? { followUps: outcome.followUps } : {}),
+          ...(config.version !== null ? { configVersion: config.version } : {}),
+        },
       });
       this.#streaming = undefined;
       this.#thinking = false;

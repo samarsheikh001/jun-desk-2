@@ -18,6 +18,8 @@ export interface Source {
 export interface MessageMeta {
   /** Knowledge the AI answer cites, in citation order ([1] = sources[0]). */
   sources?: Source[];
+  /** Questions the visitor might ask next, under an AI answer (tapping one sends it). */
+  followUps?: string[];
   /** Why the AI handed off (on handoff system messages). */
   handoffReason?: string;
   /** Agent config version that wrote an AI answer (AI-18). */
@@ -117,8 +119,11 @@ export type ConversationEvent =
   | { type: "conversation"; conversation: ConversationSummary }
   /** The AI is working on a reply ("thinking") or streaming one; text accumulates per streamId. */
   | { type: "ai_status"; state: "thinking" | "idle" }
-  /** `replace`: `text` is the whole reply so far (sent to late joiners), not an increment. */
-  | { type: "ai_delta"; streamId: string; text: string; replace?: boolean }
+  /**
+   * `replace`: `text` is the whole reply so far (sent to late joiners), not an increment.
+   * Citations arrive resolved; `sources`, when present, is every source cited so far.
+   */
+  | { type: "ai_delta"; streamId: string; text: string; replace?: boolean; sources?: Source[] }
   /** Agents only: the AI called a tool (AI-11). Details via GET /api/conversations/:id/actions. */
   | { type: "ai_action"; tool: string; status: "ok" | "error" }
   | { type: "error"; code: string; message: string; clientMsgId?: string };

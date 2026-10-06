@@ -95,6 +95,14 @@ export function AppearancePage({ workspaceId, workspaceName, canEdit }: { worksp
       setSaved((s) => ({ ...s, logoKey: r.settings.logoKey }));
     });
 
+  // W-15: the AI drafts questions from the knowledge base into the draft; nothing is saved until Save.
+  const draftSuggestions = () =>
+    run(async () => {
+      const r = await api<{ suggestions: string[] }>(`/workspaces/${workspaceId}/inbox/suggestions/draft`, { method: "POST", body: {} });
+      edit({ suggestions: r.suggestions });
+      setStatus("Drafted from your knowledge. Edit them, then Save.");
+    });
+
   const off = !canEdit || busy;
   const suggestions = draft.suggestions ?? [];
 
@@ -130,7 +138,7 @@ export function AppearancePage({ workspaceId, workspaceName, canEdit }: { worksp
                 <NativeSelectOption value="dark">Dark</NativeSelectOption>
               </NativeSelect>
             </Field>
-            <Field label="Brand colour" hint="Header, launcher, buttons and the visitor's messages. Text on it switches between dark and white to stay readable." htmlFor="appear-color">
+            <Field label="Brand colour" hint="The launcher, the card's buttons and the send button. Text on it switches between dark and white to stay readable." htmlFor="appear-color">
               <div className="appear-color">
                 <input type="color" value={look.color} disabled={off} onChange={(e) => edit({ color: e.target.value })} aria-label="Pick a brand colour" />
                 <Input id="appear-color" value={draft.color ?? APPEARANCE_DEFAULTS.color} maxLength={7} spellCheck={false} disabled={off} onChange={(e) => edit({ color: e.target.value.trim() })} aria-invalid={!/^#[0-9a-f]{6}$/i.test(draft.color ?? APPEARANCE_DEFAULTS.color)} />
@@ -182,6 +190,12 @@ export function AppearancePage({ workspaceId, workspaceName, canEdit }: { worksp
                 disabled={off}
                 onChange={(e) => edit({ suggestions: e.target.value.split("\n").slice(0, SUGGESTIONS_MAX).map((q) => q.slice(0, SUGGESTION_LIMIT)) })}
               />
+              {canEdit && (
+                <div className="appear-draft">
+                  <Button variant="outline" size="sm" disabled={busy} onClick={draftSuggestions}>Draft from your knowledge</Button>
+                  <span className="muted small">Replaces the questions above; nothing changes for visitors until you Save.</span>
+                </div>
+              )}
             </Field>
           </section>
 
@@ -196,7 +210,7 @@ export function AppearancePage({ workspaceId, workspaceName, canEdit }: { worksp
         {canEdit && (
           <div className="appear-actions">
             <Button disabled={busy || !dirty} onClick={save}>Save</Button>
-            <Button variant="outline" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, launcher: "button", csat: true })}>Reset to defaults</Button>
+            <Button variant="outline" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, launcher: APPEARANCE_DEFAULTS.launcher, csat: true })}>Reset to defaults</Button>
             <span className={error ? "error small" : "muted small"} role="status">{error ?? status ?? (dirty ? "Unsaved changes" : "")}</span>
           </div>
         )}
@@ -216,10 +230,9 @@ function Field({ label, hint, htmlFor, children }: { label: string; hint?: strin
   );
 }
 
-/** The real widget frame with the draft look, plus copies of the loader's button and greeting card. */
+/** The real widget frame with the draft look (it draws the bar and the closed card itself), plus a copy of the loader's button. */
 function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: ReturnType<typeof widgetLook>; open: boolean; onOpen: (open: boolean) => void }) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const [cardHidden, setCardHidden] = useState(false);
   // The frame asks for the look when it's ready (also after reloading itself).
   const lookRef = useRef(look);
   lookRef.current = look;
@@ -236,7 +249,7 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
         post({ type: openRef.current ? "jun:open" : "jun:close" });
       }
       if (data?.type === "jun:close") onOpen(false);
-      // The bar launcher opens itself, and sizes and clips its frame like the loader does.
+      // The bar and the card open themselves, and size and place their frame like the loader does.
       if (data?.type === "jun:open") onOpen(true);
       if (data?.type === "jun:css" && frame.current) frame.current.style.cssText = String((data as { css?: unknown }).css ?? "");
       // No host page here, so no debug context: answer at once instead of letting it time out.
@@ -248,35 +261,33 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
 
   useEffect(() => post({ type: "jun:preview", look }), [look, post]);
   useEffect(() => post({ type: open ? "jun:open" : "jun:close" }), [open, post]);
-  useEffect(() => setCardHidden(false), [look.launcher, look.greeting]);
-
   const bar = look.launcher === "bar";
-  // Leaving the bar: drop the size it gave its frame.
+  const button = look.launcher === "button";
+  // Changing the launcher, or closing a chat opened from the button: drop the size the frame gave
+  // itself (the frame sends its own again). The bar and the card keep theirs when they close: they
+  // send their closed size and clip with the close, and wiping it would leave a full, white frame.
+  const launcher = useRef(look.launcher);
   useEffect(() => {
-    if (!bar && frame.current) frame.current.style.cssText = "";
-  }, [bar]);
+    const changed = launcher.current !== look.launcher;
+    launcher.current = look.launcher;
+    if (frame.current && (changed || (button && !open))) frame.current.style.cssText = "";
+  }, [look.launcher, open, button]);
   const brand = { "--c": look.color, "--t": textOn(look.color), "--r": `${look.radius}px` } as CSSProperties;
   return (
     <div className="appear-preview" aria-label="Preview">
-      <div className={`appear-stage ${look.position} ${look.theme}`} style={brand}>
+      <div className={`appear-stage ${look.position} ${look.theme} ${look.launcher}`} style={brand}>
         <iframe
           ref={frame}
           className="appear-frame"
           title="Widget preview"
           src={`/widget?key=${encodeURIComponent(widgetKey)}&preview=1&persist=0`}
-          hidden={!open && !bar}
+          hidden={!open && button}
         />
-        {!open && look.launcher === "card" && !cardHidden && (
-          <div className="appear-card" role="dialog" aria-label="Greeting card preview">
-            <button className="appear-card-x" aria-label="Dismiss" onClick={() => setCardHidden(true)}>×</button>
-            <p>{look.greeting}</p>
-            <button className="appear-card-go" onClick={() => onOpen(true)}>Chat with us</button>
-          </div>
-        )}
-        {!bar && (
-          <button className="appear-launcher" aria-label={open ? "Close chat" : "Open chat"} aria-expanded={open} onClick={() => onOpen(!open)}>
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        {/* The open chat takes the button's corner, as on a website. */}
+        {button && !open && (
+          <button className="appear-launcher" aria-label="Open chat" aria-expanded={false} onClick={() => onOpen(true)}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z" />
             </svg>
           </button>
         )}

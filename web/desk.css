@@ -617,6 +617,7 @@ button.small:not([data-slot]) { min-height: 28px; padding: 2px 10px; font-size: 
 .appear-field > label { font-size: 14px; font-weight: 500; }
 .appear-field > p { margin: 0; font-size: 13px; color: var(--muted-foreground); }
 .appear-field [data-slot="native-select-wrapper"] { max-width: 240px; }
+.appear-draft { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .appear-logo { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .appear-logo img, .appear-logo-empty { width: 40px; height: 40px; flex: none; border-radius: calc(var(--radius) * 0.8); border: 1px solid var(--border); object-fit: cover; background: var(--muted); }
 .appear-logo input[type="file"] { flex: 1; min-width: 160px; }
@@ -631,18 +632,16 @@ button.small:not([data-slot]) { min-height: 28px; padding: 2px 10px; font-size: 
 .appear-preview { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 16px; gap: 8px; background-color: var(--muted); background-image: radial-gradient(color-mix(in oklch, var(--foreground) 15%, transparent) 1px, transparent 1px); background-size: 16px 16px; }
 .appear-note { margin: 0; text-align: center; }
 /* A stand-in for the customer's page. The frame, button and card copy public/widget.js's styles
-   (its .frame, .btn and .nudge rules) but sit inside this box instead of the viewport. */
-.appear-stage { --c: #2f5bea; --t: #fff; --r: 16px; position: relative; flex: 1; min-height: 520px; }
-.appear-frame, .appear-launcher, .appear-card { position: absolute; right: 20px; bottom: 88px; }
-.appear-stage.left > * { right: auto; left: 20px; }
-.appear-frame { width: min(380px, calc(100% - 40px)); height: min(640px, calc(100% - 108px)); border: 0; border-radius: var(--r); background: #fff; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25); }
-.appear-launcher { bottom: 20px; width: 56px; height: 56px; border: 0; border-radius: 50%; display: grid; place-items: center; background: var(--c); color: var(--t); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2); cursor: pointer; transition: transform 0.15s; }
-.appear-launcher:hover { transform: scale(1.05); }
-.appear-card { max-width: 280px; padding: 14px 16px; border-radius: var(--r); background: #fff; color: #1c1c1a; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); font: 14px/1.45 system-ui, sans-serif; }
-.appear-stage.dark .appear-card, .appear-stage.dark .appear-frame { background: #222; color: #eee; }
-.appear-card p { margin: 0 18px 10px 0; }
-.appear-card-go { border: 0; border-radius: 8px; padding: 7px 12px; background: var(--c); color: var(--t); font: 600 13px system-ui, sans-serif; cursor: pointer; }
-.appear-card-x { position: absolute; top: 6px; right: 8px; border: 0; background: none; font-size: 18px; line-height: 1; color: #6b6b66; cursor: pointer; }
+   (its .frame, .btn and .nudge rules) but sit inside this box instead of the viewport. Above the
+   settings column's scrollbar (ScrollArea's z-10), which the open bar is wide enough to overlap. */
+.appear-stage { --c: #2f5bea; --t: #fff; --r: 16px; position: relative; z-index: 20; flex: 1; min-height: 520px; }
+/* Copies of public/widget.js (D-34): the open chat takes the launcher's corner, with a soft shadow and no border. */
+.appear-frame, .appear-launcher { position: absolute; right: 22px; bottom: 22px; }
+.appear-stage.left > * { right: auto; left: 22px; }
+.appear-frame { width: min(380px, max(300px, 32vw), calc(100% - 44px)); height: min(540px, calc(100% - 44px)); max-height: calc(100% - 44px); border: 0; border-radius: var(--r); background: #fff; box-shadow: 0 8px 40px rgba(0, 0, 0, 0.16); }
+.appear-stage.dark .appear-frame { background: #171717; color: #f5f5f5; }
+.appear-stage.bar .appear-frame { box-shadow: none; }
+.appear-launcher { width: 52px; height: 52px; border: 0; border-radius: var(--r); display: grid; place-items: center; background: var(--c); color: var(--t); box-shadow: none; cursor: pointer; }
 .desk-main-body:has(> .appear-page) { height: 100%; }
 .hours-grid { display: grid; gap: 6px; }
 .hours-row input[type="time"] { width: 120px; }

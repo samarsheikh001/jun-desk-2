@@ -13,7 +13,7 @@ export const APPEARANCE_DEFAULTS = {
   /** Follows the visitor's system setting. */
   theme: "auto",
   radius: 16,
-  launcher: "button",
+  launcher: "card",
   greeting: "Hi! How can we help?",
   replyTime: "We usually reply in a few minutes",
   placeholder: "Write a message…",

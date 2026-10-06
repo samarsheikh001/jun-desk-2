@@ -231,9 +231,10 @@
   var nudged, nudgeTimer, nudgeEvent, openers; // push() and the ticker decide when (P-01)
   // The card's opener (what the chat starts with if they click it): { text, inviteId?, from?, page? }.
   var cardOpener;
-  // greeting: the W-04 greeting card, which isn't a nudge (help offers can still replace it).
-  function showCard(o, greeting) {
-    nudged = !greeting;
+  // The card launcher's frame shows the offer in its own card instead.
+  function showCard(o) {
+    nudged = 1;
+    if (wrap.classList.contains("card")) return post({ type: "jun:proactive", opener: pendingOpener = o, sessionId: sid });
     cardOpener = o;
     card.querySelector("p").textContent = o.text;
     card.querySelector(".from").textContent = o.from || "";
@@ -249,8 +250,7 @@
       if (res.show && res.text && !nudged && !open) showCard(res);
     }).catch(function () {});
   }
-  // Dismissing a card or opening the chat also retires the greeting card (W-04) for this visit.
-  function hideNudge() { card.style.display = "none"; store("jun:g", 1); }
+  function hideNudge() { card.style.display = "none"; }
 
   // ---------- launcher ----------
   var host = document.createElement("div");
@@ -259,30 +259,30 @@
   root.innerHTML =
     "<style>" +
     ":host{all:initial}.w{--c:#2f5bea;--t:#fff;visibility:hidden}.w.on{visibility:visible}" +
-    "button,.frame{border:0}button{cursor:pointer}.btn,.frame,.nudge{position:fixed;right:20px;bottom:88px;z-index:2147483000}.frame,.nudge{background:#fff;color:#1c1c1a;display:none}" +
+    "button{border:0;cursor:pointer}.btn,.frame,.nudge{position:fixed;right:22px;bottom:88px;z-index:2147483000}" +
+    // D-34: the earlier Jun Desk widget's palette and radii; the open chat has a soft shadow instead of its border.
+    ".frame,.nudge{background:#fff;color:#171717;border:1px solid #e5e5e5;border-radius:var(--r,16px);display:none}" +
     // W-04 dark theme ("auto" keeps the light card; the chat itself follows the system). Before .btn, which keeps its colours.
-    ".dark>*{background:#222;color:#eee}" +
-    ".btn{bottom:20px;width:56px;height:56px;border-radius:50%;" +
-    "background:var(--c);color:var(--t);box-shadow:0 6px 20px #0003;display:grid;place-items:center;transition:transform .15s}" +
-    ".btn:hover{transform:scale(1.05)}" +
+    ".dark>*{background:#171717;color:#f5f5f5;border-color:#2f2f2f}" +
+    ".btn{bottom:22px;width:52px;height:52px;border-radius:var(--r,16px);background:var(--c);color:var(--t);display:grid;place-items:center}" +
     ".badge{position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#e5484d;" +
     "color:#fff;font:600 11px/18px system-ui,sans-serif;display:none}" +
-    ".frame{width:380px;height:min(640px,100vh - 120px);border-radius:var(--r,16px);box-shadow:0 12px 40px rgba(0,0,0,.25)}" +
-    ".nudge{max-width:280px;padding:14px 16px;border-radius:var(--r,16px);" +
-    "box-shadow:0 10px 30px rgba(0,0,0,.18);font:14px/1.45 system-ui,sans-serif}" +
+    // The open chat takes the launcher's corner (the button stays under it); phones get the whole screen.
+    ".frame,.nudge{width:min(380px,max(300px,32vw))}.frame{bottom:22px;height:min(540px,100dvh - 44px);border:0;box-shadow:0 8px 40px rgba(0,0,0,.16)}" +
+    ".nudge{padding:16px 18px;font:14px/1.6 Arial,sans-serif}" +
     // Left side (W-04); the full-screen frame on phones wins over it (same specificity, later).
-    ".left>*{right:auto;left:20px}" +
-    "@media(max-width:480px){.frame{right:0;left:0;bottom:0;width:100vw;height:100vh;border-radius:0}}" +
-    // W-04 "bar" launcher (D-32): no button; the frame, always shown, draws the bar itself.
-    ".bar .btn{display:none}.bar .frame{display:block}" +
-    ".nudge p{margin:0 18px 10px 0}.from{font-size:12px;color:#6b6b66;margin-bottom:4px}.go{border-radius:8px;padding:7px 12px;background:var(--c);color:var(--t);font:600 13px system-ui,sans-serif}" +
-    ".x{position:absolute;top:6px;right:8px;background:none;font-size:18px;line-height:1;color:#6b6b66}" +
+    ".left>*{right:auto;left:22px}" +
+    "@media(max-width:768px){.frame{inset:0;width:100%;height:100dvh;border-radius:0}}" +
+    // W-04 "bar" (D-32) and "card" (D-34) launchers: no button; the frame draws them and says where it goes (jun:css).
+    ".bar .btn,.card .btn{display:none}.bar .frame{display:block;box-shadow:none}" +
+    ".nudge p{margin:0 24px 14px 0}.from{font-size:12px;color:#737373}.go{width:100%;padding:8px 6px;border-radius:calc(var(--r,16px)*.625);background:var(--c);color:var(--t);font:12px Arial,sans-serif}" +
+    ".x{position:absolute;top:12px;right:12px;width:30px;height:30px;background:none;font-size:23px;font-weight:300;color:#737373}" +
     "</style><div class=\"w\">" +
     '<div class="nudge" role="dialog" aria-label="Need help?"><button class="x" aria-label="Dismiss">×</button>' +
     '<div class="from"></div><p></p><button class="go">Chat with us</button></div>' +
     '<button class="btn" aria-label="Open chat" aria-expanded="false">' +
-    '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="badge"></span></button><iframe class="frame" title="Chat" allow="clipboard-write; display-capture"></iframe></div>';
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z"/></svg><span class="badge"></span></button><iframe class="frame" title="Chat" allow="clipboard-write; display-capture"></iframe></div>';
 
   var wrap = root.querySelector(".w"), card = root.querySelector(".nudge");
   var button = root.querySelector(".btn");
@@ -295,11 +295,10 @@
       // Readable text on that colour: the desk works it out (textOn), for data-color too (?color=).
       wrap.style.setProperty("--t", cfg.text);
       openers = !open && cfg.openers;
-      // W-04: side, corner rounding, dark theme, and the greeting card launcher (until dismissed).
-      wrap.classList.add(cfg.position, cfg.theme, cfg.launcher); // "left", "dark", "bar"
-      if (cfg.launcher == "bar") load();
+      // W-04: side, corner rounding, dark theme, and the launcher (the bar and the card load the frame now).
+      wrap.classList.add(cfg.position, cfg.theme, cfg.launcher); // "left", "dark", "bar", "card"
+      if (cfg.launcher != "button") load();
       wrap.style.setProperty("--r", cfg.radius + "px");
-      if (cfg.launcher == "card" && !open && !nudged && !store("jun:g")) showCard({ text: cfg.greeting, page: 1 }, 1);
     }
     wrap.classList.add("on");
   }

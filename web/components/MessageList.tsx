@@ -59,6 +59,17 @@ function Sources({ sources }: { sources: Source[] | undefined }) {
   );
 }
 
+/** An AI answer, streaming or saved, for a list that draws its own (the widget). */
+export interface AiAnswerView {
+  body: string;
+  sources: Source[];
+  followUps: string[];
+  /** Still being written. */
+  streaming: boolean;
+  /** The newest thing in the thread (follow-ups only make sense there). */
+  latest: boolean;
+}
+
 /**
  * Chat transcript. `mine` decides which messages sit on the right: agents see their
  * team's (and the AI's) messages as theirs; visitors see their own.
@@ -75,6 +86,7 @@ export function MessageList({
   onRetry,
   onDismiss,
   mentionNames = [],
+  renderAi,
 }: {
   messages: Message[];
   pending: PendingMessage[];
@@ -82,73 +94,118 @@ export function MessageList({
   authorLabel: (m: Message) => string;
   otherReadSeq: number;
   typing: { name: string | null } | null;
-  aiStream?: { text: string } | null;
+  aiStream?: { text: string; sources?: Source[] } | null;
   aiThinking?: boolean;
   onRetry?: (p: PendingMessage) => void;
   onDismiss?: (p: PendingMessage) => void;
   /** Teammates' names, to highlight @mentions in notes. */
   mentionNames?: string[];
+  /** Draws AI answers (and the one streaming) instead of the plain bubble. */
+  renderAi?: (answer: AiAnswerView) => ReactNode;
 }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   }, [messages.length, pending.length, typing, aiStream?.text, aiThinking]);
+  // A custom AI renderer reveals text on its own clock: keep following it while the reader is at the bottom.
+  const list = useRef<HTMLDivElement>(null);
+  const customAi = Boolean(renderAi);
+  useEffect(() => {
+    const el = list.current;
+    if (!customAi || !el || typeof ResizeObserver === "undefined") return;
+    let scroller: HTMLElement | null = el.parentElement;
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+    if (!scroller) return;
+    const box = scroller;
+    const observer = new ResizeObserver(() => {
+      if (box.scrollHeight - box.scrollTop - box.clientHeight < 160) box.scrollTop = box.scrollHeight;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [customAi]);
 
   // "Seen" goes under the last of my messages the other side has read.
   const lastSeenSeq = [...messages].reverse().find((m) => mine(m) && m.authorType !== "system" && !m.internal && m.seq <= otherReadSeq)?.seq;
   const aiSide = mine({ authorType: "ai" } as Message) ? "own" : "other";
 
-  return (
-    <div className="messages">
-      {messages.map((m, i) => {
-        if (m.authorType === "system") {
-          return (
-            <div key={m.id} className={`system-msg ${m.internal ? "internal" : ""}`}>
-              {m.internal && <span className="tag">Note · only your team sees this</span>}
-              <div>{m.body}</div>
-              {m.meta.issue && <a href={m.meta.issue.url} target="_blank" rel="noreferrer">Open {m.meta.issue.key} in {m.meta.issue.provider === "linear" ? "Linear" : "GitHub"}</a>}
-            </div>
-          );
-        }
-        const own = mine(m);
-        const prev = messages[i - 1];
-        const showAuthor = m.internal || !prev || prev.internal || prev.authorType !== m.authorType || prev.authorId !== m.authorId;
-        return (
-          <div key={m.id} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""} ${m.internal ? "note" : ""}`}>
-            {showAuthor && <div className="author muted small">{m.internal && <span className="tag note-tag">Note</span>}{authorLabel(m)} · {formatTime(m.createdAt)}</div>}
-            {m.body && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : m.body}</div>}
-            <Attachments attachments={m.attachments} />
-            {m.authorType === "ai" && <Sources sources={m.meta.sources} />}
-            {m.seq === lastSeenSeq && <div className="seen muted small">Seen</div>}
-          </div>
-        );
-      })}
-      {pending.map((p) => (
-        <div key={p.clientMsgId} className={`msg own pending ${p.internal ? "note" : ""}`}>
-          {p.body && <div className="bubble">{p.body}</div>}
-          <Attachments attachments={p.attachments} />
-          {p.failed ? (
-            <div className="error small">
-              {p.failed} {onRetry && <button className="link" onClick={() => onRetry(p)}>Retry</button>}{" "}
-              {onDismiss && <button className="link" onClick={() => onDismiss(p)}>Discard</button>}
-            </div>
-          ) : (
-            <div className="muted small">Sending…</div>
-          )}
+  // One keyed list: an AI reply keeps its key (`ai:<seq>`, the answer's clientMsgId) from its
+  // first streamed word to the saved message, so a custom renderer isn't remounted in between.
+  const lastVisitorSeq = [...messages].reverse().find((m) => m.authorType === "visitor")?.seq;
+  const streamKey = lastVisitorSeq !== undefined && !messages.some((m) => m.clientMsgId === `ai:${lastVisitorSeq}`) ? `ai:${lastVisitorSeq}` : "ai:stream";
+  const last = messages.at(-1);
+  const rows: ReactNode[] = messages.map((m, i) => {
+    if (m.authorType === "system") {
+      return (
+        <div key={m.id} className={`system-msg ${m.internal ? "internal" : ""}`}>
+          {m.internal && <span className="tag">Note · only your team sees this</span>}
+          <div>{m.body}</div>
+          {m.meta.issue && <a href={m.meta.issue.url} target="_blank" rel="noreferrer">Open {m.meta.issue.key} in {m.meta.issue.provider === "linear" ? "Linear" : "GitHub"}</a>}
         </div>
-      ))}
-      {aiStream?.text ? (
-        <div className={`msg ${aiSide} ai streaming`}>
+      );
+    }
+    const own = mine(m);
+    const prev = messages[i - 1];
+    const showAuthor = m.internal || !prev || prev.internal || prev.authorType !== m.authorType || prev.authorId !== m.authorId;
+    if (m.authorType === "ai" && renderAi) {
+      return (
+        <div key={m.clientMsgId} className={`msg ${own ? "own" : "other"} ai`}>
+          {renderAi({ body: m.body, sources: m.meta.sources ?? [], followUps: m.meta.followUps ?? [], streaming: false, latest: m === last && pending.length === 0 && !aiStream?.text })}
+          <Attachments attachments={m.attachments} />
+        </div>
+      );
+    }
+    return (
+      <div key={m.authorType === "ai" ? m.clientMsgId : m.id} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""} ${m.internal ? "note" : ""}`}>
+        {showAuthor && <div className="author muted small">{m.internal && <span className="tag note-tag">Note</span>}{authorLabel(m)} · {formatTime(m.createdAt)}</div>}
+        {m.body && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : m.body}</div>}
+        <Attachments attachments={m.attachments} />
+        {m.authorType === "ai" && <Sources sources={m.meta.sources} />}
+        {m.seq === lastSeenSeq && <div className="seen muted small">Seen</div>}
+      </div>
+    );
+  });
+  for (const p of pending) {
+    rows.push(
+      <div key={p.clientMsgId} className={`msg own pending ${p.internal ? "note" : ""}`}>
+        {p.body && <div className="bubble">{p.body}</div>}
+        <Attachments attachments={p.attachments} />
+        {p.failed ? (
+          <div className="error small">
+            {p.failed} {onRetry && <button className="link" onClick={() => onRetry(p)}>Retry</button>}{" "}
+            {onDismiss && <button className="link" onClick={() => onDismiss(p)}>Discard</button>}
+          </div>
+        ) : (
+          <div className="muted small">Sending…</div>
+        )}
+      </div>,
+    );
+  }
+  if (aiStream?.text) {
+    rows.push(
+      renderAi ? (
+        <div key={streamKey} className={`msg ${aiSide} ai streaming`}>
+          {renderAi({ body: aiStream.text, sources: aiStream.sources ?? [], followUps: [], streaming: true, latest: true })}
+        </div>
+      ) : (
+        <div key={streamKey} className={`msg ${aiSide} ai streaming`}>
           <div className="author muted small">AI assistant · writing…</div>
-          <div className="bubble">{aiStream.text}</div>
+          <div className="bubble">{withCitations(aiStream.text, aiStream.sources)}</div>
         </div>
-      ) : aiThinking ? (
-        <div className={`msg ${aiSide} ai`}>
-          <div className="bubble typing" aria-label="The AI assistant is writing a reply">
-            <span /><span /><span />
-          </div>
+      ),
+    );
+  } else if (aiThinking) {
+    rows.push(
+      <div key="ai:thinking" className={`msg ${aiSide} ai`}>
+        <div className="bubble typing" aria-label="The AI assistant is writing a reply">
+          <span /><span /><span />
         </div>
-      ) : null}
+      </div>,
+    );
+  }
+
+  return (
+    <div className="messages" ref={list}>
+      {rows}
       {typing && (
         <div className="msg other">
           <div className="bubble typing" aria-label={`${typing.name ?? "Someone"} is typing`}>

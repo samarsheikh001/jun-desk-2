@@ -19,8 +19,8 @@ export interface RunInput {
   config: AgentConfig;
   history: Message[];
   technical?: string[];
-  /** Called with what the visitor may see so far (control lines held back). */
-  onVisible?: (visible: string) => void;
+  /** Called with what the visitor may see so far (control lines held back), and the knowledge it may cite. */
+  onVisible?: (visible: string, hits: SearchHit[]) => void;
   onAction?: (action: ToolAction) => void;
   /** Use tools' mock responses (evals). */
   mockTools?: boolean;
@@ -112,7 +112,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
       const visible = streamVisible(raw);
       if (visible && visible !== shown) {
         shown = visible;
-        input.onVisible?.(visible);
+        input.onVisible?.(visible, hits);
       }
     } else if (part.type === "error") {
       throw part.error instanceof Error ? part.error : new Error(String(part.error));

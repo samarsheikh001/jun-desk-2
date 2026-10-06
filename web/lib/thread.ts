@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Attachment, ClientEvent, ConversationEvent, ConversationSummary, Message } from "../../shared/protocol.ts";
+import type { Attachment, ClientEvent, ConversationEvent, ConversationSummary, Message, Source } from "../../shared/protocol.ts";
 import { LiveSocket, type SocketState } from "./socket.ts";
 
 export interface PendingMessage {
@@ -30,7 +30,7 @@ export function useThread(options: {
   const [otherReadSeq, setOtherReadSeq] = useState(0);
   const [state, setState] = useState<SocketState>("connecting");
   /** The AI's reply as it streams in, and whether it's working on one. */
-  const [aiStream, setAiStream] = useState<{ streamId: string; text: string } | null>(null);
+  const [aiStream, setAiStream] = useState<{ streamId: string; text: string; sources: Source[] } | null>(null);
   const [aiThinking, setAiThinking] = useState(false);
   const socket = useRef<LiveSocket<ConversationEvent> | null>(null);
   const lastSeq = useRef(0);
@@ -75,8 +75,8 @@ export function useThread(options: {
         } else if (event.type === "ai_delta") {
           setAiStream((current) =>
             current?.streamId === event.streamId && !event.replace
-              ? { streamId: event.streamId, text: current.text + event.text }
-              : { streamId: event.streamId, text: event.text },
+              ? { streamId: event.streamId, text: current.text + event.text, sources: event.sources ?? current.sources }
+              : { streamId: event.streamId, text: event.text, sources: event.sources ?? [] },
           );
         } else if (event.type === "typing" && event.authorType === options.other) {
           clearTimeout(typingTimer.current);

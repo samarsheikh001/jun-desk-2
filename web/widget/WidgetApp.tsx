@@ -5,7 +5,9 @@ import { radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts"
 import { Composer } from "../components/Composer.tsx";
 import { MessageList } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
+import { AiAnswer } from "./answer.tsx";
 import { BarHead, Chips, Glass, Typewriter, useBarFrame } from "./bar.tsx";
+import { Badge, MiniCard, useCardFrame } from "./card.tsx";
 
 // The chat UI inside the widget iframe. The visitor's token is created only when they
 // first send something, so just opening the chat stores nothing in their browser.
@@ -164,9 +166,19 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const [draft, setDraft] = useState<WidgetLook | null>(null);
   const config = useMemo(() => (saved && draft ? { ...saved, ...draft } : saved), [saved, draft]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  /** `first`: a suggested question the visitor tapped, sent as the new chat's first message. */
-  const [view, setView] = useState<{ kind: "home" } | { kind: "thread"; id: string | null; opener?: Opener; first?: string }>({ kind: "home" });
+  /**
+   * The chat opens on the ongoing conversation, or a new one; `list` is the visitor's earlier
+   * conversations. `first`: a suggested question the visitor tapped, sent as the new chat's first
+   * message; `human`: they asked for the team ("Contact the team").
+   */
+  const [view, setView] = useState<{ kind: "list" } | { kind: "thread"; id: string | null; opener?: Opener; first?: string; human?: boolean }>({ kind: "thread", id: null });
   const [open, setOpen] = useState(window.parent === window);
+  /** D-34: the panel's Expand (740px tall), the card hidden for this page (then a "Chat with us" pill), the suggestions dismissed. */
+  const [grown, setGrown] = useState(false);
+  const [miniHidden, setMiniHidden] = useState(false);
+  const [suggestHidden, setSuggestHidden] = useState(false);
+  const closedRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   /** The loader's live session (V-01), sent with a new conversation so the visitor list can show it. */
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -221,7 +233,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           );
         } else {
           api.forget();
-          setView({ kind: "home" });
+          setView({ kind: "thread", id: null });
           setIdentityVersion((n) => n + 1);
         }
       }
@@ -260,6 +272,28 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     setConversations((list) => [c, ...list.filter((x) => x.id !== c.id)].sort((a, b) => b.lastMessageAt - a.lastMessageAt));
   }, []);
 
+  // W-04 card launcher (D-34): the frame draws the closed card itself, and sizes itself to it.
+  const cardLauncher = Boolean(config && config.launcher === "card" && window.parent !== window);
+  const framed = Boolean(config && !asBar(config) && window.parent !== window);
+  useCardFrame(cardLauncher, config?.position ?? "right", open && framed, grown && framed, closedRef, miniHidden);
+  useEffect(() => {
+    document.documentElement.classList.toggle("mini", cardLauncher && !open);
+  }, [cardLauncher, open]);
+  // The panel's entrance (the reference's `enter .25s ease-out`), drawn here to keep the loader small.
+  useEffect(() => {
+    if (!framed || !open || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    shellRef.current?.animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 250, easing: "ease-out" });
+  }, [framed, open]);
+  // Esc closes the chat, as it did.
+  useEffect(() => {
+    if (!framed || !open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") postToHost({ type: "jun:close" });
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [framed, open]);
+
   if (error) return <div className="w-shell"><p className="error pad">{error}</p></div>;
   if (!config) return <div className="w-shell" />;
 
@@ -274,7 +308,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     onStarted: (c: ConversationSummary) => {
       upsert(c);
       // Keep the proactive opener at the top of the conversation it started.
-      setView((v) => ({ kind: "thread", id: c.id, ...(v.kind === "thread" && v.opener ? { opener: v.opener } : {}) }));
+      setView((v) => ({ kind: "thread", id: c.id, ...(v.kind === "thread" && v.opener ? { opener: v.opener } : {}), ...(v.kind === "thread" && v.human ? { human: true } : {}) }));
     },
     onConversation: upsert,
   };
@@ -304,50 +338,89 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     );
   }
 
+  const sub =
+    config.hours && !config.hours.open
+      ? `We're away${config.hours.back ? ` · back ${config.hours.back}` : ""}${config.ai ? ". The assistant can still help." : ""}`
+      : config.replyTime;
+  const opener = view.kind === "thread" ? view.opener : undefined;
+  /** The conversation the chat would show: the one on screen, else the ongoing one. */
+  const current = view.kind === "thread" && view.id ? view.id : (conversations.find((c) => c.status !== "resolved")?.id ?? null);
+  const openChat = (next?: typeof view) => {
+    if (next) setView(next);
+    setOpen(true);
+    postToHost({ type: "jun:open" });
+  };
+
+  // Closed, as the card launcher: the welcome card, or the "Chat with us" pill once it's hidden.
+  if (cardLauncher && !open) {
+    return (
+      <div className="w-closed" ref={closedRef}>
+        {miniHidden ? (
+          <button className="w-launcher" onClick={() => openChat()}>Chat with us</button>
+        ) : (
+          <MiniCard
+            name={config.workspaceName}
+            sub={opener?.from ?? sub}
+            logoUrl={config.logoUrl}
+            welcome={opener ? (opener.page || opener.inviteId ? opener.text : `${opener.text} Tell me what you were trying to do and I'll take a look.`) : config.greeting}
+            placeholder={config.placeholder}
+            onOpen={() => openChat()}
+            onContact={() => openChat({ kind: "thread", id: current, human: true })}
+            onNewChat={() => openChat({ kind: "thread", id: null })}
+            onHide={() => setMiniHidden(true)}
+            icon={(d) => <Icon d={d} />}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="w-shell">
+    <div className={`w-shell ${view.kind}`} ref={shellRef}>
       <header className="w-head">
-        {view.kind === "thread" && <button className="ghost icon" aria-label="Back" onClick={() => setView({ kind: "home" })}>‹</button>}
-        {config.logoUrl && <img className="w-logo" src={config.logoUrl} alt="" />}
-        <div>
-          <strong>{config.workspaceName}</strong>
-          <div className="small w-sub">
-            {config.hours && !config.hours.open
-              ? `We're away${config.hours.back ? ` · back ${config.hours.back}` : ""}${config.ai ? ". The assistant can still help." : ""}`
-              : config.replyTime}
-          </div>
-        </div>
-        <span className="spacer" />
-        {window.parent !== window && <button className="ghost icon" aria-label="Close chat" onClick={() => postToHost({ type: "jun:close" })}>×</button>}
+        <span className="w-title">
+          {view.kind === "thread" && conversations.some((c) => c.id !== view.id) && (
+            <button className="w-hdr-btn" aria-label="Your conversations" title="Your conversations" onClick={() => setView({ kind: "list" })}>
+              <Icon d="M15 18l-6-6 6-6" />
+            </button>
+          )}
+          <img className="w-agent-icon" src={config.logoUrl ?? "/jun-agent.svg"} alt="" />
+          <span className="w-name-wrap">
+            <span className="w-name">{config.workspaceName}</span>
+            <span className="w-sub">{sub}</span>
+          </span>
+        </span>
+        {framed && (
+          <span className="w-hdr-actions">
+            <button className="w-hdr-btn" aria-label={grown ? "Minimize" : "Expand"} title={grown ? "Minimize" : "Expand"} onClick={() => setGrown((g) => !g)}>
+              <Icon d={grown ? "M6 9l6 6 6-6" : "M18 15l-6-6-6 6"} />
+            </button>
+            <button className="w-close" aria-label="Close chat" onClick={() => postToHost({ type: "jun:close" })}>×</button>
+          </span>
+        )}
       </header>
-      {view.kind === "home" ? (
+      {view.kind === "list" ? (
         <div className="w-home">
-          <div className="w-greeting">
-            <h2>{config.greeting}</h2>
-            <button onClick={() => setView({ kind: "thread", id: null })}>Send us a message</button>
-          </div>
-          {config.suggestions.length > 0 && (
-            <div className="w-suggestions" aria-label="Suggested questions">
-              {config.suggestions.map((q) => (
-                <button key={q} className="ghost" onClick={() => setView({ kind: "thread", id: null, first: q })}>{q}</button>
+          <section className="w-history" aria-labelledby="w-history-title">
+            <h3 id="w-history-title" className="w-suggest-head">Your conversations</h3>
+            <ul>
+              {conversations.map((c) => (
+                <li key={c.id}>
+                  <button className={`w-conv ${unread(c) ? "unread" : ""}`} onClick={() => setView({ kind: "thread", id: c.id })}>
+                    <span className="w-conv-text">
+                      <span className="w-conv-preview">{c.lastMessagePreview || "Conversation"}</span>
+                      <span className="w-conv-meta">{c.status === "resolved" ? "Resolved · " : ""}{formatTime(c.lastMessageAt)}</span>
+                    </span>
+                    {unread(c) && <span className="w-dot" role="img" aria-label="New reply" />}
+                  </button>
+                </li>
               ))}
-            </div>
-          )}
-          {conversations.length > 0 && (
-            <div className="w-history">
-              <h3 className="small muted">Your conversations</h3>
-              <ul className="list">
-                {conversations.map((c) => (
-                  <li key={c.id}>
-                    <button className="w-conv" onClick={() => setView({ kind: "thread", id: c.id })}>
-                      <span className={unread(c) ? "strong" : ""}>{c.lastMessagePreview || "Conversation"}</span>
-                      <span className="muted small">{c.status === "resolved" ? "Resolved · " : ""}{formatTime(c.lastMessageAt)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+            </ul>
+          </section>
+          <div className="w-actions">
+            <button className="w-action-btn" onClick={() => setView({ kind: "thread", id: null })}>Start a new chat</button>
+          </div>
+          <Badge />
         </div>
       ) : (
         <WidgetThread
@@ -356,14 +429,32 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           conversationId={view.id}
           summary={conversations.find((c) => c.id === view.id) ?? null}
           opener={view.opener}
-          first={view.kind === "thread" ? view.first : undefined}
+          first={view.first}
+          classic={{
+            greeting: config.greeting,
+            suggestions: suggestHidden ? [] : config.suggestions,
+            hideSuggestions: () => setSuggestHidden(true),
+            human: Boolean(view.human),
+            askHuman: () => setView((v) => (v.kind === "thread" ? { ...v, human: true } : v)),
+            newChat: () => setView({ kind: "thread", id: null }),
+          }}
         />
       )}
     </div>
   );
 }
 
+/** A line icon on the earlier Jun Desk widget's 24px grid (shown at 18px). */
+function Icon({ d }: { d: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
+}
+
 function WidgetThread({
+  classic,
   api,
   conversationId,
   summary,
@@ -394,6 +485,11 @@ function WidgetThread({
   onConversation: (c: ConversationSummary) => void;
   /** W-04 bar launcher: the chat panel's header, the suggested questions, and opening or folding it. */
   bar?: { head: ReactNode; suggestions: string[]; side: "left" | "right"; setOpen: (open: boolean) => void };
+  /**
+   * The chat window (D-34): the greeting a new chat starts with, the suggested questions (until
+   * dismissed), and the action row's "Contact the team" (W-07's handoff) and "Start a new chat".
+   */
+  classic?: { greeting: string; suggestions: string[]; hideSuggestions: () => void; human: boolean; askHuman: () => void; newChat: () => void };
 }) {
   const [initial, setInitial] = useState<Message[] | null>(conversationId ? null : []);
   const [error, setError] = useState<string | null>(null);
@@ -495,6 +591,29 @@ function WidgetThread({
     };
   }, [setBarOpen, open, panel]);
 
+  // "Contact the team": hand an AI conversation to the team, or start one asking for them.
+  const sentHuman = useRef(false);
+  const contactTeam = () => {
+    if (conversationId) {
+      if (handling === "ai") thread.requestHuman();
+      return;
+    }
+    sentHuman.current = true;
+    classic?.askHuman();
+    void send(TEAM_REQUEST, []);
+  };
+  const wantsHuman = Boolean(classic?.human);
+  useEffect(() => {
+    if (!wantsHuman) return;
+    if (!conversationId) {
+      if (!sentHuman.current) {
+        sentHuman.current = true;
+        void send(TEAM_REQUEST, []);
+      }
+    } else if (handling === "ai" && thread.state === "open") thread.requestHuman();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantsHuman, conversationId, handling, thread.state]);
+
   if (initial === null && !error && !bar) return <div className="w-body muted pad">Loading…</div>;
 
   // Once the conversation exists, an invite is its first real message: don't show it twice.
@@ -523,12 +642,14 @@ function WidgetThread({
           aiThinking={thread.aiThinking || awaitingAi}
           onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
           onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
+          // Follow-ups only while the AI is still the one answering.
+          renderAi={(answer) => <AiAnswer answer={answer} {...(handling === "ai" ? { onFollowUp: (q: string) => void send(q, []) } : {})} />}
         />
   );
   const extras = (
     <>
       {/* W-07: a person is always one click away while the AI is answering. */}
-      {conversationId && handling === "ai" && (
+      {bar && conversationId && handling === "ai" && (
         <div className="w-human">
           <button className="link small" onClick={() => thread.requestHuman()}>Talk to a person</button>
         </div>
@@ -543,7 +664,7 @@ function WidgetThread({
     </>
   );
   const composer = (
-    <Composer pill={Boolean(bar)} placeholder={placeholder} upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
+    <Composer pill placeholder={placeholder} upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
   );
 
   if (bar) {
@@ -581,18 +702,57 @@ function WidgetThread({
     );
   }
 
+  if (!classic) {
+    return (
+      <>
+        <div className="w-body">
+          {openerMessage}
+          {messages}
+          {error && <p className="error small pad">{error}</p>}
+        </div>
+        {extras}
+        {composer}
+      </>
+    );
+  }
+
+  // A new chat starts with the greeting, as the reference's did (it isn't stored).
+  const greet = !conversationId && !starting && !opener;
   return (
     <>
       <div className="w-body">
-        {openerMessage ?? (thread.messages.length === 0 && thread.pending.length === 0 && <p className="muted small pad">Ask anything. A teammate will reply here.</p>)}
+        {openerMessage}
+        {greet && <p className="w-greet">{classic.greeting}</p>}
         {messages}
         {error && <p className="error small pad">{error}</p>}
       </div>
+      {classic.suggestions.length > 0 && (
+        <div className="w-suggest" role="group" aria-label="Suggested questions">
+          <div className="w-suggest-head">
+            <span>Ask us things like:</span>
+            <button className="w-x" aria-label="Dismiss" onClick={classic.hideSuggestions}>×</button>
+          </div>
+          <div className="w-suggest-list">
+            {classic.suggestions.map((q) => (
+              <button key={q} className="w-suggest-item" disabled={Boolean(starting && !conversationId)} onClick={() => void send(q, [])}>{q}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="w-actions">
+        {/* W-07: the team is always one click away while the AI is answering. */}
+        <button className="w-action-btn" disabled={Boolean(conversationId && handling !== "ai") || Boolean(starting && !conversationId)} onClick={contactTeam}>Contact the team</button>
+        <button className="w-action-btn" onClick={classic.newChat}>Start a new chat</button>
+      </div>
       {extras}
       {composer}
+      <Badge />
     </>
   );
 }
+
+/** What "Contact the team" says when it starts a conversation. */
+const TEAM_REQUEST = "I'd like to talk to someone on your team.";
 
 /** The visitor's last message has no team reply after it yet (system notices don't count). */
 function lastVisitorWaiting(messages: Message[]): Message | null {
@@ -668,7 +828,7 @@ function EmailAsk({
       <div className="row">
         <span className="small strong">{away ? "We're away right now." : nobodyOnline ? "Nobody's online right now." : "Sorry for the wait."} Get the reply by email?</span>
         <span className="spacer" />
-        <button type="button" className="ghost icon small" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
+        <button type="button" className="ghost icon small w-x" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
       </div>
       <div className="row">
         <input name="email" type="email" required maxLength={320} placeholder="you@company.com" aria-label="Your email" autoComplete="email" />
@@ -744,7 +904,7 @@ function CsatAsk({
         <span className="spacer" />
         <button type="button" className="ghost w-thumb" disabled={busy} aria-label="Good" title="Good" onClick={() => void rate("good")}>👍</button>
         <button type="button" className="ghost w-thumb" disabled={busy} aria-label="Bad" title="Bad" onClick={() => void rate("bad")}>👎</button>
-        <button type="button" className="ghost icon small" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
+        <button type="button" className="ghost icon small w-x" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
       </div>
       {error && <p className="error small">{error}</p>}
     </div>

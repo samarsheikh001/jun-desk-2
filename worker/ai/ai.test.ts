@@ -89,11 +89,12 @@ test("parseReply: answers, handoffs and escalations", async () => {
   const { parseReply } = await import("./agent.ts");
   assert.deepEqual(parseReply("HANDOFF: needs a refund"), { kind: "handoff", reason: "needs a refund" });
   assert.deepEqual(parseReply("  "), { kind: "handoff", reason: "The AI couldn't answer from the knowledge base." });
-  assert.deepEqual(parseReply("Refunds take 14 days [1]."), { kind: "answer", text: "Refunds take 14 days [1].", escalate: null });
+  assert.deepEqual(parseReply("Refunds take 14 days [1]."), { kind: "answer", text: "Refunds take 14 days [1].", escalate: null, followUps: [] });
   assert.deepEqual(parseReply("Your payment request failed with a 500 at 14:02. I've flagged it.\nESCALATE: POST /api/billing returns 500"), {
     kind: "answer",
     text: "Your payment request failed with a 500 at 14:02. I've flagged it.",
     escalate: "POST /api/billing returns 500",
+    followUps: [],
   });
 });
 
@@ -117,6 +118,7 @@ test("parseReply finds ESCALATE mid-line too", async () => {
     kind: "answer",
     text: "It failed with a 500 at 17:06. I've flagged this to the team.",
     escalate: "POST /api/billing returns 500",
+    followUps: [],
   });
 });
 
@@ -200,4 +202,41 @@ test("P-01 page opener: facts from title, path and hint; technical or alarming l
   assert.equal(cleanOpener("Check https://acme.com for prices."), null);
   assert.equal(cleanOpener(`${"Very long ".repeat(15)}line.`), null);
   assert.equal(cleanOpener("  "), null);
+});
+
+test("parseReply takes a FOLLOWUPS line off the answer, and drops it when escalating", async () => {
+  const { parseReply } = await import("./agent.ts");
+  assert.deepEqual(parseReply("Refunds take 14 days [1].\nFOLLOWUPS: How do I request one? | 2. \"Can I get credit instead?\" | how do i request one? | Is it free [1]?"), {
+    kind: "answer",
+    text: "Refunds take 14 days [1].",
+    escalate: null,
+    followUps: ["How do I request one?", "Can I get credit instead?", "Is it free?"],
+  });
+  assert.deepEqual(parseReply("It failed at 14:02. FOLLOWUPS: Why did it fail?\nESCALATE: POST /api/billing 500"), {
+    kind: "answer",
+    text: "It failed at 14:02.",
+    escalate: "POST /api/billing 500",
+    followUps: [],
+  });
+});
+
+test("streamVisible holds back FOLLOWUPS lines and their fragments", async () => {
+  const { streamVisible } = await import("./agent.ts");
+  assert.equal(streamVisible("Refunds take 14 days.\nFOLL"), "Refunds take 14 days.");
+  assert.equal(streamVisible("Refunds take 14 days.\nFOLLOWUPS: How do I"), "Refunds take 14 days.");
+  assert.equal(streamVisible("Refunds take 14 days.\nFollow the steps"), "Refunds take 14 days.\nFollow the steps");
+});
+
+test("streamCitations resolves citations so far and holds back an open bracket", async () => {
+  const { streamCitations } = await import("./agent.ts");
+  const hits = [hit("A", "https://a"), hit("B", "https://b")];
+  assert.deepEqual(streamCitations("Refunds take 14 days [2", hits), { text: "Refunds take 14 days", sources: [] });
+  assert.deepEqual(streamCitations("Refunds take 14 days [2] and", hits), { text: "Refunds take 14 days [1] and", sources: [{ title: "B", url: "https://b" }] });
+});
+
+test("citations of chunks from the same page merge into one source", () => {
+  const page = (heading: string): SearchHit => ({ ...hit("Pricing", "https://x/pricing"), heading });
+  const { text, sources } = resolveCitations("Teams cost $10 [1][2]. Annual saves 20% [3]. Refunds [2].", [page("Teams"), page("Annual"), hit("Refunds")]);
+  assert.equal(text, "Teams cost $10 [1]. Annual saves 20% [2]. Refunds [1].");
+  assert.deepEqual(sources, [{ title: "Pricing", url: "https://x/pricing" }, { title: "Refunds", url: null }]);
 });

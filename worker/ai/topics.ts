@@ -69,7 +69,8 @@ async function topicModel(env: Env, workspaceId: string): Promise<AgentModel | T
   return createModel(env, workspaceId, settings, "topics");
 }
 
-async function recordUsage(env: Env, workspaceId: string, usage: { inputTokens?: number; outputTokens?: number }): Promise<void> {
+/** Tokens count toward ai_usage; these jobs aren't replies, so they don't use up the reply cap. */
+export async function recordUsage(env: Env, workspaceId: string, usage: { inputTokens?: number; outputTokens?: number }): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO ai_usage (workspace_id, month, replies, input_tokens, output_tokens) VALUES (?1, ?2, 0, ?3, ?4)
      ON CONFLICT (workspace_id, month) DO UPDATE SET input_tokens = input_tokens + ?3, output_tokens = output_tokens + ?4`,

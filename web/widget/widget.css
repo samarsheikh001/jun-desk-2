@@ -1,44 +1,168 @@
 /* Widget frame: fills the iframe the loader creates. */
 html, body, #root { height: 100%; }
 body { background: var(--surface); }
-.w-shell { height: 100%; display: flex; flex-direction: column; }
-.w-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px; background: var(--accent); color: var(--accent-text); }
-.w-head button.ghost { color: var(--accent-text); border-color: transparent; }
-.w-sub { opacity: 0.85; }
-.w-home { flex: 1; overflow: auto; }
-.w-greeting { padding: 24px 20px; display: grid; gap: 14px; }
-.w-greeting h2 { font-size: 1.25rem; margin: 0; }
-/* W-04 suggested questions: tapping one sends it. */
-.w-suggestions { padding: 0 20px 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.w-suggestions button { text-align: left; font-weight: 400; border-radius: var(--r-md); }
-.w-suggestions button:hover { border-color: var(--accent); }
-.w-history { padding: 0 16px 16px; }
-.w-history .list li { padding: 0; }
-.w-conv { display: grid; gap: 2px; width: 100%; text-align: left; background: none; color: var(--text); padding: 10px 4px; font-weight: 400; }
-.w-conv:hover { background: var(--bg); }
-.w-body { flex: 1; overflow: auto; display: flex; flex-direction: column; background: var(--bg); }
-.w-body .messages { overflow: visible; }
-.w-body .msg { max-width: 85%; }
 .w-opener { margin: 16px 16px 0; }
-.w-logo { width: 32px; height: 32px; border-radius: var(--r-sm); object-fit: cover; background: #fff; }
 
-/* W-08: offline email capture in the widget. */
+/* W-08: offline email capture, and W-12: "How did we do?" (base; the bar and the window restyle them). */
 .w-email { display: grid; gap: 6px; margin: 0; padding: 8px 12px; background: var(--tag); border-top: 1px solid var(--border); }
 .w-email input { flex: 1; min-width: 0; }
-
-/* W-12: "How did we do?" on a resolved conversation. */
 .w-csat { display: grid; gap: 6px; margin: 0; padding: 8px 12px; background: var(--tag); border-top: 1px solid var(--border); }
 .w-csat .row { gap: 8px; }
 .w-csat textarea { resize: none; }
 button.w-thumb { padding: 2px 10px; font-size: 1.1rem; line-height: 1.4; background: var(--surface); }
 button.w-thumb:hover:not(:disabled) { border-color: var(--accent); }
 
+/* ---------- The chat window (button and card launchers, D-34) ----------
+   The earlier Jun Desk widget's stylesheet (its public/widget.css), rule for rule, on our markup:
+   .panel is .w-shell (its place, size, border and corners are the loader's frame), .header
+   .w-head, .msg.user the visitor's .bubble and .msg.assistant everyone else's, .composer2 and
+   .composer-wrap the composer, .footer-brand .w-badge. The card launcher's closed state (.mini,
+   then .launcher) is .w-closed, drawn here (card.tsx). Its radii are the corner rounding setting
+   (--radius) and 0.75, 0.625 and 0.5 of it. */
+:root { --radius: calc(var(--r-md) * 8 / 7); --radius-md: calc(var(--radius) * 0.75); --radius-sm: calc(var(--radius) * 0.625); --radius-xs: calc(var(--radius) * 0.5); }
+.w-shell, .w-closed { color: var(--text); font-family: "Jun Desk Outfit", Arial, sans-serif; font-size: 14px; line-height: 1.5; }
+.w-shell { height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }
+:is(.w-shell, .w-closed) button, :is(.w-shell, .w-closed) input, :is(.w-shell, .w-closed) textarea { font: inherit; color: inherit; }
+:is(.w-shell, .w-closed) button { cursor: pointer; padding: 1px 6px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm); transition: background 0.15s, box-shadow 0.15s; }
+:is(.w-shell, .w-closed) button:hover { background: var(--hover); }
+:is(.w-shell, .w-closed) button:disabled { cursor: default; opacity: 0.45; }
+:is(.w-shell, .w-closed) :is(button, input, a, [role="button"]):focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+:is(.w-shell, .w-closed) svg { width: 18px; height: 18px; flex-shrink: 0; }
+:is(.w-shell, .w-closed) img { display: block; }
+.w-shell code, .w-shell pre { font-family: "Jun Desk Mono", monospace; }
+
+/* Header */
+.w-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+.w-title { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.w-agent-icon { width: 36px; height: 36px; object-fit: contain; border-radius: var(--radius-xs); }
+.w-name-wrap { display: flex; flex-direction: column; min-width: 0; }
+.w-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-sub { font-size: 12px; color: var(--muted); }
+.w-hdr-actions { display: flex; gap: 4px; }
+.w-shell .w-hdr-btn, .w-shell .w-close, .w-shell .w-x { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; background: transparent; color: var(--muted); }
+.w-shell .w-close, .w-shell .w-x { font-size: 23px; font-weight: 300; }
+.w-shell .w-x { width: 22px; height: 22px; font-size: 18px; }
+.w-shell .w-hdr-btn:hover, .w-shell .w-close:hover, .w-shell .w-x:hover { background: var(--hover); }
+
+/* W-04 suggested questions over the action row: tapping one sends it; × hides them. */
+.w-suggest { padding: 0 16px 8px; flex-shrink: 0; }
+.w-suggest-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 3px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.w-suggest-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.w-shell .w-suggest-item { text-align: left; padding: 5px 9px; font-size: 11px; line-height: 1.5; background: var(--bg); border-radius: var(--radius-xs); }
+/* "Contact the team" and "Start a new chat" (.action-row) */
+.w-actions { display: flex; gap: 6px; padding: 0 16px 8px; flex-shrink: 0; }
+.w-shell .w-action-btn { flex: 1; padding: 5px 6px; font-size: 11px; line-height: 1.5; font-weight: 500; white-space: nowrap; border-radius: var(--radius-xs); }
+/* "Built with Jun Desk" (.footer-brand) */
+.w-badge { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 0 12px; color: var(--muted); font-size: 10px; flex-shrink: 0; }
+:is(.w-shell, .w-closed) .w-badge-logo { width: 14px; height: 14px; }
+.w-badge.mini { padding-bottom: 12px; }
+
+/* The card launcher, closed (.launcher-wrap): the frame is this size, and transparent around it. */
+/* Light like the frame (the loader sets color-scheme:normal on it): a dark root inside a light
+   frame gets an opaque canvas, which squares off the card's corners. Beats :root[data-theme]. */
+:root.mini, :root.mini[data-theme] { color-scheme: light; }
+html.mini, html.mini body, html.mini #root { background: transparent; }
+html.mini body { overflow: hidden; }
+.w-closed { display: flow-root; }
+.w-mini { width: 100%; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); box-shadow: none; overflow: hidden; }
+.w-mini-head { position: relative; display: flex; flex-direction: row; align-items: baseline; gap: 7px; padding: 16px 44px 0 18px; }
+.w-mini-head.has-logo { align-items: center; }
+.w-closed .w-mini-logo { width: 22px; height: 22px; border-radius: var(--radius-xs); object-fit: contain; flex-shrink: 0; }
+.w-mini-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-mini-sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w-closed .w-mini-x { position: absolute; right: 12px; top: 12px; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; background: transparent; color: var(--muted); }
+.w-closed .w-mini-x:hover { background: var(--hover); }
+.w-mini-welcome { margin: 16px 18px; color: var(--text-soft); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+.w-mini-actions { display: flex; gap: 8px; margin: 0 18px 14px; }
+.w-closed .w-mini-act { flex: 1; padding: 8px 6px; font-size: 12px; background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.w-closed .w-mini-act:hover { background: var(--accent-hover); }
+.w-closed .w-mini-composer { display: flex; align-items: center; justify-content: space-between; width: calc(100% - 32px); min-height: 46px; margin: 0 16px 8px; padding: 4px 4px 4px 12px; background: var(--field); }
+.w-mini-ph { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-mini-send { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; background: var(--accent); color: var(--accent-text); border: 0; border-radius: var(--radius-sm); }
+/* Hidden for this page: the "Chat with us" pill (.launcher). */
+.w-closed .w-launcher { display: block; width: max-content; padding: 12px 18px; background: var(--accent); color: var(--accent-text); box-shadow: none; }
+.w-closed .w-launcher:hover { background: var(--accent-hover); }
+
+/* The visitor's earlier conversations (the reference had one chat at a time): suggestion-list type, button rows. */
+.w-home { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #ddd transparent; }
+.w-history { flex: 1; padding: 20px 16px 16px; }
+.w-history ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.w-shell .w-conv { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; text-align: left; }
+.w-conv-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.w-conv-preview { font-size: 13px; color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-conv.unread .w-conv-preview { color: var(--text); font-weight: 600; }
+.w-conv-meta { font-size: 11px; color: var(--muted); }
+.w-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--accent); }
+
+/* Thread: the visitor's messages in the bubble colour, replies as text. */
+.w-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; scrollbar-width: thin; scrollbar-color: #ddd transparent; }
+/* A new chat's greeting, where the reference put it: the first reply. */
+.w-greet { margin: 0; padding: 20px 22px 0; color: var(--text-soft); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+.w-shell .w-greet + .messages { padding-top: 14px; }
+.w-shell .w-opener { margin: 20px 18px 0; }
+.w-shell .messages { flex: none; overflow: visible; padding: 20px 18px; gap: 0; }
+.w-shell .msg { max-width: 100%; margin-bottom: 14px; font-size: 14px; line-height: 1.6; }
+.w-shell .msg.own { margin-left: auto; max-width: 88%; }
+.w-shell .msg .author, .w-shell .msg .meta { margin: 0 4px 2px; font-size: 12px; color: var(--muted); }
+.w-shell .bubble { padding: 0 4px; border: 0; border-radius: 0; background: none; color: var(--text-soft); overflow-wrap: anywhere; white-space: pre-wrap; }
+.w-shell .msg.ai .bubble { background: none; color: var(--text-soft); }
+.w-shell .msg.own .bubble { width: fit-content; padding: 10px 14px; border-radius: var(--radius-md); background: var(--bubble); color: var(--bubble-text); }
+.w-shell .bubble code { font-family: "Jun Desk Mono", monospace; font-size: 0.88em; background: var(--code); border-radius: 4px; padding: 0.15em 0.35em; white-space: break-spaces; }
+.w-shell .bubble a, .w-shell .sources a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+.w-shell .cite { padding: 0 3px; border-radius: 4px; background: var(--code); color: var(--link); text-decoration: none; }
+.w-shell .sources { margin: 4px 4px 0; font-size: 12px; color: var(--muted); }
+.w-shell .seen, .w-shell .msg > .muted.small, .w-shell .msg > .error.small { margin: 2px 4px 0; font-size: 12px; }
+.w-shell .attachments img { border-color: var(--border); border-radius: var(--radius-md); }
+.w-shell .attachments .file { border-color: var(--border); border-radius: var(--radius-sm); background: var(--surface); font-size: 13px; }
+.w-shell .system-msg { font-size: 12px; color: var(--muted); }
+/* "Thinking…" dots */
+.w-shell .bubble.typing { display: flex; align-items: center; gap: 3px; min-height: 22px; padding: 0 4px; }
+.w-shell .typing span { width: 4px; height: 4px; border-radius: 50%; background: var(--focus); animation: think 1s infinite; }
+.w-shell .typing span:nth-child(2) { animation-delay: 0.15s; }
+.w-shell .typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes think { 0%, 80%, 100% { opacity: 0.4; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+
+/* W-08 and W-12 over the composer, in the quote draft's colours, with the welcome card's buttons. */
+.w-shell .w-email, .w-shell .w-csat { gap: 8px; margin: 0 16px 8px; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--quote); color: var(--text-soft); font-size: 12px; }
+.w-shell .w-email .row, .w-shell .w-csat .row { gap: 6px; }
+.w-shell .w-email input, .w-shell .w-csat textarea { padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--field); font-size: 13px; outline: none; }
+.w-shell .w-email input:focus, .w-shell .w-csat textarea:focus { border-color: #a3a3a3; }
+.w-shell .w-email button:not(.w-x), .w-shell .w-csat button:not(.w-x, .w-thumb) { padding: 8px 6px; min-width: 64px; font-size: 12px; }
+.w-shell .w-email button:not(.w-x, .ghost), .w-shell .w-csat button:not(.w-x, .w-thumb, .ghost) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.w-shell .w-email button:not(.w-x, .ghost):hover, .w-shell .w-csat button:not(.w-x, .w-thumb, .ghost):hover { background: var(--accent-hover); }
+.w-shell button.w-thumb { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; font-size: 15px; line-height: 1; }
+
+/* The composer (.composer2): the field (.composer-wrap) holds the box and the attach and
+   screenshot buttons (.composer-ic); the send button sits beside it. The field is drawn behind
+   them, since the shared Composer puts all three in one row. */
+.w-shell .composer.pill { padding: 12px 16px 8px; border-top: 1px solid var(--border-soft); background: var(--surface); flex-shrink: 0; }
+.w-shell .composer.pill .composer-row { position: relative; display: flex; align-items: center; gap: 0; }
+.w-shell .composer.pill .composer-row::before { content: ""; position: absolute; inset: 0 48px 0 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--field); pointer-events: none; }
+.w-shell .composer.pill .composer-row:focus-within::before { border-color: #a3a3a3; }
+.w-shell .composer.pill .composer-row > * { position: relative; }
+.w-shell .composer.pill textarea { flex: 1; min-width: 0; margin: 4px 0 4px 4px; padding: 8px; border: 0; border-radius: 0; background: transparent; font-size: 13px; line-height: 1.5; outline: none; }
+.w-shell .composer.pill textarea::placeholder { color: var(--muted); }
+.w-shell .composer-actions { display: flex; margin: 4px 4px 4px 0; }
+.w-shell .composer-actions button { display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; padding: 0; border: 0; background: transparent; color: var(--muted); }
+.w-shell .composer-actions button:hover { background: var(--hover); }
+.w-shell .composer-send { display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; margin-left: 8px; padding: 0; background: var(--accent); color: var(--accent-text); border: 0; border-radius: var(--radius-sm); }
+.w-shell .composer-send:hover { background: var(--accent-hover); }
+.w-shell .composer-send:disabled { opacity: 0.35; }
+.w-shell .composer-files { margin-bottom: 8px; }
+.w-shell .composer-files .chip { border-color: var(--border); border-radius: var(--radius-xs); background: var(--bg); font-size: 12px; }
+.w-shell .composer-shot { border-color: var(--border); border-radius: var(--radius-md); background: var(--quote); }
+.w-shell .composer-shot-actions button { padding: 5px 9px; font-size: 12px; }
+.w-shell .composer-shot-actions button:not(.ghost) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+/* Touch screens: 16px text so the box doesn't zoom the page (the reference did this at ≤ 768px). */
+@media (hover: none) and (pointer: coarse) { .w-shell .composer.pill textarea { font-size: 16px; } }
+@media (prefers-reduced-motion: reduce) { .w-shell *, .w-shell *::before, .w-shell *::after { animation: none !important; transition: none !important; } }
+
 /* ---------- W-04 "bar" launcher (D-32) ----------
    The widget as an "Ask anything…" bar, after the Fin messenger on fin.ai: sizes, colours, glass
    layers and timings are the ones measured from it. html.bar is a transparent frame the loader
    sizes and clips from what useBarFrame reports (web/widget/bar.tsx). One look: a white bar, the
    chat on dark glass; the brand colour is the send button's. */
-html.bar { color-scheme: light; }
+:root.bar, :root.bar[data-theme] { color-scheme: light; }
 html.bar, html.bar body, html.bar #root { background: transparent; }
 html.bar body {
   overflow: hidden;
@@ -142,3 +266,60 @@ html.bar body {
 .b-pill .composer-files { margin: 10px 16px 0; }
 .b-pill .composer-shot { margin: 10px 10px 0; }
 @media (prefers-reduced-motion: reduce) { .b-chip, .b-log .msg.own, .b-hint-text, .b-pill .composer-actions { animation: none; opacity: 1; } }
+
+/* ---------- AI answers (web/widget/answer.tsx) ----------
+   Words resolve out of a blur as they stream; [n] citations are inline source chips (favicon +
+   domain); then copy, the cited sources (an avatar stack that opens the list) and follow-ups. */
+.w-answer { --a-ink: var(--text); --a-ink-2: var(--text-soft); --a-ink-3: var(--muted); --a-inset: var(--code); --a-hover: var(--hover); --a-line: var(--border-soft); --a-canvas: var(--surface); }
+.b-log .w-answer { --a-ink: rgb(250, 250, 250); --a-ink-2: rgba(255, 255, 255, 0.78); --a-ink-3: rgba(255, 255, 255, 0.55); --a-inset: rgba(255, 255, 255, 0.08); --a-hover: rgba(255, 255, 255, 0.1); --a-line: rgba(255, 255, 255, 0.12); --a-canvas: rgb(52, 52, 52); }
+/* Text lines up with the bubble's 4px inset in the window; streaming text is full strength. */
+.w-shell .w-answer > :not(.bubble) { margin-left: 4px; margin-right: 4px; }
+.w-shell .msg.ai.streaming .bubble, .b-log .msg.ai.streaming .bubble { opacity: 1; }
+.w-answer .w-anim { animation: w-resolve 360ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+@keyframes w-resolve { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: blur(0); } }
+.w-answer .w-caret { display: inline-block; width: 2px; height: 0.95em; margin-left: 2px; border-radius: 1px; background: var(--a-ink); vertical-align: -0.12em; animation: w-fade 150ms ease-out both; }
+@keyframes w-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Inline source chip */
+.w-answer .w-cite-wrap.w-anim { animation: w-pop 250ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+@keyframes w-pop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+.w-answer .w-cite-wrap { display: inline-block; }
+.w-answer .bubble .w-cite { display: inline-flex; align-items: center; gap: 4px; height: 18px; max-width: 160px; margin-right: 2px; padding: 0 4px 0 3px; border-radius: 5px; background: var(--a-inset); box-shadow: 0 0 0 1px var(--a-line); color: var(--a-ink-2); font: 10.5px/1 "Jun Desk Mono", monospace; text-decoration: none; vertical-align: 1px; white-space: nowrap; transition: background 150ms, color 150ms; }
+.w-answer .bubble .w-cite > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.w-answer .bubble a.w-cite:hover { background: var(--a-hover); color: var(--a-ink); }
+.w-answer .w-cite-icon { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; object-fit: cover; }
+.w-answer .w-src-letter { display: inline-grid; place-items: center; color: #fff; font: 600 8px/1 "Jun Desk Outfit", Arial, sans-serif; }
+
+/* Copy and the sources toggle */
+.w-answer .w-anim-in, .w-answer .w-follow { animation: w-fade 400ms ease-out both; }
+.w-answer .w-answer-row { display: flex; align-items: center; gap: 2px; margin: 8px 0 0; }
+.w-answer .w-answer-btn { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--a-ink-3); transition: background 100ms, color 100ms; }
+.w-answer .w-answer-btn:hover { background: var(--a-hover); color: var(--a-ink-2); }
+.w-answer .w-answer-btn svg { width: 15px; height: 15px; }
+.w-answer .w-src-toggle { display: flex; align-items: center; gap: 6px; margin-left: 6px; padding: 2px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--a-ink-2); font-size: 12px; line-height: 1.5; transition: background 150ms; }
+.w-answer .w-src-toggle:hover { background: var(--a-hover); }
+.w-answer .w-src-stack { display: flex; }
+.w-answer .w-src-avatar { width: 14px; height: 14px; border-radius: 50%; object-fit: cover; background: var(--a-canvas); box-shadow: 0 0 0 1.5px var(--a-canvas); }
+.w-answer .w-src-avatar + .w-src-avatar { margin-left: -4px; }
+.w-answer .w-src-avatar.w-src-letter { font-size: 7px; }
+
+/* The sources list, opened from the toggle */
+.w-answer .w-src-panel { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 300ms cubic-bezier(0.23, 1, 0.32, 1), opacity 300ms cubic-bezier(0.23, 1, 0.32, 1); }
+.w-answer .w-src-panel.open { grid-template-rows: 1fr; opacity: 1; }
+.w-answer .w-src-panel > div { overflow: hidden; }
+.w-answer .w-src-list { display: flex; flex-direction: column; margin-top: 6px; padding: 4px; border-radius: 10px; background: var(--a-inset); box-shadow: 0 0 0 1px var(--a-line); }
+.w-answer .w-src-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 6px; border-radius: 6px; color: var(--a-ink-2); font-size: 12px; line-height: 1.5; text-decoration: none; transition: background 150ms, color 150ms; }
+.w-answer a.w-src-row:hover { background: var(--a-hover); color: var(--a-ink); }
+.w-answer a.w-src-row:hover .w-src-name { text-decoration: underline; text-underline-offset: 2px; }
+.w-answer .w-src-icon { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; object-fit: cover; }
+.w-answer .w-src-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-answer .w-src-domain { margin-left: auto; padding-left: 8px; flex-shrink: 0; color: var(--a-ink-3); font: 10.5px/1.5 "Jun Desk Mono", monospace; }
+
+/* Follow-ups (the newest answer only; tapping one sends it) */
+.w-answer .w-follow { margin-top: 10px; }
+.w-answer .w-follow-head { margin: 0; color: var(--a-ink-2); font-size: 12px; font-weight: 500; }
+.w-answer .w-follow-item { display: flex; align-items: center; gap: 8px; width: calc(100% + 12px); margin: 2px -6px 0; padding: 6px; border: 0; border-bottom: 1px solid var(--a-line); border-radius: 7px; background: transparent; color: var(--a-ink); font-size: 12.5px; line-height: 1.4; text-align: left; animation: w-rise 350ms cubic-bezier(0.23, 1, 0.32, 1) both; transition: background 100ms; }
+.w-answer .w-follow-item:hover { background: var(--a-hover); }
+.w-answer .w-follow-item svg { width: 11px; height: 11px; flex-shrink: 0; color: var(--a-ink-3); stroke-width: 2; }
+@keyframes w-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .w-answer *, .w-answer .w-src-panel { animation: none !important; transition: none !important; } }

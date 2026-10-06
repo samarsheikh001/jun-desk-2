@@ -12,7 +12,7 @@ test("appearance: an untouched desk gets the original look", () => {
     logoUrl: null,
     theme: "auto",
     radius: 16,
-    launcher: "button",
+    launcher: "card",
     placeholder: "Write a message…",
     suggestions: [],
   });
@@ -24,7 +24,7 @@ test("appearance: reading is lenient (half-typed drafts, hand-edited rows)", () 
   assert.equal(look.color, "#2f5bea");
   assert.equal(look.radius, 16);
   assert.equal(look.theme, "auto");
-  assert.equal(look.launcher, "button");
+  assert.equal(look.launcher, "card");
   assert.equal(look.greeting, "Hi! How can we help?");
   assert.deepEqual(look.suggestions, ["Pricing?", "a", "b", "c"]);
   assert.equal(widgetLook({ radius: 0 }, "Acme", null).radius, 0);
