@@ -20,6 +20,7 @@ import { navigate, usePath } from "./lib/router.ts";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { VisitorsPage } from "./visitors/VisitorsPage.tsx";
 import { STEP_ORDER, useOnboarding, WelcomePage } from "./welcome/WelcomePage.tsx";
+import { GetStartedCard } from "./welcome/GetStartedCard.tsx";
 
 const NAV = [
   { id: "dashboard", label: "Dashboard", Icon: ChartColumnIcon },
@@ -44,7 +45,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const [visitors, setVisitors] = useState<LiveVisitor[]>([]);
   const listeners = useRef(new Set<(event: HubEvent) => void>());
   const onboarding = useOnboarding(workspace?.workspaceId ?? "");
-  // The "Get started n/6" badge follows what's done elsewhere (Settings, Knowledge…).
+  // The sidebar's "Get started" checklist follows what's done elsewhere (Settings, Knowledge…).
   const { reload: reloadOnboarding } = onboarding;
   useEffect(() => {
     if (workspace) reloadOnboarding().catch(() => {});
@@ -217,6 +218,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           ))}
         </nav>
         <div className="sidebar-foot">
+          {ob && showGetStarted && section !== "welcome" && <GetStartedCard onboarding={ob} />}
           <div className="sidebar-tools">
             <Button variant="outline" size="sm" className="palette-open" onClick={() => openOverlay("palette")} aria-keyshortcuts="Control+K Meta+K" title="Search and commands">
               <SearchIcon aria-hidden="true" /><span className="palette-open-label">Search</span> <kbd>{modKey()} K</kbd>
@@ -224,9 +226,6 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
             <ThemeButton />
             <Button variant="outline" size="icon-sm" className="shortcuts-open" onClick={openHelp} aria-label="Keyboard shortcuts" aria-keyshortcuts="Shift+?" title="Keyboard shortcuts (?)">?</Button>
           </div>
-          {showGetStarted && section !== "welcome" && (
-            <a className="get-started" href="/welcome" onClick={(e) => { e.preventDefault(); navigate("/welcome"); }}>Get started <span className="muted">{obDone}/{STEP_ORDER.length}</span></a>
-          )}
           <div className="sidebar-user">
             <span className="presence" title={online.map((o) => o.name).join(", ")}>
               {online.slice(0, 5).map((o) => (

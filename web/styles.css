@@ -461,7 +461,6 @@ fieldset.field { border: 0; padding: 0; margin: 0; min-width: 0; }
 input[type="color"] { width: 44px; height: 38px; padding: 3px; cursor: pointer; }
 
 /* Get started (T-11) */
-.get-started { padding: 4px 10px; border-radius: 999px; background: var(--tag); color: var(--accent); font-size: 0.85rem; font-weight: 600; text-decoration: none; }
 .progress { height: 6px; border-radius: 999px; background: var(--bg); overflow: hidden; margin-top: 10px; }
 .progress span { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
 .step .row h2 { margin: 0; font-size: 1.05rem; }

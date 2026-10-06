@@ -192,17 +192,17 @@
 
   /* Native controls that stay native (the composer and transcript are shared with the widget, so they
      keep their markup): the same look as the shadcn Button / Input / Textarea / NativeSelect. Not inside
-     Dither Kit charts (.dither): their legend buttons keep the kit's own utilities. */
-  :where(button):not([data-slot], .dither button) {
+     Dither Kit charts (.dither): their legend buttons keep the kit's own utilities; nor the sidebar's "Get started" header (.gs-head). */
+  :where(button):not([data-slot], .dither button, .gs-head) {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     min-height: 32px; padding: 4px 10px; border: 1px solid transparent; border-radius: var(--radius);
     background: var(--primary); color: var(--primary-foreground);
     font-size: 14px; font-weight: 500; line-height: 20px; white-space: nowrap; cursor: pointer;
     transition: background-color 150ms, border-color 150ms, box-shadow 150ms;
   }
-  :where(button):not([data-slot], .dither button):hover { background: color-mix(in oklch, var(--primary) 80%, transparent); }
-  :where(button):not([data-slot], .dither button):active:not(:disabled) { transform: translateY(1px); }
-  :where(button):not([data-slot], .dither button):disabled { opacity: 0.5; cursor: not-allowed; }
+  :where(button):not([data-slot], .dither button, .gs-head):hover { background: color-mix(in oklch, var(--primary) 80%, transparent); }
+  :where(button):not([data-slot], .dither button, .gs-head):active:not(:disabled) { transform: translateY(1px); }
+  :where(button):not([data-slot], .dither button, .gs-head):disabled { opacity: 0.5; cursor: not-allowed; }
   :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), textarea, select):not([data-slot]) {
     min-height: 32px; min-width: 0; padding: 4px 10px; border: 1px solid var(--input); border-radius: var(--radius);
     background: transparent; color: var(--foreground); outline: none;
@@ -324,8 +324,31 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 .sidebar-tools { display: flex; gap: 6px; }
 .sidebar-tools > :first-child { flex: 1; justify-content: flex-start; }
 .sidebar-tools kbd { margin-left: auto; background: transparent; }
-.get-started { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--card); font-size: 12px; font-weight: 500; text-decoration: none; color: var(--foreground); }
-.get-started:hover { background: var(--muted); }
+/* "Get started" checklist: Widgo's sidebar card, measured; its greens mapped to our tokens. */
+.gs-card {
+  --gs-soft: color-mix(in oklch, var(--primary) 8%, transparent);
+  --gs-steel: color-mix(in oklch, var(--muted-foreground) 80%, var(--card));
+  position: relative; overflow: hidden; border-radius: 8px; border: 1px solid var(--border); background: var(--card);
+  line-height: 1.55; letter-spacing: -0.14px;
+}
+.gs-track { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--gs-soft); }
+.gs-fill { height: 100%; background: var(--primary); transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.gs-head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 6px; padding: 15px 14px 10px; text-align: left; cursor: pointer; }
+.gs-head h4 { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; letter-spacing: -0.13px; color: var(--foreground); }
+.gs-bolt { width: 13px; height: 13px; color: var(--primary); }
+.gs-meta { display: flex; align-items: center; gap: 6px; }
+.gs-percent { border-radius: 4px; background: var(--gs-soft); padding: 1px 7px; font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary); }
+.gs-chevron { width: 14px; height: 14px; flex-shrink: 0; color: var(--gs-steel); transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+.gs-chevron.open { transform: rotate(180deg); }
+.gs-list { display: flex; flex-direction: column; gap: 10px; padding: 2px 14px 12px; }
+.gs-step { display: flex; align-items: center; gap: 10px; font-size: 12.5px; font-weight: 500; line-height: 1.25; letter-spacing: -0.1px; color: var(--muted-foreground); text-decoration: none; }
+.gs-step:hover { color: var(--foreground); }
+.gs-n {
+  display: grid; width: 20px; height: 20px; flex-shrink: 0; place-items: center; border-radius: 9999px;
+  border: 1px solid var(--border); background: var(--card); color: var(--gs-steel); font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.gs-n.done { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+.gs-done { color: var(--gs-steel); text-decoration: line-through; text-decoration-color: color-mix(in oklch, var(--muted-foreground) 50%, var(--card)); }
 .sidebar-user { display: flex; align-items: center; gap: 8px; padding: 12px 4px 0; border-top: 1px solid var(--sidebar-border); }
 .sidebar-user > .workspace { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted-foreground); }
 .desk-main { min-width: 0; min-height: 0; }
@@ -1051,7 +1074,7 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
   .sidebar nav { order: 10; flex-direction: row; flex-basis: 100%; overflow-x: auto; scrollbar-width: none; }
   .nav-item { flex: none; padding: 6px 10px; }
   .sidebar-foot { margin: 0 0 0 auto; padding: 0; display: flex; align-items: center; gap: 6px; }
-  .sidebar-tools .palette-open-label, .sidebar-tools kbd, .get-started, .sidebar-user > .workspace, .presence { display: none; }
+  .sidebar-tools .palette-open-label, .sidebar-tools kbd, .gs-card, .sidebar-user > .workspace, .presence { display: none; }
   .sidebar-user { padding: 0; border: 0; }
   .desk-main { flex: 1; }
   .content { padding: 20px 16px; }
