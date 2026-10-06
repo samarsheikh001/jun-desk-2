@@ -56,6 +56,8 @@ export interface MetricsInput {
   members: { userId: string; name: string }[];
   /** The conversation rows were capped at MAX_METRIC_CONVERSATIONS. */
   truncated: boolean;
+  /** Conversations started in the period before this one (same length), for the change; optional for older callers. */
+  previousTotal?: number | null;
 }
 
 export interface DurationStat {
@@ -68,6 +70,8 @@ export interface DayPoint {
   /** "2026-10-05", in the report's time zone. */
   day: string;
   conversations: number;
+  /** The AI's conversations that day (answered or handed off by it); aiResolved is a subset. */
+  ai: number;
   aiResolved: number;
 }
 
@@ -95,7 +99,15 @@ export interface MetricsReport {
   since: number;
   until: number;
   truncated: boolean;
-  conversations: { total: number; resolved: number; series: DayPoint[] };
+  conversations: {
+    total: number;
+    resolved: number;
+    series: DayPoint[];
+    /** Conversations in the period before (same number of days), or null if unknown. */
+    previousTotal: number | null;
+    /** total / previousTotal - 1; null without a previous count or when it was 0. */
+    change: number | null;
+  };
   ai: {
     /** AI replies are on right now. */
     enabled: boolean;
@@ -217,6 +229,12 @@ export function periodDays(now: number, days: number, timezone: string): { keys:
   return { keys, since: startOfDay(keys[0]!, timezone), until: startOfDay(addDays(today, 1), timezone) };
 }
 
+/** The `days` calendar days just before the period, for comparing against. */
+export function previousPeriod(now: number, days: number, timezone: string): { since: number; until: number } {
+  const { keys, since } = periodDays(now, days, timezone);
+  return { since: startOfDay(addDays(keys[0]!, -days), timezone), until: since };
+}
+
 /** Median (mean of the middle two for an even count) and p90 (nearest rank) of durations. */
 export function durationStat(values: number[]): DurationStat {
   const sorted = values.filter((v) => Number.isFinite(v) && v >= 0).sort((a, b) => a - b);
@@ -269,7 +287,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
     return lo;
   };
 
-  const series: DayPoint[] = keys.map((day) => ({ day, conversations: 0, aiResolved: 0 }));
+  const series: DayPoint[] = keys.map((day) => ({ day, conversations: 0, ai: 0, aiResolved: 0 }));
   let total = 0;
   let resolved = 0;
   let aiConversations = 0;
@@ -309,6 +327,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
     } else if (c.firstVisitorAt !== null) unlabeled++;
     if (c.firstAiAt !== null || handed) {
       aiConversations++;
+      series[i]!.ai++;
       if (topic) topic.ai++;
       if (handed) {
         handedOff++;
@@ -368,7 +387,13 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
     since,
     until,
     truncated: input.truncated,
-    conversations: { total, resolved, series },
+    conversations: {
+      total,
+      resolved,
+      series,
+      previousTotal: input.previousTotal ?? null,
+      change: input.previousTotal ? total / input.previousTotal - 1 : null,
+    },
     ai: {
       enabled: input.aiEnabled,
       off: !input.aiEnabled && aiConversations === 0,

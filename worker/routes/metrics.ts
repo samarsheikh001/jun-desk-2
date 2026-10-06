@@ -6,6 +6,7 @@ import {
   MAX_METRIC_CONVERSATIONS,
   parsePeriod,
   periodDays,
+  previousPeriod,
   type ConversationFacts,
   type RatingRow,
   type ReplyRow,
@@ -65,8 +66,9 @@ metrics.get("/workspaces/:id/metrics", async (c) => {
 
   const now = Date.now();
   const { since, until } = periodDays(now, days, timezone);
+  const previous = previousPeriod(now, days, timezone);
   const db = c.env.DB;
-  const [[conversations, ratings, replies, members], ai] = await Promise.all([db.batch([
+  const [[conversations, ratings, replies, members, before], ai] = await Promise.all([db.batch([
     db.prepare(CONVERSATION_FACTS).bind(workspaceId, since, until, MAX_METRIC_CONVERSATIONS + 1, AI_OFF_HANDOFF_REASON),
     db.prepare(
       `SELECT conversation_id AS conversationId, rating, CASE WHEN rating = 'bad' THEN comment END AS comment, created_at AS createdAt
@@ -79,6 +81,8 @@ metrics.get("/workspaces/:id/metrics", async (c) => {
        GROUP BY m.author_id`,
     ).bind(workspaceId, since, until),
     db.prepare("SELECT u.id AS userId, u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ?").bind(workspaceId),
+    // The change against the period before: one count, no per-conversation facts.
+    db.prepare("SELECT COUNT(*) AS n FROM conversations WHERE workspace_id = ? AND created_at >= ? AND created_at < ?").bind(workspaceId, previous.since, previous.until),
   ]), loadAiSettings(c.env, workspaceId)]);
 
   type Row = Omit<ConversationFacts, "resolved" | "aiOffHandoff"> & { resolved: number; aiOffHandoff: number };
@@ -95,6 +99,7 @@ metrics.get("/workspaces/:id/metrics", async (c) => {
       replies: replies!.results as unknown as ReplyRow[],
       members: members!.results as unknown as { userId: string; name: string }[],
       truncated,
+      previousTotal: (before!.results[0] as { n: number } | undefined)?.n ?? null,
     }),
   });
 });

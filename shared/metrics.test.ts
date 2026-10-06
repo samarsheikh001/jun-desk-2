@@ -13,6 +13,7 @@ import {
   handoffReasonLabel,
   parsePeriod,
   periodDays,
+  previousPeriod,
   startOfDay,
   type ConversationFacts,
   type MetricsInput,
@@ -135,6 +136,18 @@ test("AI resolution and handoff: the AI's conversations, and which it handled al
   assert.equal(r.ai.handoffRate, 2 / 5);
   assert.deepEqual(r.ai.firstResponse, { count: 4, median: 3.5 * S, p90: 5 * S });
   assert.equal(r.conversations.series[6]!.aiResolved, 2);
+  assert.equal(r.conversations.series[6]!.ai, 5);
+});
+
+test("change against the previous period: its own days, null without a count or from zero", () => {
+  const p = previousPeriod(NOW, 7, "UTC");
+  assert.equal(p.until, periodDays(NOW, 7, "UTC").since);
+  assert.equal(p.since, Date.parse("2026-09-22T00:00:00Z"));
+  const t = NOW - MIN;
+  const two = [conv(t), conv(t), conv(t)];
+  assert.equal(computeMetrics(input({ conversations: two, previousTotal: 2 })).conversations.change, 0.5);
+  assert.equal(computeMetrics(input({ conversations: two, previousTotal: 0 })).conversations.change, null);
+  assert.equal(computeMetrics(input({ conversations: two })).conversations.previousTotal, null);
 });
 
 test("AI off: passed to the team isn't a handoff; 'AI is off' when it's off now with no AI chats", () => {

@@ -1,9 +1,10 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { ArrowDown, ArrowRight, ArrowUp, ArrowRightLeft, MessagesSquare, Smile, Sparkles, Timer } from "lucide-react";
 import { formatDuration, MAX_METRIC_CONVERSATIONS, METRIC_PERIODS, type DayPoint, type MetricPeriod, type MetricsReport } from "../../shared/metrics.ts";
 import { api, describeError } from "../api.ts";
 import { navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
-import { Card } from "@/components/ui/card.tsx";
+import { StreamChart } from "./StreamChart.tsx";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.tsx";
 
 // A-01: core metrics. Days are calendar days in the browser's time zone; the Worker
@@ -22,13 +23,28 @@ const duration = (ms: number | null) => (ms === null ? "–" : formatDuration(ms
 const dayLabel = (key: string, weekday = false) =>
   new Date(`${key}T12:00:00Z`).toLocaleDateString(undefined, { timeZone: "UTC", day: "numeric", month: "short", ...(weekday ? { weekday: "short" } : {}) });
 
-function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
+/** A headline number: coloured icon and label, the value in mono, a change or detail under it. */
+function Kpi({ icon, tone, label, value, change, detail, off }: { icon: ReactNode; tone: string; label: string; value: string; change?: ReactNode; detail: ReactNode; off?: boolean }) {
   return (
-    <Card className="stat">
-      <div className="muted small">{label}</div>
-      <div className="stat-value">{value}</div>
-      <div className="muted small">{detail}</div>
-    </Card>
+    <div className="kpi">
+      <div className="kpi-label"><span className={`kpi-icon ${tone}`}>{icon}</span>{label}</div>
+      <div className={`kpi-value${off ? " off" : ""}`}>{value}</div>
+      <div className="kpi-detail">{change}{detail}</div>
+    </div>
+  );
+}
+
+/** The change against the period before; null without one to compare against. */
+function Change({ change, days }: { change: number | null; days: number }) {
+  if (change === null) return null;
+  const pct = Math.round(Math.abs(change) * 1000) / 10;
+  const dir = pct === 0 ? "flat" : change > 0 ? "up" : "down";
+  const Icon = dir === "flat" ? ArrowRight : dir === "up" ? ArrowUp : ArrowDown;
+  return (
+    <span className={`kpi-change ${dir}`} title={`Against the ${days} days before`}>
+      <Icon aria-hidden="true" />
+      {dir === "flat" ? "0%" : `${pct}%`}
+    </span>
   );
 }
 
@@ -36,19 +52,6 @@ const goTo = (path: string) => (e: MouseEvent) => {
   e.preventDefault();
   navigate(path);
 };
-
-/** Stands in for "AI resolved" and "Handed off" while AI replies are off: nothing's wrong. */
-function AiOffStat() {
-  return (
-    <Card className="stat">
-      <div className="muted small">AI assistant</div>
-      <div className="stat-value stat-off">Off</div>
-      <div className="muted small">
-        Your team answers every chat. <a href="/settings#ai-assistant" onClick={goTo("/settings#ai-assistant")}>Turn it on</a>
-      </div>
-    </Card>
-  );
-}
 
 /** A-06: where visitors were when they opened a chat. Paths only when every page is on one site. */
 function StartPages({ pages }: { pages: MetricsReport["pages"] }) {
@@ -78,10 +81,9 @@ function StartPages({ pages }: { pages: MetricsReport["pages"] }) {
   };
   const rest = pages.withPage - pages.top.reduce((s, p) => s + p.count, 0);
   return (
-    <Card className="panel">
-      <div className="row panel-head">
+    <section className="dash-card">
+      <div className="dash-card-head">
         <h2>Pages where chats start</h2>
-        <span className="spacer" />
         {site && <span className="muted small nums">{site}</span>}
       </div>
       {pages.top.length === 0 ? (
@@ -90,24 +92,22 @@ function StartPages({ pages }: { pages: MetricsReport["pages"] }) {
         </p>
       ) : (
         <>
-          <ul className="reasons start-pages">
+          <ul className="dash-rows">
             {pages.top.map((p) => (
-              <li key={p.page} title={p.page}>
-                <div className="row">
-                  <span className="reason-text page-path">{label(p.page)}</span>
-                  <span className="muted small nums">{p.count} · {percent(p.share)}</span>
-                </div>
-                <div className="meter"><span style={{ width: `${p.share * 100}%` }} /></div>
+              <li key={p.page} title={p.page} style={{ "--share": p.share } as CSSProperties}>
+                <span className="dash-row-label page-path">{label(p.page)}</span>
+                <span className="dash-row-share">{percent(p.share)}</span>
+                <span className="dash-row-value">{p.count.toLocaleString()}</span>
               </li>
             ))}
           </ul>
-          <p className="muted small">
+          <p className="dash-foot">
             Share of the {pages.withPage.toLocaleString()} chats that started on a known page{rest > 0 ? ` (${rest} on pages not listed)` : ""}.
             {pages.withoutPage > 0 && ` ${pages.withoutPage} had no page (opened outside your site).`} Numbers and ids in paths are grouped as :id.
           </p>
         </>
       )}
-    </Card>
+    </section>
   );
 }
 
@@ -119,10 +119,9 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
   const top = topics.list.slice(0, MAX_TOPICS_SHOWN);
   const rest = topics.list.length - top.length;
   return (
-    <Card className="panel">
-      <div className="row panel-head">
+    <section className="dash-card">
+      <div className="dash-card-head">
         <h2>Top topics</h2>
-        <span className="spacer" />
         <a className="small" href="/settings#topics" onClick={goTo("/settings#topics")}>Manage</a>
       </div>
       {top.length === 0 ? (
@@ -138,21 +137,19 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
         </p>
       ) : (
         <>
-          <ul className="reasons topics">
+          <ul className="dash-rows links">
             {top.map((t) => (
-              <li key={t.id}>
+              <li key={t.id} style={{ "--share": t.share } as CSSProperties}>
                 <a href={`/inbox?topic=${t.id}`} onClick={goTo(`/inbox?topic=${encodeURIComponent(t.id)}`)} title={`Open the ${t.name} conversations in the inbox`}>
-                  <div className="row">
-                    <span className="reason-text">{t.name}</span>
-                    {showAi && t.aiResolutionRate !== null && <span className="muted small nums" title="Resolved by the AI alone, of this topic's AI chats">AI {percent(t.aiResolutionRate)}</span>}
-                    <span className="muted small nums topic-count">{t.count} · {percent(t.share)}</span>
-                  </div>
-                  <div className="meter"><span style={{ width: `${t.share * 100}%` }} /></div>
+                  <span className="dash-row-label">{t.name}</span>
+                  {showAi && t.aiResolutionRate !== null && <span className="dash-row-tag" title="Resolved by the AI alone, of this topic's AI chats"><Sparkles aria-hidden="true" />{percent(t.aiResolutionRate)}</span>}
+                  <span className="dash-row-share">{percent(t.share)}</span>
+                  <span className="dash-row-value">{t.count.toLocaleString()}</span>
                 </a>
               </li>
             ))}
           </ul>
-          <p className="muted small">
+          <p className="dash-foot">
             Share of the {topics.labeled.toLocaleString()} labelled chats{rest > 0 ? ` (${rest} more topic${rest === 1 ? "" : "s"} not listed)` : ""}.
             {showAi && top.some((t) => t.aiResolutionRate !== null) && " AI % is how many of the topic's AI chats the AI resolved alone."}
             {!aiEnabled && " New chats aren't labelled while AI replies are off."}
@@ -160,64 +157,79 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
           </p>
         </>
       )}
-    </Card>
+    </section>
   );
 }
 
-/** Conversations per day, stacked: resolved by the AI alone at the bottom, the rest above. */
-function DayChart({ series, showAi }: { series: DayPoint[]; showAi: boolean }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const max = Math.max(1, ...series.map((d) => d.conversations));
-  const width = 100 / series.length;
-  const gap = series.length > 40 ? 0.15 : 0.6; // % of the width between bars
-  const point = series[hover ?? -1];
-  const ticks = [0, Math.floor((series.length - 1) / 2), series.length - 1];
+/** A-01's headline card: the conversations stream over the headline numbers. */
+function Overview({ r }: { r: MetricsReport }) {
+  const [day, setDay] = useState<DayPoint | null>(null);
+  const showAi = !r.ai.off;
   return (
-    <div className="chart">
-      <div className="chart-caption small">
-        {point ? (
-          <>
-            <span className="strong">{dayLabel(point.day, true)}</span>: {point.conversations} conversation{point.conversations === 1 ? "" : "s"}
-            {showAi && `, ${point.aiResolved} resolved by the AI`}
-          </>
-        ) : (
-          <span className="muted">Hover or tap a day for its numbers.</span>
-        )}
+    <section className="dash-card dash-hero">
+      <div className="dash-card-head">
+        <h2>Conversations</h2>
+        <span className="dash-caption" aria-live="polite">
+          {day ? (
+            <>
+              <span className="strong">{dayLabel(day.day, true)}</span> · {day.conversations} conversation{day.conversations === 1 ? "" : "s"}
+              {showAi && ` · ${day.aiResolved} resolved by the AI`}
+            </>
+          ) : (
+            `Last ${r.days} days`
+          )}
+        </span>
       </div>
-      <div className="chart-plot">
-        <span className="chart-max muted small">{max}</span>
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Conversations per day" onMouseLeave={() => setHover(null)}>
-          <line x1="0" x2="100" y1="0" y2="0" className="chart-grid" vectorEffect="non-scaling-stroke" />
-          <line x1="0" x2="100" y1="100" y2="100" className="chart-base" vectorEffect="non-scaling-stroke" />
-          {series.map((d, i) => {
-            const total = (d.conversations / max) * 100;
-            const ai = (d.aiResolved / max) * 100;
-            const x = i * width + gap / 2;
-            const w = Math.max(width - gap, 0.2);
-            return (
-              <g key={d.day} className={hover === i ? "on" : ""} onMouseEnter={() => setHover(i)}>
-                {/* Taller than the bar, so short days are easy to hover. */}
-                <rect x={i * width} width={width} y={0} height={100} className="chart-hit" />
-                {total > ai && <rect x={x} width={w} y={100 - total} height={total - ai - (ai > 0 ? 1.5 : 0)} className={showAi ? "bar-rest" : "bar-ai"} />}
-                {ai > 0 && <rect x={x} width={w} y={100 - ai} height={ai} className="bar-ai" />}
-                <title>{`${dayLabel(d.day)}: ${d.conversations} conversations${showAi ? `, ${d.aiResolved} resolved by the AI` : ""}`}</title>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-      <div className="chart-axis muted small">
-        {ticks.filter((t, i) => ticks.indexOf(t) === i).map((t) => (
-          <span key={t} style={{ left: `${(t + 0.5) * width}%` }}>{dayLabel(series[t]!.day)}</span>
-        ))}
-      </div>
+      <StreamChart key={r.days} series={r.conversations.series} showAi={showAi} onHover={setDay} />
       {showAi && (
-        <div className="legend small">
-          <span><i className="swatch bar-ai" /> Resolved by the AI</span>
-          <span><i className="swatch bar-rest" /> Everything else</span>
+        <div className="stream-legend">
+          <span><i className="b2" /> Resolved by the AI</span>
+          <span><i className="b1" /> AI, then the team</span>
+          <span><i className="b0" /> Team only</span>
         </div>
       )}
-    </div>
+      <div className="kpis">
+        <Kpi
+          icon={<MessagesSquare />}
+          tone="green"
+          label="Conversations"
+          value={r.conversations.total.toLocaleString()}
+          change={<Change change={r.conversations.change} days={r.days} />}
+          detail={`${r.conversations.resolved.toLocaleString()} resolved`}
+        />
+        {r.ai.off ? (
+          <Kpi
+            icon={<Sparkles />}
+            tone="blue"
+            label="AI assistant"
+            value="Off"
+            off
+            detail={<>Your team answers every chat. <a href="/settings#ai-assistant" onClick={goTo("/settings#ai-assistant")}>Turn it on</a></>}
+          />
+        ) : (
+          <>
+            <Kpi icon={<Sparkles />} tone="blue" label="AI resolved" value={percent(r.ai.resolutionRate)} detail={`${r.ai.resolved} of ${r.ai.conversations} AI chats`} />
+            <Kpi icon={<ArrowRightLeft />} tone="violet" label="Handed off" value={percent(r.ai.handoffRate)} detail={`${r.ai.handedOff} of ${r.ai.conversations} AI chats`} />
+          </>
+        )}
+        <Kpi
+          icon={<Timer />}
+          tone="amber"
+          label="First response"
+          value={duration(r.team.firstResponse.median)}
+          detail={r.team.firstResponse.p90 === null ? "No team replies yet" : `90% within ${duration(r.team.firstResponse.p90)}`}
+        />
+        <Kpi icon={<Smile />} tone="pink" label="CSAT" value={percent(r.csat.score)} detail={`👍 ${r.csat.good} · 👎 ${r.csat.bad}`} />
+      </div>
+      <p className="dash-foot">
+        {r.conversations.previousTotal !== null && `The change is against the ${r.days} days before (${r.conversations.previousTotal.toLocaleString()} conversations). `}
+        First response is the median time from a visitor's first message to the team's first reply.
+        {r.ai.firstResponse.median !== null && ` The AI's first answer takes ${duration(r.ai.firstResponse.median)} (median).`}
+        {!r.ai.off && !r.ai.enabled && " AI replies are off now; the AI numbers are from earlier in the period."}
+        {!r.ai.off && r.ai.passedWhileOff > 0 &&
+          ` ${r.ai.passedWhileOff} chat${r.ai.passedWhileOff === 1 ? "" : "s"} reached the AI while it was off and went to the team; ${r.ai.passedWhileOff === 1 ? "it isn't" : "they aren't"} counted as handoffs.`}
+      </p>
+    </section>
   );
 }
 
@@ -254,88 +266,57 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
       </div>
       {error && <p className="error">{error}</p>}
       {!r ? (
-        !error && <p className="muted">Loading…</p>
+        !error && <div className="dash-card dash-loading" aria-busy="true"><p className="muted">Loading…</p></div>
       ) : empty ? (
-        <Card className="panel">
+        <section className="dash-card">
           <p className="muted">No conversations in the last {days} days. Numbers show up here once visitors start chatting.</p>
-        </Card>
+        </section>
       ) : (
         <>
           {r.truncated && <p className="muted small">Based on the newest {MAX_METRIC_CONVERSATIONS.toLocaleString()} conversations in this period.</p>}
-          <div className="stats">
-            <Stat label="Conversations" value={r.conversations.total.toLocaleString()} detail={`${r.conversations.resolved} resolved`} />
-            {r.ai.off ? (
-              <AiOffStat />
-            ) : (
-              <>
-                <Stat label="AI resolved" value={percent(r.ai.resolutionRate)} detail={`${r.ai.resolved} of ${r.ai.conversations} AI chats`} />
-                <Stat label="Handed off" value={percent(r.ai.handoffRate)} detail={`${r.ai.handedOff} of ${r.ai.conversations} AI chats`} />
-              </>
+          <Overview r={r} />
+
+          <div className="dash-grid">
+            <TopTopics topics={r.topics} showAi={!r.ai.off} aiEnabled={r.ai.enabled} />
+            <StartPages pages={r.pages} />
+            {!r.ai.off && (
+              <section className="dash-card">
+                <div className="dash-card-head"><h2>Top handoff reasons</h2></div>
+                {r.ai.reasons.length === 0 ? (
+                  <p className="muted small">No handoffs in this period.</p>
+                ) : (
+                  <ul className="dash-rows">
+                    {r.ai.reasons.map((x) => (
+                      <li key={x.reason} style={{ "--share": x.count / r.ai.reasons[0]!.count } as CSSProperties}>
+                        <span className="dash-row-label">{x.reason}</span>
+                        <span className="dash-row-value">{x.count.toLocaleString()}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
             )}
-            <Stat
-              label="First response"
-              value={duration(r.team.firstResponse.median)}
-              detail={r.team.firstResponse.p90 === null ? "No team replies yet" : `90% within ${duration(r.team.firstResponse.p90)}`}
-            />
-            <Stat label="CSAT" value={percent(r.csat.score)} detail={`👍 ${r.csat.good} · 👎 ${r.csat.bad}`} />
-          </div>
-          <p className="muted small reports-note">
-            First response is the median time from a visitor's first message to the team's first reply.
-            {r.ai.firstResponse.median !== null && ` The AI's first answer takes ${duration(r.ai.firstResponse.median)} (median).`}
-            {!r.ai.off && !r.ai.enabled && " AI replies are off now; the AI numbers are from earlier in the period."}
-            {!r.ai.off && r.ai.passedWhileOff > 0 &&
-              ` ${r.ai.passedWhileOff} chat${r.ai.passedWhileOff === 1 ? "" : "s"} reached the AI while it was off and went to the team; ${r.ai.passedWhileOff === 1 ? "it isn't" : "they aren't"} counted as handoffs.`}
-          </p>
-
-          <Card className="panel">
-            <h2>Conversations per day</h2>
-            <DayChart series={r.conversations.series} showAi={!r.ai.off} />
-          </Card>
-
-          <TopTopics topics={r.topics} showAi={!r.ai.off} aiEnabled={r.ai.enabled} />
-
-          <StartPages pages={r.pages} />
-
-          <div className="reports-grid">
-            {!r.ai.off && <Card className="panel">
-              <h2>Top handoff reasons</h2>
-              {r.ai.reasons.length === 0 ? (
-                <p className="muted small">No handoffs in this period.</p>
-              ) : (
-                <ul className="reasons">
-                  {r.ai.reasons.map((x) => (
-                    <li key={x.reason}>
-                      <div className="row">
-                        <span className="reason-text">{x.reason}</span>
-                        <span className="muted small">{x.count}</span>
-                      </div>
-                      <div className="meter"><span style={{ width: `${(x.count / r.ai.reasons[0]!.count) * 100}%` }} /></div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>}
-            <Card className="panel">
-              <h2>Recent 👎 comments</h2>
+            <section className="dash-card">
+              <div className="dash-card-head"><h2>Recent 👎 comments</h2></div>
               {r.csat.badComments.length === 0 ? (
                 <p className="muted small">No comments on bad ratings in this period.</p>
               ) : (
-                <ul className="bad-comments">
+                <ul className="dash-rows links">
                   {r.csat.badComments.map((x) => (
                     <li key={`${x.conversationId}:${x.createdAt}`}>
-                      <a href={`/inbox/${x.conversationId}`} onClick={(e) => { e.preventDefault(); navigate(`/inbox/${x.conversationId}`); }}>
-                        <span className="bad-comment">“{x.comment}”</span>
-                        <span className="muted small">{new Date(x.createdAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                      <a href={`/inbox/${x.conversationId}`} onClick={goTo(`/inbox/${x.conversationId}`)}>
+                        <span className="dash-row-label">“{x.comment}”</span>
+                        <span className="dash-row-share">{new Date(x.createdAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
                       </a>
                     </li>
                   ))}
                 </ul>
               )}
-            </Card>
+            </section>
           </div>
 
-          <Card className="panel">
-            <h2>Team</h2>
+          <section className="dash-card">
+            <div className="dash-card-head"><h2>Team</h2></div>
             <Table className="team-table">
               <TableHeader>
                 <TableRow>
@@ -349,15 +330,15 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
                 {r.teammates.map((t) => (
                   <TableRow key={t.userId}>
                     <TableCell className="strong">{t.name}</TableCell>
-                    <TableCell data-label="Replies">{t.replies}</TableCell>
-                    <TableCell data-label="Conversations">{t.conversations}</TableCell>
+                    <TableCell data-label="Replies">{t.replies.toLocaleString()}</TableCell>
+                    <TableCell data-label="Conversations">{t.conversations.toLocaleString()}</TableCell>
                     <TableCell data-label="First response">{duration(t.firstResponse.median)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-            <p className="muted small">Replies the teammate sent in this period (not notes), the conversations they replied in, and their median first response when they answered first.</p>
-          </Card>
+            <p className="dash-foot">Replies the teammate sent in this period (not notes), the conversations they replied in, and their median first response when they answered first.</p>
+          </section>
         </>
       )}
     </div>
