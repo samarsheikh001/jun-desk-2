@@ -260,13 +260,12 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 .auth-card [data-slot="button"] { width: 100%; }
 .auth-card > [data-slot="button"] { margin-top: 12px; }
 
-/* Pages and panels: the panel is the shadcn Card surface. */
-.content { width: 100%; max-width: 760px; margin: 0 auto; padding: 24px; display: grid; gap: 16px; align-content: start; }
-.content.wide { max-width: 1100px; }
+/* Pages use the full main area; panels are flat sections split by a rule, not boxed cards. */
+.content { width: 100%; padding: 24px 32px; display: grid; gap: 24px; align-content: start; }
 .content > h1:first-child { margin-top: 0; }
-/* <Card className="panel">: the Card gives the surface, ring and radius; the panel keeps document flow
-   (block, 20px padding as in the reference .panel) and doesn't clip popovers or focus rings. */
-.panel { display: block; overflow: visible; padding: 20px; min-width: 0; font-size: 14px; }
+/* <Card className="panel">: the Card's surface, ring and radius are dropped (unlayered, so this wins over
+   its utilities); the panel keeps document flow and doesn't clip popovers or focus rings. */
+.panel { display: block; overflow: visible; padding: 24px 0 0; min-width: 0; font-size: 14px; background: none; border-radius: 0; box-shadow: none; border-top: 1px solid var(--border); }
 .panel > h2:first-child { margin: 0 0 4px; }
 .panel-head { flex-wrap: wrap; gap: 2px 12px; }
 .panel-head h2 { margin: 0; }
@@ -668,7 +667,8 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 .reports-head { flex-wrap: wrap; }
 .reports-head h1 { margin: 0; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-.stat { display: grid; gap: 2px; min-width: 0; padding: 16px; overflow: visible; }
+.stats { gap: 16px 24px; }
+.stat { display: grid; gap: 2px; min-width: 0; padding: 0; overflow: visible; background: none; border-radius: 0; box-shadow: none; }
 .stat-value { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .stat-off { color: var(--muted-foreground); }
 .reports-note { margin: -6px 0 0; }
@@ -830,7 +830,7 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
   .sidebar-user { padding: 0; border: 0; }
   .desk-main { flex: 1; }
   .content { padding: 20px 16px; }
-  .panel { padding: 16px; }
+  .panel { padding-top: 20px; }
   .messages { padding: 16px; }
   input:not([type="checkbox"], [type="radio"], [type="color"]), textarea, select { font-size: 16px; }
 }
