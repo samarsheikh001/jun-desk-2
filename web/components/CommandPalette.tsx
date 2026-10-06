@@ -7,6 +7,7 @@ import { rankScored, SHORTCUT_HELP } from "../lib/commands.ts";
 import { navigate } from "../lib/router.ts";
 import { setThemePref, THEME_LABEL, THEME_PREFS } from "../lib/theme.ts";
 import { Button } from "@/components/ui/button.tsx";
+import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 
 interface Item {
   id: string;
@@ -218,7 +219,9 @@ export function CommandPalette({
           onKeyDown={onKeyDown}
         />
       </div>
-      <div id={`${ids}-list`} className="palette-list" role="listbox" aria-label="Results">
+      {/* Focus stays in the search input, so the scroller is no tab stop. */}
+      <ScrollArea className="palette-list" viewportProps={{ tabIndex: -1 }}>
+      <div id={`${ids}-list`} className="palette-options" role="listbox" aria-label="Results">
         {groups.map((g, gi) => (
           <div key={g.label} role="group" aria-labelledby={`${ids}-g${gi}`}>
             <div id={`${ids}-g${gi}`} className="palette-group" role="presentation">{g.label}</div>
@@ -249,6 +252,7 @@ export function CommandPalette({
         ))}
         {flat.length === 0 && <p className="muted small pad">{stack.length === 0 ? "No matches." : "Nothing to pick here."}</p>}
       </div>
+      </ScrollArea>
       <div className="palette-foot muted small" aria-hidden="true">
         <span><kbd>↑</kbd><kbd>↓</kbd> move</span>
         <span><kbd>Enter</kbd> run</span>
@@ -354,6 +358,8 @@ export function ShortcutsHelp({ onClose }: { onClose: () => void }) {
       }}
       onClick={(e) => e.target === dialog.current && onClose()}
     >
+      {/* The whole sheet scrolls, as the dialog did. Focus starts on Esc inside it, so keys scroll it without a tab stop. */}
+      <ScrollArea viewportProps={{ tabIndex: -1 }}>
       <div className="shortcuts-head">
         <h2 id="shortcuts-title">Keyboard shortcuts</h2>
         <span className="spacer" />
@@ -383,6 +389,7 @@ export function ShortcutsHelp({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <p className="muted small shortcuts-foot">Single-key shortcuts are off while you type. Press Esc to leave a text field.</p>
+      </ScrollArea>
     </dialog>
   );
 }

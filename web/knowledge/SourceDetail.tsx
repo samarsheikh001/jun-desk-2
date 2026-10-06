@@ -5,6 +5,7 @@ import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
+import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 
 // K-04: what a knowledge source contains, and the knobs to fix it: edit a snippet, cap or
 // skip pages of a website, remove a page (kept out of future syncs), see its indexed text.
@@ -154,6 +155,7 @@ export function SourceDetail({ base, sourceId, canEdit, onChanged }: { base: str
             <span className="spacer" />
             {documents.length > 8 && <Input className="kb-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter pages" />}
           </div>
+          <ScrollArea className="kb-docs-area">
           <ul className="kb-docs">
             {shown.map((d) => (
               <li key={d.id}>
@@ -175,6 +177,7 @@ export function SourceDetail({ base, sourceId, canEdit, onChanged }: { base: str
               </li>
             ))}
           </ul>
+          </ScrollArea>
         </>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenIcon, BotIcon, ChartColumnIcon, InboxIcon, SearchIcon, SettingsIcon, UsersIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.tsx";
+import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { DeskIcon } from "./components/DeskIcon.tsx";
 import { ThemeButton } from "./components/ThemeButton.tsx";
 import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
@@ -195,7 +196,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
 
   return (
     <div className="shell">
-      <header className="sidebar">
+      <ScrollArea render={<header />} className="sidebar" contentClassName="sidebar-body">
         <div className="brand"><DeskIcon /><span>Jun Desk</span></div>
         <nav aria-label="Main">
           {NAV.map(({ id, label, Icon }) => (
@@ -233,8 +234,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
             <Button variant="ghost" size="sm" onClick={async () => { await api("/auth/logout", { body: {} }); onSignOut(); }}>Sign out</Button>
           </div>
         </div>
-      </header>
-      <main className="desk-main">
+      </ScrollArea>
+      <ScrollArea render={<main />} className="desk-main" contentClassName="desk-main-body">
       {section === "inbox" ? (
         <InboxPage workspaceId={workspace.workspaceId} me={me.user} hub={hub} conversationId={conversationId} />
       ) : section === "knowledge" ? (
@@ -250,7 +251,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       ) : (
         <SettingsPage me={me} />
       )}
-      </main>
+      </ScrollArea>
       {overlay === "palette" && <CommandPalette workspaceId={workspace.workspaceId} meId={me.user.id} onClose={closeOverlay} onHelp={openHelp} onToast={showNotice} />}
       {overlay === "help" && <ShortcutsHelp onClose={closeOverlay} />}
       {notice && <div className="toast" role="status"><span>{notice}</span></div>}

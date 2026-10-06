@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { describeBrowser, describeIssueKind, describeTarget, formatDuration, formatEventTime, isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
 import type { AiAction, ConversationSummary } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
+import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 
 interface ContextResponse {
   context: Omit<DebugContext, "events"> | null;
@@ -111,7 +112,8 @@ function AiActions({ actions }: { actions: AiAction[] }) {
             {a.output && (
               <details>
                 <summary className="small">Result{a.configVersion ? ` (config v${a.configVersion})` : ""}</summary>
-                <pre>{a.output}</pre>
+                {/* Short, so no tab stop of its own (the panel around it scrolls by keyboard). */}
+                <ScrollArea className="ai-output" viewportProps={{ tabIndex: -1 }}><pre>{a.output}</pre></ScrollArea>
               </details>
             )}
           </li>
@@ -224,6 +226,11 @@ function ContactCard({ workspaceId, contact, conversationId, refreshKey }: { wor
   );
 }
 
+/** The side panel's scroller: the root keeps the border, the viewport the grid layout. */
+function Panel({ className = "", children }: { className?: string; children: ReactNode }) {
+  return <ScrollArea render={<aside />} className={`debug-panel ${className}`} contentClassName="debug-panel-body">{children}</ScrollArea>;
+}
+
 export function DebugPanel({ conversationId, workspaceId, contact, refreshKey }: { conversationId: string; workspaceId: string; contact: ConversationSummary["contact"]; refreshKey: number }) {
   const [data, setData] = useState<ContextResponse | null>(null);
   const [actions, setActions] = useState<AiAction[]>([]);
@@ -234,21 +241,21 @@ export function DebugPanel({ conversationId, workspaceId, contact, refreshKey }:
     api<{ actions: AiAction[] }>(`/conversations/${conversationId}/actions`).then((r) => setActions(r.actions), () => setActions([]));
   }, [conversationId, refreshKey]);
 
-  if (!data) return <aside className="debug-panel muted small pad">Loading…</aside>;
+  if (!data) return <Panel className="muted small">Loading…</Panel>;
   if (!data.context) {
     return (
-      <aside className="debug-panel">
+      <Panel>
         <ContactCard workspaceId={workspaceId} contact={contact} conversationId={conversationId} refreshKey={refreshKey} />
         <AiActions actions={actions} />
         <h3>Browser</h3>
         <p className="muted small">No browser details for this conversation. They appear when the visitor writes from a page with the widget installed.</p>
-      </aside>
+      </Panel>
     );
   }
   const { context } = data;
   const shown = onlyIssues ? data.events.filter(isIssue) : data.events;
   return (
-    <aside className="debug-panel">
+    <Panel>
       <ContactCard workspaceId={workspaceId} contact={contact} conversationId={conversationId} refreshKey={refreshKey} />
       <AiActions actions={actions} />
       <h3>Browser</h3>
@@ -280,6 +287,6 @@ export function DebugPanel({ conversationId, workspaceId, contact, refreshKey }:
         </ol>
       )}
       <p className="muted small">Captured by the widget in the visitor's browser and masked (emails, tokens, query values). No request bodies.</p>
-    </aside>
+    </Panel>
   );
 }

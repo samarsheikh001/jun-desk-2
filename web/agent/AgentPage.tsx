@@ -5,6 +5,7 @@ import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
+import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 
 // Support agent as code (AI-18): the dashboard edits the same files as `jun pull` / `jun push`.
 
@@ -164,7 +165,7 @@ export function AgentPage({ workspaceId, canEdit }: { workspaceId: string; canEd
 
   return (
     <div className="agent-page">
-      <aside className="agent-files">
+      <ScrollArea render={<aside />} className="agent-files" contentClassName="agent-pane">
         {groups.map((g) => (
           <div key={g.name} className="agent-group">
             <div className="agent-group-head">
@@ -199,7 +200,7 @@ export function AgentPage({ workspaceId, canEdit }: { workspaceId: string; canEd
           <div className="muted">Create a token in <a href="/settings" onClick={(e) => { e.preventDefault(); navigate("/settings"); }}>Settings → API tokens</a>, then in your Jun Desk checkout:</div>
           <pre>{`npm run jun -- login ${window.location.origin}\nnpm run jun -- pull support-agent\nnpm run jun -- eval support-agent\nnpm run jun -- push support-agent`}</pre>
         </div>
-      </aside>
+      </ScrollArea>
 
       <section className="agent-editor">
         <div className="agent-head">
@@ -248,7 +249,7 @@ export function AgentPage({ workspaceId, canEdit }: { workspaceId: string; canEd
         {error && <p className="error small">{error}</p>}
       </section>
 
-      <aside className="agent-history">
+      <ScrollArea render={<aside />} className="agent-history" contentClassName="agent-pane">
         <div className="muted small strong">In this config</div>
         <ul className="agent-summary small">
           <li>{state.summary.skills.length} procedure{state.summary.skills.length === 1 ? "" : "s"}</li>
@@ -272,7 +273,7 @@ export function AgentPage({ workspaceId, canEdit }: { workspaceId: string; canEd
             </li>
           ))}
         </ul>
-      </aside>
+      </ScrollArea>
     </div>
   );
 }

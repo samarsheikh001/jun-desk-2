@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ConversationIssue, ConversationStatus, ConversationSummary, CsatRating, Message } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { fillSavedReply } from "../../shared/inbox.ts";
@@ -17,6 +17,16 @@ import { Button } from "@/components/ui/button.tsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { ScrollArea } from "@/components/ui/scroll-area.tsx";
+
+/** The composer's saved-reply / @mention popup: focus stays in the textarea, so no tab stop. */
+function SuggestScroller({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <div className={className}>
+      <ScrollArea viewportProps={{ tabIndex: -1 }}>{children}</ScrollArea>
+    </div>
+  );
+}
 
 type StatusFilter = ConversationStatus | "all";
 type AssigneeFilter = "all" | "me" | "unassigned" | "mentions";
@@ -166,7 +176,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
           <Button variant="outline" size="sm" aria-label="Dismiss" onClick={() => setToast(null)}>×</Button>
         </div>
       )}
-      <aside className="conv-list">
+      <ScrollArea render={<aside />} className="conv-list" contentClassName="conv-list-body">
         <div className="conv-filters">
         <Input
           ref={searchInput}
@@ -280,7 +290,7 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
             ))}
           </ul>
         )}
-      </aside>
+      </ScrollArea>
       {conversationId ? (
         <Thread
           key={conversationId}
@@ -512,6 +522,8 @@ function Thread({
           </div>
         )
       )}
+      {/* The transcript markup is shared with the widget; only the dashboard scrolls it in a ScrollArea. */}
+      <ScrollArea className="messages-area">
       <MessageList
         messages={thread.messages}
         pending={thread.pending}
@@ -527,12 +539,14 @@ function Thread({
         onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
         mentionNames={members.map((m) => m.name)}
       />
+      </ScrollArea>
       <Composer
         control={composer}
         placeholder={savedReplies.length ? "Reply… (/ for saved replies, Shift+Enter for a new line)" : "Reply… (Enter to send, Shift+Enter for a new line)"}
         upload={(file) => uploadFile(`/api/workspaces/${workspaceId}/files`, file)}
         onTyping={onTyping}
         notes
+        suggestScroller={SuggestScroller}
         mentionables={members.filter((m) => m.id !== me.id)}
         savedReplies={savedReplies}
         fillReply={(body) => fillSavedReply(body, { customerName: conversation.contact.name, agentName: me.name })}

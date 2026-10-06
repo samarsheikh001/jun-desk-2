@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import type { Attachment } from "../../shared/protocol.ts";
 import { canCaptureScreen, captureScreen } from "../lib/screenshot.ts";
 import { formatSize } from "../lib/thread.ts";
@@ -36,6 +36,7 @@ export function Composer({
   fillReply = (body) => body,
   screenshot = false,
   control,
+  suggestScroller: SuggestScroller,
 }: {
   placeholder: string;
   disabled?: boolean;
@@ -50,6 +51,11 @@ export function Composer({
   /** S-15: offer "Send a screenshot" (the widget), where the browser supports it. */
   screenshot?: boolean;
   control?: Ref<ComposerControl>;
+  /**
+   * The dashboard scrolls the suggestions in a shadcn ScrollArea; passed in (not imported) so
+   * the widget, which shares this component, keeps its own markup and bundle.
+   */
+  suggestScroller?: ComponentType<{ className: string; children: ReactNode }>;
 }) {
   const [body, setBody] = useState("");
   const [note, setNote] = useState(false);
@@ -61,6 +67,7 @@ export function Composer({
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const suggestList = useRef<HTMLUListElement>(null);
   const pendingCaret = useRef<number | null>(null);
   // S-15: a captured screenshot waiting for the visitor to send or discard it.
   const canShoot = useMemo(() => screenshot && canCaptureScreen(), [screenshot]);
@@ -94,6 +101,9 @@ export function Composer({
   const open = suggestions.length > 0;
 
   useEffect(() => setActive(0), [suggestions.length]);
+  useEffect(() => {
+    suggestList.current?.children[active]?.scrollIntoView({ block: "nearest" });
+  }, [active]);
   useEffect(() => {
     if (pendingCaret.current === null || !input.current) return;
     input.current.setSelectionRange(pendingCaret.current, pendingCaret.current);
@@ -262,16 +272,19 @@ export function Composer({
           </div>
         </div>
       )}
-      {open && (
-        <ul className="suggest" role="listbox" aria-label={suggestions[0]!.kind === "reply" ? "Saved replies" : "Mention a teammate"}>
-          {suggestions.map((s, i) => (
-            <li key={s.id} role="option" aria-selected={i === active} className={i === active ? "active" : ""} onMouseDown={(e) => { e.preventDefault(); pick(s); }}>
-              <span className="strong">{s.kind === "mention" ? `@${s.label}` : s.label}</span>
-              {s.kind === "reply" && <span className="muted small"> {s.body.slice(0, 80)}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
+      {open && (() => {
+        const list = (
+          <ul ref={suggestList} className={SuggestScroller ? "suggest-list" : "suggest"} role="listbox" aria-label={suggestions[0]!.kind === "reply" ? "Saved replies" : "Mention a teammate"}>
+            {suggestions.map((s, i) => (
+              <li key={s.id} role="option" aria-selected={i === active} className={i === active ? "active" : ""} onMouseDown={(e) => { e.preventDefault(); pick(s); }}>
+                <span className="strong">{s.kind === "mention" ? `@${s.label}` : s.label}</span>
+                {s.kind === "reply" && <span className="muted small"> {s.body.slice(0, 80)}</span>}
+              </li>
+            ))}
+          </ul>
+        );
+        return SuggestScroller ? <SuggestScroller className="suggest">{list}</SuggestScroller> : list;
+      })()}
       <div className="composer-row">
         <button className="ghost icon" title="Attach files" aria-label="Attach files" disabled={disabled} onClick={() => fileInput.current?.click()}>📎</button>
         <input ref={fileInput} type="file" multiple hidden onChange={(e) => void addFiles(e.target.files)} />

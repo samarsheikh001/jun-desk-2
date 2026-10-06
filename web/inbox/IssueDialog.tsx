@@ -7,6 +7,7 @@ import type { TrackerStatus } from "../settings/IssueTrackersPanel.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
+import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 
 interface Draft {
   title: string;
@@ -130,6 +131,8 @@ export function IssueDialog({ conversationId, trackers, onClose, onCreated }: { 
   const target = provider === "github" ? trackers.github.repo : trackers.linear.team ? `${trackers.linear.team.name} (${trackers.linear.team.key})` : "";
   return (
     <dialog ref={dialog} className="issue-dialog" aria-labelledby="issue-dialog-title" onClose={onClose} onCancel={(e) => busy && e.preventDefault()}>
+      {/* The dialog's scroller (it was the dialog itself). Focus is always inside the form, so no extra tab stop. */}
+      <ScrollArea viewportProps={{ tabIndex: -1 }}>
       <form onSubmit={submit}>
         <div className="row">
           <h2 id="issue-dialog-title">Create issue</h2>
@@ -201,6 +204,7 @@ export function IssueDialog({ conversationId, trackers, onClose, onCreated }: { 
           <Button disabled={!draft || busy || !title.trim()}>{busy ? "Creating…" : `Create in ${NAMES[provider]}`}</Button>
         </div>
       </form>
+      </ScrollArea>
     </dialog>
   );
 }
