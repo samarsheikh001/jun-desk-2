@@ -239,7 +239,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       </ScrollArea>
       <ScrollArea render={<main />} className="desk-main" contentClassName="desk-main-body">
       {section === "inbox" ? (
-        <InboxPage workspaceId={workspace.workspaceId} me={me.user} hub={hub} conversationId={conversationId} />
+        <InboxPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} me={me.user} hub={hub} conversationId={conversationId} />
       ) : section === "knowledge" ? (
         <KnowledgePage workspaceId={workspace.workspaceId} canEdit={canEdit} />
       ) : section === "welcome" ? (

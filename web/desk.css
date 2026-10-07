@@ -192,29 +192,30 @@
 
   /* Native controls that stay native (the composer and transcript are shared with the widget, so they
      keep their markup): the same look as the shadcn Button / Input / Textarea / NativeSelect. Not inside
-     Dither Kit charts (.dither): their legend buttons keep the kit's own utilities; nor the sidebar's "Get started" header (.gs-head). */
-  :where(button):not([data-slot], .dither button, .gs-head) {
+     Dither Kit charts (.dither): their legend buttons keep the kit's own utilities; nor controls marked data-plain
+     (Widgo's ported ones: the sidebar's "Get started" header, the inbox toolbar, table and drawer). */
+  :where(button):not([data-slot], [data-plain], .dither button) {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     min-height: 32px; padding: 4px 10px; border: 1px solid transparent; border-radius: var(--radius);
     background: var(--primary); color: var(--primary-foreground);
     font-size: 14px; font-weight: 500; line-height: 20px; white-space: nowrap; cursor: pointer;
     transition: background-color 150ms, border-color 150ms, box-shadow 150ms;
   }
-  :where(button):not([data-slot], .dither button, .gs-head):hover { background: color-mix(in oklch, var(--primary) 80%, transparent); }
-  :where(button):not([data-slot], .dither button, .gs-head):active:not(:disabled) { transform: translateY(1px); }
-  :where(button):not([data-slot], .dither button, .gs-head):disabled { opacity: 0.5; cursor: not-allowed; }
-  :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), textarea, select):not([data-slot]) {
+  :where(button):not([data-slot], [data-plain], .dither button):hover { background: color-mix(in oklch, var(--primary) 80%, transparent); }
+  :where(button):not([data-slot], [data-plain], .dither button):active:not(:disabled) { transform: translateY(1px); }
+  :where(button):not([data-slot], [data-plain], .dither button):disabled { opacity: 0.5; cursor: not-allowed; }
+  :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), textarea, select):not([data-slot], [data-plain]) {
     min-height: 32px; min-width: 0; padding: 4px 10px; border: 1px solid var(--input); border-radius: var(--radius);
     background: transparent; color: var(--foreground); outline: none;
     transition: border-color 150ms, box-shadow 150ms;
   }
   [data-theme="dark"] {
-    :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), textarea, select):not([data-slot]) { background: color-mix(in oklch, var(--input) 30%, transparent); }
+    :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), textarea, select):not([data-slot], [data-plain]) { background: color-mix(in oklch, var(--input) 30%, transparent); }
   }
   :where(textarea):not([data-slot]) { padding-top: 6px; padding-bottom: 6px; }
   :where(select):not([data-slot]) option { background: Canvas; color: CanvasText; }
   :where(input, textarea, select)::placeholder { color: var(--muted-foreground); }
-  :where(button, a, input, textarea, select, summary):not([data-slot]):focus-visible {
+  :where(button, a, input, textarea, select, summary):not([data-slot], input[data-plain]):focus-visible {
     outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
   }
   :where(input, textarea, select):not([data-slot]):disabled { opacity: 0.5; cursor: not-allowed; }
@@ -285,7 +286,7 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 .chip { display: inline-flex; gap: 6px; align-items: center; padding: 2px 8px; border-radius: calc(var(--radius) * 0.8); background: var(--muted); border: 1px solid var(--border); font-size: 12px; }
 .tag-chip { background: var(--secondary); border-color: transparent; font-size: 12px; padding: 1px 8px; }
 .toast {
-  position: fixed; right: 16px; bottom: 16px; z-index: 50; display: flex; gap: 10px; align-items: center;
+  position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; gap: 10px; align-items: center;
   max-width: min(420px, calc(100vw - 32px)); padding: 12px 14px; background: var(--popover); color: var(--popover-foreground);
   border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
@@ -302,6 +303,16 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 :root[data-theme="dark"] { --scroll-thumb: oklch(1 0 0 / 18%); --scroll-thumb-active: oklch(1 0 0 / 35%); }
 [data-slot="scroll-area-thumb"] { background: var(--scroll-thumb); transition: background-color 0.15s; }
 [data-slot="scroll-area-scrollbar"]:hover [data-slot="scroll-area-thumb"], [data-slot="scroll-area-thumb"][data-scrolling] { background: var(--scroll-thumb-active); }
+
+/* Widgo's in-between roles, derived from our tokens so both themes follow: a primary tint, and
+   greys between muted-foreground and the surface (steel: icons and quiet text; tertiary: empty
+   states; stone: placeholders and dashes). */
+:root {
+  --primary-soft: color-mix(in oklch, var(--primary) 8%, transparent);
+  --steel: color-mix(in oklch, var(--muted-foreground) 80%, var(--card));
+  --tertiary: color-mix(in oklch, var(--muted-foreground) 65%, var(--card));
+  --stone: color-mix(in oklch, var(--muted-foreground) 50%, var(--card));
+}
 
 /* ---------- shell: the reference's 256px sidebar ---------- */
 .shell { display: grid; grid-template-columns: 256px minmax(0, 1fr); height: 100dvh; }
@@ -326,35 +337,33 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 .sidebar-tools kbd { margin-left: auto; background: transparent; }
 /* "Get started" checklist: Widgo's sidebar card, measured; its greens mapped to our tokens. */
 .gs-card {
-  --gs-soft: color-mix(in oklch, var(--primary) 8%, transparent);
-  --gs-steel: color-mix(in oklch, var(--muted-foreground) 80%, var(--card));
   position: relative; overflow: hidden; border-radius: 8px; border: 1px solid var(--border); background: var(--card);
   line-height: 1.55; letter-spacing: -0.14px;
 }
-.gs-track { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--gs-soft); }
+.gs-track { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--primary-soft); }
 .gs-fill { height: 100%; background: var(--primary); transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
 .gs-head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 6px; padding: 15px 14px 10px; text-align: left; cursor: pointer; }
 .gs-head h4 { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; letter-spacing: -0.13px; color: var(--foreground); }
 .gs-bolt { width: 13px; height: 13px; color: var(--primary); }
 .gs-meta { display: flex; align-items: center; gap: 6px; }
-.gs-percent { border-radius: 4px; background: var(--gs-soft); padding: 1px 7px; font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary); }
-.gs-chevron { width: 14px; height: 14px; flex-shrink: 0; color: var(--gs-steel); transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+.gs-percent { border-radius: 4px; background: var(--primary-soft); padding: 1px 7px; font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary); }
+.gs-chevron { width: 14px; height: 14px; flex-shrink: 0; color: var(--steel); transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
 .gs-chevron.open { transform: rotate(180deg); }
 .gs-list { display: flex; flex-direction: column; gap: 10px; padding: 2px 14px 12px; }
 .gs-step { display: flex; align-items: center; gap: 10px; font-size: 12.5px; font-weight: 500; line-height: 1.25; letter-spacing: -0.1px; color: var(--muted-foreground); text-decoration: none; }
 .gs-step:hover { color: var(--foreground); }
 .gs-n {
   display: grid; width: 20px; height: 20px; flex-shrink: 0; place-items: center; border-radius: 9999px;
-  border: 1px solid var(--border); background: var(--card); color: var(--gs-steel); font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border); background: var(--card); color: var(--steel); font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
 .gs-n.done { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
-.gs-done { color: var(--gs-steel); text-decoration: line-through; text-decoration-color: color-mix(in oklch, var(--muted-foreground) 50%, var(--card)); }
+.gs-done { color: var(--steel); text-decoration: line-through; text-decoration-color: var(--stone); }
 .sidebar-user { display: flex; align-items: center; gap: 8px; padding: 12px 4px 0; border-top: 1px solid var(--sidebar-border); }
 .sidebar-user > .workspace { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted-foreground); }
 .desk-main { min-width: 0; min-height: 0; }
 .desk-main-body { min-height: 100%; display: flex; flex-direction: column; }
-/* The inbox and the agent editor scroll their own panes: they get exactly the main area's height. */
-.desk-main-body:has(> .inbox, > .agent-page) { height: 100%; }
+/* The agent editor scrolls its own panes: it gets exactly the main area's height. */
+.desk-main-body:has(> .agent-page) { height: 100%; }
 .desk-main-body > .content { overflow: visible; }
 .presence { display: flex; padding-left: 6px; }
 .avatar {
@@ -364,27 +373,122 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 }
 .avatar::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--success); border: 2px solid var(--sidebar); }
 
-/* ---------- inbox ---------- */
-.inbox { flex: 1; display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: 0; }
-.conv-list { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); background: var(--background); }
-.conv-list-scroll { flex: 1; }
-.conv-list-body { display: flex; flex-direction: column; }
-.conv-list ul { list-style: none; margin: 0; padding: 0; }
-.conv-filters { display: grid; gap: 8px; padding: 12px; }
-.conv-filters [data-slot="tabs-list"] { width: 100%; }
-.conv {
-  display: grid; gap: 2px; padding: 12px 14px; border-top: 1px solid var(--border);
-  color: var(--foreground); text-decoration: none;
+/* ---------- inbox: Widgo's Conversations page (app.widgo.ai, measured), on our tokens ---------- */
+.cv-page {
+  --page-x: 32px;
+  --colors: color, background-color, border-color, text-decoration-color, fill, stroke;
+  padding: 24px var(--page-x) 64px; line-height: 1.55; letter-spacing: -0.14px;
 }
-.conv:hover { background: color-mix(in oklch, var(--accent) 50%, transparent); }
-.conv.selected { background: var(--accent); color: var(--accent-foreground); }
-.conv.unread strong::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); margin-right: 6px; vertical-align: middle; }
-.conv .preview { color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.conv.unread .preview { color: var(--foreground); }
-.conv.cursor:not(.selected) { box-shadow: inset 2px 0 0 var(--primary); }
-.conv:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.cv-header {
+  position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: flex-start; gap: 24px;
+  margin: 0 calc(-1 * var(--page-x)) 18px; padding: 4px var(--page-x) 16px; background: var(--background);
+}
+.cv-header h1 { margin: 0 0 6px; font-size: 24px; font-weight: 500; line-height: 1.2; letter-spacing: inherit; color: var(--foreground); }
+.cv-header p { margin: 0; max-width: 620px; font-size: 14px; line-height: 1.625; color: var(--muted-foreground); }
+.cv-tabs {
+  position: sticky; top: 70px; z-index: 10; display: flex; flex-wrap: wrap; max-width: 100%; align-items: center; gap: 8px 4px;
+  margin: 0 -4px 16px; padding: 4px 4px 8px; border-bottom: 1px solid var(--border); background: var(--background);
+}
+.cv-tab {
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; border-radius: 8px; padding: 7px 12px;
+  font-size: 13px; font-weight: 600; letter-spacing: -0.13px; color: var(--muted-foreground); cursor: pointer;
+  transition: 150ms cubic-bezier(0.4, 0, 0.2, 1); transition-property: var(--colors);
+}
+.cv-tab:hover { background: var(--muted); color: var(--foreground); }
+.cv-tab.active { background: var(--primary-soft); font-weight: 700; color: var(--primary); }
+.cv-tab-count { padding: 0 7px; font-size: 11px; font-weight: 700; line-height: 16px; font-variant-numeric: tabular-nums; background: var(--muted); color: var(--steel); }
+.cv-tab.active .cv-tab-count { background: var(--card); color: var(--foreground); }
+/* Our filters (Widgo has none): the search field's look, sized to their text. With them the strip
+   wraps (Widgo's scrolls sideways) so nothing is cut off, and keeps 4px around for focus rings. */
+.cv-filter { flex-shrink: 0; height: 34px; border-radius: 8px; padding: 0 8px; background: var(--muted); color: var(--foreground); font-size: 13px; cursor: pointer; }
+.cv-filter option { background: Canvas; color: CanvasText; }
+.cv-search { margin-left: auto; display: flex; flex-shrink: 1; align-items: center; gap: 8px; height: 34px; width: 240px; min-width: 200px; border-radius: 8px; padding: 0 12px; background: var(--muted); }
+.cv-search > svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--steel); }
+.cv-search input { min-width: 0; flex: 1; border: 0; background: transparent; font-size: 13px; color: var(--foreground); outline: none; }
+.cv-search input::placeholder { color: var(--steel); }
+.cv-search-clear { flex-shrink: 0; color: var(--steel); cursor: pointer; }
+.cv-search-clear:hover { color: var(--foreground); }
+.cv-search-clear svg { display: block; width: 13px; height: 13px; }
+.cv-columns {
+  display: grid; width: 32px; height: 32px; place-items: center; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card); color: var(--muted-foreground); cursor: pointer; transition: 150ms cubic-bezier(0.4, 0, 0.2, 1); transition-property: var(--colors);
+}
+.cv-columns:hover { background: var(--muted); color: var(--foreground); }
+.cv-columns svg { width: 16px; height: 16px; }
+.cv-columns-menu { z-index: 60; border-radius: 12px; border: 1px solid var(--border); background: var(--card); padding: 6px; box-shadow: 0 12px 28px rgba(15, 20, 25, 0.16); }
+.cv-columns-title { padding: 4px 8px 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--steel); }
+.cv-columns-menu label { display: flex; align-items: center; gap: 10px; border-radius: 8px; padding: 6px 8px; font-size: 13px; color: var(--foreground); cursor: pointer; }
+.cv-columns-menu label:hover { background: var(--muted); }
+.cv-columns-menu input { width: 14px; height: 14px; }
+.cv-table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); background: var(--card); box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04); }
+.cv-table { width: 100%; min-width: 760px; border-collapse: collapse; }
+.cv-table th {
+  padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--muted); text-align: left;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.16em; color: var(--muted-foreground);
+  cursor: pointer; user-select: none; transition: 150ms cubic-bezier(0.4, 0, 0.2, 1); transition-property: var(--colors);
+}
+.cv-table th:hover, .cv-table th.active { color: var(--foreground); }
+.cv-sort { margin-left: 4px; color: transparent; }
+.cv-table th.active .cv-sort { color: var(--primary); }
+.cv-table tbody tr { border-bottom: 1px solid var(--border); vertical-align: middle; cursor: pointer; transition: 150ms cubic-bezier(0.4, 0, 0.2, 1); transition-property: var(--colors); }
+.cv-table tbody tr:last-child { border-bottom: 0; }
+.cv-table tbody tr.selected { background: var(--primary-soft); }
+.cv-table tbody tr.unread, .cv-table tbody tr:hover { background: var(--muted); }
+/* The j/k cursor: Widgo's own row marker (its "needs review" inset bar). */
+.cv-table tbody tr.cursor { box-shadow: inset 2px 0 0 var(--primary); }
+.cv-table td { padding: 12px 18px; }
+.cv-person { display: flex; align-items: center; gap: 10px; }
+.cv-avatar { display: grid; flex-shrink: 0; place-items: center; border-radius: 9999px; font-weight: 700; color: #fff; }
+.cv-person-text { min-width: 0; }
+.cv-name, .cv-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.25; }
+.cv-name { font-size: 13.5px; font-weight: 700; letter-spacing: -0.13px; color: var(--foreground); }
+.cv-name a { color: inherit; text-decoration: none; }
+.cv-email { font-size: 11.5px; color: var(--muted-foreground); }
+.cv-text { font-size: 13px; color: var(--foreground); }
+.cv-text.nowrap { white-space: nowrap; }
+.cv-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; max-width: 220px; }
+.cv-dash { color: var(--stone); }
+.cv-time { white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
+.cv-table td.cv-empty { padding: 32px 18px; text-align: center; font-size: 13px; color: var(--tertiary); }
+.cv-pager { margin-top: 16px; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.cv-pager-btn {
+  display: grid; height: 32px; min-width: 32px; place-items: center; border-radius: 8px; padding: 0 8px;
+  font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted-foreground); cursor: pointer;
+  transition: 150ms cubic-bezier(0.4, 0, 0.2, 1); transition-property: var(--colors);
+}
+.cv-pager-btn:enabled:hover { background: var(--muted); }
+.cv-pager-btn:disabled { opacity: 0.35; cursor: default; }
+.cv-pager-btn.active { background: var(--primary); color: var(--primary-foreground); }
+.cv-page-gap { padding: 0 6px; color: var(--steel); }
+@media (max-width: 1023px) { .cv-page { --page-x: 24px; } }
+@media (max-width: 639px) { .cv-page { --page-x: 16px; } }
+
+/* The conversation drawer: backdrop and panel slide in over 200 ms. */
+.cv-backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(22, 24, 29, 0.45); backdrop-filter: blur(4px); opacity: 0; transition: opacity 200ms cubic-bezier(0.4, 0, 0.2, 1); }
+.cv-backdrop.shown { opacity: 1; }
+.cv-drawer {
+  position: fixed; top: 0; bottom: 0; right: 0; z-index: 51; display: flex; flex-direction: column; width: 100%; min-width: 0;
+  background: var(--card); box-shadow: -24px 0 60px rgba(22, 24, 29, 0.2); transform: translateX(100%); transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.cv-drawer.shown { transform: translateX(0); }
+@media (min-width: 640px) { .cv-drawer { width: 65%; min-width: 840px; } }
+.cv-drawer-head { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.cv-drawer-title { min-width: 0; }
+.cv-drawer-name { font-size: 14px; font-weight: 700; letter-spacing: -0.14px; color: var(--foreground); }
+.cv-drawer-meta { margin-top: 1px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted-foreground); }
+/* Our conversation controls (assignee, status, resolve, issue) sit before Widgo's close button. */
+.cv-drawer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.cv-close {
+  display: grid; width: 32px; height: 32px; place-items: center; border-radius: 9999px; color: var(--muted-foreground); cursor: pointer;
+  transition: 150ms cubic-bezier(0.4, 0, 0.2, 1); transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+}
+.cv-close:hover { background: var(--muted); color: var(--foreground); }
+.cv-drawer-state { margin: auto; font-size: 13px; color: var(--steel); }
+.cv-drawer-body { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; flex: 1; overflow-y: auto; }
+.cv-drawer-body > .thread { overflow: hidden; background: var(--muted); }
+.cv-drawer-body > .debug-panel { background: var(--card); }
+@media (min-width: 1100px) { .cv-drawer-body { grid-template-columns: minmax(0, 1fr) 360px; overflow: hidden; } }
 .conv-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0; }
-.conv-topic { color: var(--muted-foreground); font-size: 12px; }
 .verified { margin-left: 6px; color: var(--success); font-size: 12px; font-weight: 600; }
 .ai-tag { margin-left: 6px; }
 .csat-tag { margin-left: 6px; padding: 0 6px; }
@@ -394,11 +498,7 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 .tag-warn { background: var(--note); color: var(--note-foreground); }
 
 .thread { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.thread.empty { display: grid; place-items: center; }
-.thread-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; row-gap: 8px; min-height: 57px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
-.thread-head h2 { margin: 0; }
-.thread-head strong, .issue-button a { white-space: nowrap; }
-.thread-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; min-width: 0; }
+.issue-button a { white-space: nowrap; }
 .tag-bar, .issue-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 16px; border-bottom: 1px solid var(--border); }
 .tag-bar form { margin: 0; }
 .tag-bar input { height: 24px; min-height: 0; padding: 2px 8px; font-size: 12px; width: 140px; }
@@ -1031,17 +1131,11 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
 
 /* ---------- narrow screens ---------- */
 /* Breakpoints below 1100px used to assume a full-width page; the 256px sidebar moves the inbox ones. */
-@media (max-width: 1360px) {
-  .thread-wrap { grid-template-columns: minmax(0, 1fr); }
-  .debug-panel { display: none; }
-}
 @media (max-width: 900px) {
   /* One column: the page grows and the main scroller (.desk-main) scrolls it. */
   .agent-page { grid-template-columns: minmax(0, 1fr); flex: none; }
   .desk-main-body:has(> .agent-page) { height: auto; }
   .agent-files, .agent-history { border: none; }
-  .inbox { grid-template-columns: minmax(0, 1fr); }
-  .conv-list { display: none; }
 }
 @media (max-width: 900px) {
   /* One column: the page grows and the main scroller scrolls it. */
@@ -1059,7 +1153,6 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
   .visitor-invite { grid-column: 1 / -1; }
   .visitor-mini { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .visitor-live-count { font-size: 56px; }
-  .thread-head { flex-wrap: wrap; row-gap: 8px; }
   .issue-dialog form { padding: 14px; }
   .issue-chip-title { max-width: 140px; }
   .issue-actions > .muted { flex-basis: 100%; }

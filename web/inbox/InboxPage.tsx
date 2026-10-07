@@ -10,11 +10,15 @@ import { MessageList } from "../components/MessageList.tsx";
 import { navigate } from "../lib/router.ts";
 import { DebugPanel } from "./DebugPanel.tsx";
 import { configuredProviders, IssueDialog, type FiledIssue } from "./IssueDialog.tsx";
+import { ConversationDrawer, DrawerClose } from "./ConversationDrawer.tsx";
+import {
+  COLUMNS, ColumnPicker, ConversationRows, DEFAULT_SORT, isUnread, nextSort, PageHeader, PAGE_SIZE, Pager,
+  sortConversations, TableHead, TabStrip, useHiddenColumns, type Sort, type Tab,
+} from "./ConversationTable.tsx";
 import type { TrackerStatus } from "../settings/IssueTrackersPanel.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
 import type { Hub } from "../Shell.tsx";
 import { Button } from "@/components/ui/button.tsx";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
@@ -36,14 +40,12 @@ interface Tag { id: string; name: string; conversations: number }
 interface Topic { id: string; name: string; conversations: number }
 interface MentionToast { conversationId: string; by: string; preview: string }
 
-const STATUS_TABS: { value: StatusFilter; label: string }[] = [
-  { value: "open", label: "Open" },
-  { value: "pending", label: "Pending" },
-  { value: "resolved", label: "Resolved" },
-  { value: "all", label: "All" },
+const STATUS_TABS: { key: StatusFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "open", label: "Open" },
+  { key: "pending", label: "Pending" },
+  { key: "resolved", label: "Resolved" },
 ];
-
-const isUnread = (c: ConversationSummary) => c.lastMessageAuthor === "visitor" && c.lastSeq > c.agentReadSeq;
 
 /** W-12: the customer's latest rating as a small badge. */
 function CsatBadge({ rating }: { rating: CsatRating | null }) {
@@ -54,13 +56,15 @@ function CsatBadge({ rating }: { rating: CsatRating | null }) {
 /** A-02: Reports links to /inbox?topic=<id>; the topic's chats are mostly resolved, so show all. */
 const initialTopic = () => new URLSearchParams(window.location.search).get("topic") ?? "";
 
-export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceId: string; me: { id: string; name: string }; hub: Hub; conversationId: string | null }) {
+export function InboxPage({ workspaceId, workspaceName, me, hub, conversationId }: { workspaceId: string; workspaceName: string; me: { id: string; name: string }; hub: Hub; conversationId: string | null }) {
   const [topicFilter, setTopicFilter] = useState(initialTopic);
   const [status, setStatus] = useState<StatusFilter>(() => (initialTopic() ? "all" : "open"));
   const [assignee, setAssignee] = useState<AssigneeFilter>("all");
   const [tagFilter, setTagFilter] = useState("");
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>("");
   const [list, setList] = useState<ConversationSummary[] | null>(null);
+  // Per-status totals for the tabs, under the other filters (from the server, not just the loaded rows).
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -70,6 +74,9 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
   // I-13: a quick text filter over the loaded list, and the j/k cursor.
   const [search, setSearch] = useState("");
   const [cursor, setCursor] = useState<string | null>(conversationId);
+  const [sort, setSort] = useState<Sort>(DEFAULT_SORT);
+  const [page, setPage] = useState(0);
+  const { hidden, toggle: toggleColumn } = useHiddenColumns();
   const searchInput = useRef<HTMLInputElement>(null);
   // The open thread's update(), so `e` / `a` keep its header in sync.
   const threadUpdate = useRef<((patch: ConversationPatch) => Promise<void>) | null>(null);
@@ -87,15 +94,35 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
     [status, assignee, tagFilter, topicFilter, ratingFilter, me.id],
   );
 
+  const query = useMemo(
+    () => new URLSearchParams({ status, ...(assignee !== "all" ? { assignee } : {}), ...(tagFilter ? { tag: tagFilter } : {}), ...(topicFilter ? { topic: topicFilter } : {}), ...(ratingFilter ? { rating: ratingFilter } : {}) }).toString(),
+    [status, assignee, tagFilter, topicFilter, ratingFilter],
+  );
   useEffect(() => {
     let cancelled = false;
     setList(null);
-    const query = new URLSearchParams({ status, ...(assignee !== "all" ? { assignee } : {}), ...(tagFilter ? { tag: tagFilter } : {}), ...(topicFilter ? { topic: topicFilter } : {}), ...(ratingFilter ? { rating: ratingFilter } : {}) });
-    api<{ conversations: ConversationSummary[] }>(`/workspaces/${workspaceId}/conversations?${query}`).then((r) => !cancelled && setList(r.conversations));
+    setPage(0);
+    api<{ conversations: ConversationSummary[]; counts: Record<string, number> }>(`/workspaces/${workspaceId}/conversations?${query}`).then((r) => {
+      if (cancelled) return;
+      setList(r.conversations);
+      setCounts(r.counts);
+    });
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, status, assignee, tagFilter, topicFilter, ratingFilter]);
+  }, [workspaceId, query]);
+
+  // Live events can move a conversation between tabs: re-count once they settle.
+  const recount = useRef<number | null>(null);
+  const scheduleRecount = useCallback(() => {
+    if (recount.current) window.clearTimeout(recount.current);
+    recount.current = window.setTimeout(() => {
+      api<{ counts: Record<string, number> }>(`/workspaces/${workspaceId}/conversations?${query}`).then((r) => setCounts(r.counts), () => {});
+    }, 2000);
+  }, [workspaceId, query]);
+  useEffect(() => () => {
+    if (recount.current) window.clearTimeout(recount.current);
+  }, []);
 
   const loadTags = useCallback(() => api<{ tags: Tag[] }>(`/workspaces/${workspaceId}/tags`).then((r) => setTags(r.tags)), [workspaceId]);
   const loadMentions = useCallback(() => api<{ unread: number }>(`/workspaces/${workspaceId}/mentions`).then((r) => setUnreadMentions(r.unread)), [workspaceId]);
@@ -126,16 +153,47 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
           const keep = matches(updated) && (assignee !== "mentions" || rest.length < current.length);
           return (keep ? [updated, ...rest] : rest).sort((a, b) => b.lastMessageAt - a.lastMessageAt);
         });
+        scheduleRecount();
       }),
-    [hub, matches, assignee, me.id, conversationId, loadMentions],
+    [hub, matches, assignee, me.id, conversationId, loadMentions, scheduleRecount],
   );
 
-  const shown = useMemo(
-    () => (list && search.trim() ? list.filter((c) => matchesFilter(search, [contactLabel(c.contact), c.contact.email, c.lastMessagePreview, c.topic?.name, ...c.tags])) : list),
-    [list, search],
-  );
+  const memberName = useCallback((id: string | null) => (id ? members.find((m) => m.id === id)?.name ?? "Teammate" : ""), [members]);
+  const shown = useMemo(() => {
+    if (!list) return null;
+    const filtered = search.trim() ? list.filter((c) => matchesFilter(search, [contactLabel(c.contact), c.contact.email, c.lastMessagePreview, c.topic?.name, ...c.tags])) : list;
+    return sortConversations(filtered, sort, memberName);
+  }, [list, search, sort, memberName]);
 
-  const focusRow = (id: string) => document.getElementById(`conv-${id}`)?.focus();
+  const pageCount = Math.max(1, Math.ceil((shown?.length ?? 0) / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const rows = shown?.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE) ?? null;
+
+  // j/k can step onto another page: focus the row once that page has rendered.
+  const pendingFocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pendingFocus.current || conversationId) return;
+    document.getElementById(`conv-${pendingFocus.current}`)?.focus();
+    pendingFocus.current = null;
+  });
+  const focusRow = useCallback(
+    (id: string) => {
+      const at = shown?.findIndex((c) => c.id === id) ?? -1;
+      if (at >= 0) setPage(Math.floor(at / PAGE_SIZE));
+      pendingFocus.current = id;
+    },
+    [shown],
+  );
+  const open = (id: string) => {
+    setCursor(id);
+    navigate(`/inbox/${id}`);
+  };
+  // Closing returns focus to the conversation's row.
+  const close = useCallback(() => {
+    if (conversationId) focusRow(conversationId);
+    navigate("/inbox");
+  }, [conversationId, focusRow]);
+
   useBridge("inbox", {
     conversations: shown ?? [],
     move(delta) {
@@ -143,11 +201,13 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
       const at = shown.findIndex((c) => c.id === cursor);
       const next = shown[at === -1 ? (delta === 1 ? 0 : shown.length - 1) : Math.min(shown.length - 1, Math.max(0, at + delta))]!;
       setCursor(next.id);
-      focusRow(next.id); // focus follows the cursor, so screen readers announce it and Enter opens it
+      // The table sits behind an open conversation, so there j/k open the next one instead.
+      if (conversationId) navigate(`/inbox/${next.id}`);
+      else focusRow(next.id); // focus follows the cursor, so screen readers announce it and Enter opens it
     },
     openCursor() {
       const target = shown?.find((c) => c.id === cursor) ?? shown?.[0];
-      if (target) navigate(`/inbox/${target.id}`);
+      if (target) open(target.id);
     },
     focusSearch() {
       searchInput.current?.focus();
@@ -167,148 +227,117 @@ export function InboxPage({ workspaceId, me, hub, conversationId }: { workspaceI
     document.title = unreadCount > 0 ? `(${unreadCount}) Jun Desk` : "Jun Desk";
   }, [unreadCount]);
 
+  const columns = COLUMNS.filter((c) => c === "Person" || !hidden.has(c));
+  const tabs: Tab<StatusFilter>[] = STATUS_TABS.map((t) => ({ ...t, count: counts ? counts[t.key] ?? 0 : undefined }));
+  const empty =
+    !shown || shown.length > 0 ? null
+    : search.trim() ? `No conversations match “${search.trim()}”.`
+    : ratingFilter ? "No conversations with this rating."
+    : topicFilter || tagFilter || assignee !== "all" ? "No conversations match these filters."
+    : status === "all" ? "No conversations yet. Install the widget from Settings to start receiving chats."
+    : "No records.";
+
   return (
-    <div className="inbox">
+    <div className="cv-page">
       {toast && (
         <div className="toast" role="status">
           <span><strong>{toast.by}</strong> mentioned you: {toast.preview}</span>
-          <Button size="sm" onClick={() => { navigate(`/inbox/${toast.conversationId}`); setToast(null); }}>Open</Button>
+          <Button size="sm" onClick={() => { open(toast.conversationId); setToast(null); }}>Open</Button>
           <Button variant="outline" size="sm" aria-label="Dismiss" onClick={() => setToast(null)}>×</Button>
         </div>
       )}
-      <aside className="conv-list">
-        <div className="conv-filters">
-        <Input
-          ref={searchInput}
-          type="search"
-          className="conv-search"
-          placeholder="Filter conversations"
-          aria-label="Filter conversations"
-          aria-keyshortcuts="/"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              if (search) setSearch("");
-              else e.currentTarget.blur();
-            } else if (e.key === "ArrowDown" || (e.key === "Enter" && !e.nativeEvent.isComposing)) {
-              // Into the list: the first match.
-              const first = shown?.[0];
-              if (!first) return;
-              e.preventDefault();
-              setCursor(first.id);
-              if (e.key === "Enter") navigate(`/inbox/${first.id}`);
-              else focusRow(first.id);
-            }
+      {/* Behind an open conversation the table is inert: the drawer is the dialog. */}
+      <div className="cv-body" inert={conversationId !== null}>
+        <PageHeader title="Inbox" subtitle={`Every chat on ${workspaceName}'s desk. Read, reply, resolve.`} />
+        <TabStrip
+          tabs={tabs}
+          active={status}
+          onChange={(key) => { setStatus(key); setPage(0); }}
+          search={{
+            value: search,
+            onChange: (value) => { setSearch(value); setPage(0); },
+            placeholder: "Search conversations…",
+            inputRef: searchInput,
+            onKeyDown: (e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                if (search) setSearch("");
+                else e.currentTarget.blur();
+              } else if (e.key === "ArrowDown" || (e.key === "Enter" && !e.nativeEvent.isComposing)) {
+                // Into the table: the first match.
+                const first = shown?.[0];
+                if (!first) return;
+                e.preventDefault();
+                setCursor(first.id);
+                if (e.key === "Enter") open(first.id);
+                else focusRow(first.id);
+              }
+            },
           }}
-        />
-        <Tabs value={status} onValueChange={(value) => setStatus(value as StatusFilter)}>
-          <TabsList>
-            {STATUS_TABS.map((t) => (
-              <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-        <NativeSelect className="w-full" value={assignee} onChange={(e) => setAssignee(e.target.value as AssigneeFilter)} aria-label="Assignee filter">
-          <NativeSelectOption value="all">Everyone's</NativeSelectOption>
-          <NativeSelectOption value="me">Assigned to me</NativeSelectOption>
-          <NativeSelectOption value="unassigned">Unassigned</NativeSelectOption>
-          <NativeSelectOption value="mentions">Mentions me{unreadMentions > 0 ? ` (${unreadMentions} new)` : ""}</NativeSelectOption>
-        </NativeSelect>
-        {tags.length > 0 && (
-          <NativeSelect className="w-full" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} aria-label="Tag filter">
-            <NativeSelectOption value="">Any tag</NativeSelectOption>
-            {tags.map((t) => (
-              <NativeSelectOption key={t.id} value={t.name}>{t.name}</NativeSelectOption>
-            ))}
-          </NativeSelect>
-        )}
-        {(topics.length > 0 || topicFilter) && (
-          <NativeSelect className="w-full" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} aria-label="Topic filter">
-            <NativeSelectOption value="">Any topic</NativeSelectOption>
-            {topics.map((t) => (
-              <NativeSelectOption key={t.id} value={t.id}>{t.name}</NativeSelectOption>
-            ))}
-            {topicFilter && !topics.some((t) => t.id === topicFilter) && <NativeSelectOption value={topicFilter}>Topic not found</NativeSelectOption>}
-          </NativeSelect>
-        )}
-        <NativeSelect
-          className="w-full"
-          value={ratingFilter}
-          onChange={(e) => {
-            const next = e.target.value as RatingFilter;
-            setRatingFilter(next);
-            // Rated conversations are resolved ones: don't leave the filter on an empty Open tab.
-            if (next && status === "open") setStatus("all");
-          }}
-          aria-label="Rating filter"
+          trailing={<ColumnPicker hidden={hidden} onToggle={toggleColumn} />}
         >
-          <NativeSelectOption value="">Any rating</NativeSelectOption>
-          <NativeSelectOption value="good">Rated 👍 Good</NativeSelectOption>
-          <NativeSelectOption value="bad">Rated 👎 Bad</NativeSelectOption>
-        </NativeSelect>
+          <select data-plain className="cv-filter" value={assignee} onChange={(e) => setAssignee(e.target.value as AssigneeFilter)} aria-label="Assignee filter">
+            <option value="all">Everyone's</option>
+            <option value="me">Assigned to me</option>
+            <option value="unassigned">Unassigned</option>
+            <option value="mentions">Mentions me{unreadMentions > 0 ? ` (${unreadMentions} new)` : ""}</option>
+          </select>
+          {tags.length > 0 && (
+            <select data-plain className="cv-filter" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} aria-label="Tag filter">
+              <option value="">Any tag</option>
+              {tags.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+            </select>
+          )}
+          {(topics.length > 0 || topicFilter) && (
+            <select data-plain className="cv-filter" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} aria-label="Topic filter">
+              <option value="">Any topic</option>
+              {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {topicFilter && !topics.some((t) => t.id === topicFilter) && <option value={topicFilter}>Topic not found</option>}
+            </select>
+          )}
+          <select
+            data-plain
+            className="cv-filter"
+            value={ratingFilter}
+            onChange={(e) => {
+              const next = e.target.value as RatingFilter;
+              setRatingFilter(next);
+              // Rated conversations are resolved ones: don't leave the filter on an empty Open tab.
+              if (next && status === "open") setStatus("all");
+            }}
+            aria-label="Rating filter"
+          >
+            <option value="">Any rating</option>
+            <option value="good">Rated 👍 Good</option>
+            <option value="bad">Rated 👎 Bad</option>
+          </select>
+        </TabStrip>
+        <div className="cv-table-wrap">
+          <table className="cv-table">
+            <TableHead columns={columns} sort={sort} onSort={(c) => { setSort((s) => nextSort(s, c)); setPage(0); }} />
+            <tbody>
+              <ConversationRows rows={rows} columns={columns} selected={conversationId} cursor={cursor} empty={empty} memberName={memberName} onOpen={open} onFocusRow={setCursor} />
+            </tbody>
+          </table>
         </div>
-        {/* Only the conversations scroll; the filters above keep their place. */}
-        <ScrollArea className="conv-list-scroll" contentClassName="conv-list-body">
-        {list === null || shown === null ? (
-          <p className="muted small pad">Loading…</p>
-        ) : shown.length === 0 && search.trim() ? (
-          <p className="muted small pad">No loaded conversations match “{search.trim()}”.</p>
-        ) : list.length === 0 ? (
-          <p className="muted small pad">{ratingFilter ? "No conversations with this rating." : topicFilter || tagFilter ? "No conversations match these filters." : "No conversations here. Install the widget from Settings to start receiving chats."}</p>
-        ) : (
-          <ul>
-            {shown.map((c) => (
-              <li key={c.id}>
-                <a
-                  id={`conv-${c.id}`}
-                  href={`/inbox/${c.id}`}
-                  aria-current={c.id === conversationId ? "page" : undefined}
-                  className={`conv ${c.id === conversationId ? "selected" : ""} ${c.id === cursor ? "cursor" : ""} ${isUnread(c) ? "unread" : ""}`}
-                  onFocus={() => setCursor(c.id)}
-                  onClick={(e) => { e.preventDefault(); navigate(`/inbox/${c.id}`); }}
-                >
-                  <span className="row">
-                    <strong>{contactLabel(c.contact)}</strong>
-                    {c.contact.verified && <span className="verified" title="Identity verified by your site">✓</span>}
-                    {c.handling === "ai" && <em className="tag ai-tag" title="The AI assistant is answering">AI</em>}
-                    {c.debugIssueCount > 0 && <em className="tag issue-tag" title="Errors or failed requests in the visitor's browser">⚠ {c.debugIssueCount}</em>}
-                    <CsatBadge rating={c.csat.rating} />
-                    <span className="spacer" />
-                    <span className="muted small">{formatTime(c.lastMessageAt)}</span>
-                  </span>
-                  {c.topic && <span className="conv-topic small" title="Topic, labelled by the AI">{c.topic.name}</span>}
-                  {c.tags.length > 0 && (
-                    <span className="conv-tags">{c.tags.map((t) => <span key={t} className="chip tag-chip">{t}</span>)}</span>
-                  )}
-                  <span className="preview small">
-                    {c.lastMessageAuthor === "agent" && <span className="muted">You: </span>}
-                    {c.lastMessageAuthor === "ai" && <span className="muted">AI: </span>}
-                    {c.lastMessagePreview}
-                  </span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-        </ScrollArea>
-      </aside>
-      {conversationId ? (
-        <Thread
-          key={conversationId}
-          conversationId={conversationId}
-          workspaceId={workspaceId}
-          me={me}
-          members={members}
-          tags={tags}
-          trackers={trackers}
-          onTagsChanged={() => void loadTags()}
-          onOpened={() => void loadMentions()}
-          updateRef={threadUpdate}
-        />
-      ) : (
-        <div className="thread empty muted">Select a conversation</div>
+        <Pager page={currentPage} pageCount={pageCount} onPage={setPage} />
+      </div>
+      {conversationId && (
+        <ConversationDrawer label="Conversation" onClose={close}>
+          <Thread
+            key={conversationId}
+            conversationId={conversationId}
+            workspaceId={workspaceId}
+            me={me}
+            members={members}
+            tags={tags}
+            trackers={trackers}
+            onTagsChanged={() => void loadTags()}
+            onOpened={() => void loadMentions()}
+            onClose={close}
+            updateRef={threadUpdate}
+          />
+        </ConversationDrawer>
       )}
     </div>
   );
@@ -323,6 +352,7 @@ function Thread({
   trackers,
   onTagsChanged,
   onOpened,
+  onClose,
   updateRef,
 }: {
   conversationId: string;
@@ -333,6 +363,7 @@ function Thread({
   trackers: TrackerStatus | null;
   onTagsChanged: () => void;
   onOpened: () => void;
+  onClose: () => void;
   updateRef: { current: ((patch: ConversationPatch) => Promise<void>) | null };
 }) {
   const [conversation, setConversation] = useState<ConversationSummary | null>(null);
@@ -435,26 +466,35 @@ function Thread({
       : null,
   );
 
-  if (error) return <div className="thread empty error">{error}</div>;
-  if (!conversation || !initial) return <div className="thread empty muted">Loading…</div>;
+  if (error || !conversation || !initial) {
+    return (
+      <>
+        <div className="cv-drawer-head"><span /><DrawerClose onClose={onClose} /></div>
+        <p className={`cv-drawer-state ${error ? "error" : ""}`}>{error ?? "Loading…"}</p>
+      </>
+    );
+  }
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "Teammate";
 
   // Refresh the side panel when the visitor writes (new context) or the AI answers (new actions).
   const visitorMessages = thread.messages.filter((m) => m.authorType === "visitor" || m.authorType === "ai").length;
   return (
-    <div className="thread-wrap">
-    <section className="thread">
-      <header className="thread-head">
-        <div>
-          <strong>{contactLabel(conversation.contact)}</strong>
-          {conversation.contact.verified && <span className="verified" title="Identity verified by your site">✓</span>}
-          <CsatBadge rating={conversation.csat.rating} />
-          <div className="muted small">
-            {thread.state === "open" ? "Live" : thread.state === "connecting" ? "Connecting…" : "Reconnecting…"} · started {formatTime(conversation.createdAt)}
-            {conversation.topic && <> · <span title="Topic, labelled by the AI">{conversation.topic.name}</span></>}
+    <>
+      <header className="cv-drawer-head">
+        <div className="cv-drawer-title">
+          <div className="cv-drawer-name">
+            {contactLabel(conversation.contact)}
+            {conversation.contact.verified && <span className="verified" title="Identity verified by your site">✓</span>}
+            <CsatBadge rating={conversation.csat.rating} />
+          </div>
+          <div className="cv-drawer-meta">
+            <span>{thread.state === "open" ? "Live" : thread.state === "connecting" ? "Connecting…" : "Reconnecting…"}</span>
+            <span>· started {formatTime(conversation.createdAt)}</span>
+            {conversation.topic && <span title="Topic, labelled by the AI">· {conversation.topic.name}</span>}
+            {conversation.contact.email && contactLabel(conversation.contact) !== conversation.contact.email && <span>· {conversation.contact.email}</span>}
           </div>
         </div>
-        <span className="spacer" />
+        <div className="cv-drawer-actions">
         <NativeSelect size="sm" value={conversation.assigneeId ?? ""} onChange={(e) => void update({ assigneeId: e.target.value || null })} aria-label="Assignee">
           <NativeSelectOption value="">Unassigned</NativeSelectOption>
           {members.map((m) => (
@@ -476,7 +516,11 @@ function Thread({
             <a className="small" href="/settings#issue-trackers" onClick={(e) => { e.preventDefault(); navigate("/settings#issue-trackers"); }}>Set up</a>
           )}
         </span>
+        <DrawerClose onClose={onClose} />
+        </div>
       </header>
+      <div className="cv-drawer-body">
+      <section className="thread">
       <TagEditor tags={conversation.tags} known={tags} onChange={(next) => void setTags(next)} adding={addingTag} setAdding={setAddingTag} />
       {issues.length > 0 && (
         <div className="issue-bar small">
@@ -558,9 +602,10 @@ function Thread({
           thread.send(body, attachments, undefined, undefined, internal);
         }}
       />
-    </section>
-    <DebugPanel conversationId={conversationId} workspaceId={workspaceId} contact={conversation.contact} refreshKey={visitorMessages + conversation.debugIssueCount * 1000} />
-    </div>
+      </section>
+      <DebugPanel conversationId={conversationId} workspaceId={workspaceId} contact={conversation.contact} refreshKey={visitorMessages + conversation.debugIssueCount * 1000} />
+      </div>
+    </>
   );
 }
 

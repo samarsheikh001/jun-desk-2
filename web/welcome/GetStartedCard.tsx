@@ -22,7 +22,7 @@ export function GetStartedCard({ onboarding }: { onboarding: Onboarding }) {
   return (
     <div className="gs-card">
       <div className="gs-track"><div className="gs-fill" style={{ width: `${percent}%` }} /></div>
-      <button type="button" className="gs-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button type="button" data-plain className="gs-head" aria-expanded={open} onClick={() => setOpen(!open)}>
         <h4>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="gs-bolt" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
           Get started

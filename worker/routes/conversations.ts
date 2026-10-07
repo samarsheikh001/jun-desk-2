@@ -142,12 +142,9 @@ conversations.get("/workspaces/:id/conversations", async (c) => {
   if (rating !== undefined && rating !== "good" && rating !== "bad") throw new HttpError(400, "invalid_field", "rating must be good or bad.");
   if (status !== "all" && !STATUSES.includes(status as ConversationStatus)) throw new HttpError(400, "invalid_field", "Unknown status.");
 
+  // The other filters apply to the per-status counts too (the inbox's tabs); status only to the rows.
   const where = ["c.workspace_id = ?"];
   const params: unknown[] = [workspaceId];
-  if (status !== "all") {
-    where.push("c.status = ?");
-    params.push(status);
-  }
   if (assignee === "me") {
     where.push("c.assignee_id = ?");
     params.push(c.get("user").id);
@@ -169,10 +166,16 @@ conversations.get("/workspaces/:id/conversations", async (c) => {
     where.push("c.csat_rating = ?");
     params.push(rating);
   }
-  const rows = await c.env.DB.prepare(`${SUMMARY_SELECT} WHERE ${where.join(" AND ")} ORDER BY c.last_message_at DESC LIMIT 100`)
-    .bind(...params)
-    .all<SummaryRow>();
-  return c.json({ conversations: rows.results.map(toSummary) });
+  const filtered = where.join(" AND ");
+  const byStatus = status === "all" ? "" : " AND c.status = ?";
+  const [rows, counted] = await c.env.DB.batch([
+    c.env.DB.prepare(`${SUMMARY_SELECT} WHERE ${filtered}${byStatus} ORDER BY c.last_message_at DESC LIMIT 100`).bind(...params, ...(byStatus ? [status] : [])),
+    c.env.DB.prepare(`SELECT c.status AS status, COUNT(*) AS n FROM conversations c WHERE ${filtered} GROUP BY c.status`).bind(...params),
+  ]);
+  const statusCounts = counted!.results as { status: string; n: number }[];
+  const counts: Record<string, number> = { all: statusCounts.reduce((sum, row) => sum + row.n, 0) };
+  for (const row of statusCounts) counts[row.status] = row.n;
+  return c.json({ conversations: (rows!.results as SummaryRow[]).map(toSummary), counts });
 });
 
 conversations.get("/workspaces/:id/ws", async (c) => {
