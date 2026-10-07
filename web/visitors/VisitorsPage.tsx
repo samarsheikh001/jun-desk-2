@@ -5,7 +5,7 @@ import { describeBrowser } from "../../shared/debug.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { globeSpots } from "../lib/globe-spots.ts";
-import { sliceColor } from "../reports/topic-colors.ts";
+import { DONUT_SLICES, sliceColor } from "../reports/topic-colors.ts";
 
 // MapLibre is big (~220 KB gzipped): only this page loads it.
 const VisitorGlobe = lazy(() => import("./VisitorGlobe.tsx"));
@@ -68,8 +68,12 @@ function initials(v: LiveVisitor): string {
   return ((parts[0]?.[0] ?? "") + (v.contact?.name ? (parts[1]?.[0] ?? "") : "")).toUpperCase() || "#";
 }
 
-/** A steady colour per session, from the Dashboard's slice colours. */
-const tint = (id: string) => sliceColor((parseInt(id.slice(-4), 16) || 0) % 5) ?? "var(--stream-2)";
+/** A steady colour per session, from the Dashboard's slice colours (any id: a hash, never negative). */
+function tint(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return sliceColor(hash % DONUT_SLICES) ?? "var(--stream-2)";
+}
 
 /** Counts by key, most first. */
 function tally(visitors: LiveVisitor[], key: (v: LiveVisitor) => string | null): [string, number][] {
