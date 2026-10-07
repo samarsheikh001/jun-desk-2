@@ -9,9 +9,9 @@ import { ChevronDownIcon, FlashIcon } from "@/components/icons";
 const STEPS: Record<(typeof STEP_ORDER)[number], { label: string; href: string }> = {
   account: { label: "Create your account", href: "/welcome" },
   knowledge: { label: "Add your docs", href: "/knowledge" },
-  ai: { label: "Turn on the AI", href: "/welcome" },
+  ai: { label: "Turn on the AI", href: "/agent/settings" },
   brand: { label: "Make the widget yours", href: "/appearance" },
-  install: { label: "Install on your site", href: "/welcome" },
+  install: { label: "Install on your site", href: "/appearance/install" },
   team: { label: "Invite your team", href: "/welcome" },
 };
 

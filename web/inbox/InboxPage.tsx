@@ -513,7 +513,7 @@ function Thread({
             Create issue
           </Button>
           {trackers && configuredProviders(trackers).length === 0 && (
-            <a className="small" href="/settings#issue-trackers" onClick={(e) => { e.preventDefault(); navigate("/settings#issue-trackers"); }}>Set up</a>
+            <a className="small" href="/settings/integrations#issue-trackers" onClick={(e) => { e.preventDefault(); navigate("/settings/integrations#issue-trackers"); }}>Set up</a>
           )}
         </span>
         <DrawerClose onClose={onClose} />

@@ -4,8 +4,9 @@ import { api, describeError } from "../api.ts";
 import { currentSubscription, deviceName, enablePush, endpointHash, notificationPermission, pushSupport, type Device } from "../lib/notifications.ts";
 import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
+import { Switch } from "@/components/ui/switch.tsx";
+import { SettingRow, SettingsCard } from "./layout.tsx";
 
-import { Card } from "@/components/ui/card.tsx";
 const TRIGGERS: { key: keyof NotificationPrefs; label: string; hint: string }[] = [
   { key: "needsPerson", label: "A chat needs a person", hint: "Handed to the team and nobody has it yet (or round robin gave it to you)." },
   { key: "assigned", label: "A chat is assigned to you", hint: "By round robin or by a teammate." },
@@ -75,13 +76,12 @@ export function NotificationsPanel({ workspaceId }: { workspaceId: string }) {
 
   const current = devices.find((d) => d.id === thisDevice);
   return (
-    <Card className="panel" id="notifications">
-      <h2>Notifications</h2>
-      <p className="muted small">
-        Get a notification when a chat needs you. With the desk open in a tab you're not looking at, the tab shows it; with the desk closed, your devices get a push.
-        Nothing is sent while you're looking at the desk.
-      </p>
-
+    <>
+    <SettingsCard
+      title="This device"
+      id="notifications"
+      description="Get a notification when a chat needs you. With the desk open in a tab you're not looking at, the tab shows it; with the desk closed, your devices get a push. Nothing is sent while you're looking at the desk."
+    >
       <div className="notify-device">
         {support === "ios-home-screen" ? (
           <p className="small">On iPhone and iPad, notifications work only in the desk added to your Home Screen: tap Share, then <strong>Add to Home Screen</strong>, open Jun Desk from there and turn them on.</p>
@@ -105,23 +105,18 @@ export function NotificationsPanel({ workspaceId }: { workspaceId: string }) {
         {sent && <p className="small ok-text">Sent. It should appear in a few seconds.</p>}
         {error && <p className="small error">{error}</p>}
       </div>
+    </SettingsCard>
 
-      <h3>Notify me when</h3>
-      <div className="stack">
-        {TRIGGERS.map((t) => (
-          <label key={t.key} className="check small notify-trigger">
-            <input type="checkbox" checked={prefs?.[t.key] ?? true} disabled={!prefs || busy} onChange={(e) => toggle(t.key, e.target.checked)} />
-            <span>
-              {t.label}
-              {t.hint && <span className="muted"> · {t.hint}</span>}
-            </span>
-          </label>
-        ))}
-      </div>
+    <SettingsCard title="Notify me when" description="Your own choices: teammates pick theirs.">
+      {TRIGGERS.map((t) => (
+        <SettingRow key={t.key} label={t.label} description={t.hint || undefined}>
+          <Switch checked={prefs?.[t.key] ?? true} disabled={!prefs || busy} onCheckedChange={(value) => toggle(t.key, value)} aria-label={t.label} />
+        </SettingRow>
+      ))}
+    </SettingsCard>
 
       {devices.length > 0 && (
-        <>
-          <h3>Your devices</h3>
+        <SettingsCard title="Your devices" description="Browsers and phones that get your push notifications.">
           <ul className="list">
             {devices.map((d) => (
               <li key={d.id}>
@@ -137,8 +132,8 @@ export function NotificationsPanel({ workspaceId }: { workspaceId: string }) {
               </li>
             ))}
           </ul>
-        </>
+        </SettingsCard>
       )}
-    </Card>
+    </>
   );
 }

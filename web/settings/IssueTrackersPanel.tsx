@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
-import { Card } from "@/components/ui/card.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SettingsCard } from "./layout.tsx";
 
 export interface LinearTeam {
   id: string;
@@ -30,7 +30,7 @@ interface TestResult {
 /** S-08: where "Create issue" files issues (GitHub, Linear, or both). */
 export function IssueTrackersPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const [status, setStatus] = useState<TrackerStatus | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     api<TrackerStatus>(`/workspaces/${workspaceId}/trackers`).then(setStatus, () => {});
   }, [workspaceId]);
@@ -41,17 +41,21 @@ export function IssueTrackersPanel({ workspaceId, canEdit }: { workspaceId: stri
   if (!status) return null;
 
   return (
-    <Card className="panel trackers-panel" id="issue-trackers" ref={ref}>
-      <h2>Issue trackers</h2>
-      <p className="muted small">
-        Agents can turn a conversation into a GitHub or Linear issue: the AI drafts the title, steps to reproduce, failing requests and browser details, the agent edits
-        it and files it, and the conversation keeps the link. The AI never files issues on its own. Issue text is masked again (emails, tokens, card numbers) before it's
-        sent. Tokens you paste here are kept in the workspace's Durable Object storage (not the database) and never shown again.
-      </p>
+    <>
+      <SettingsCard
+        title="Issue trackers"
+        id="issue-trackers"
+        ref={ref}
+        description={<>
+          Agents can turn a conversation into a GitHub or Linear issue: the AI drafts the title, steps to reproduce, failing requests and browser details, the agent edits
+          it and files it, and the conversation keeps the link. The AI never files issues on its own. Issue text is masked again (emails, tokens, card numbers) before it's
+          sent. Tokens you paste here are kept in the workspace's Durable Object storage (not the database) and never shown again.
+          {!canEdit && " An owner or admin can change these."}
+        </>}
+      />
       <GitHubSection workspaceId={workspaceId} status={status} canEdit={canEdit} onChange={setStatus} />
       <LinearSection workspaceId={workspaceId} status={status} canEdit={canEdit} onChange={setStatus} />
-      {!canEdit && <p className="muted small">An owner or admin can change these.</p>}
-    </Card>
+    </>
   );
 }
 
@@ -112,12 +116,14 @@ function GitHubSection({ workspaceId, status, canEdit, onChange }: SectionProps)
     });
 
   return (
-    <div className="tracker" id="github">
-      <div className="row">
-        <h3>GitHub</h3>
-        <span className="spacer" />
-        <span className={`tag ${github.configured ? "" : "tag-warn"}`}>{github.configured ? "Connected" : "Not set up"}</span>
-      </div>
+    <SettingsCard
+      className="trackers-panel"
+      id="github"
+      title="GitHub"
+      description="Issues go to one repository."
+      action={<span className={`tag ${github.configured ? "" : "tag-warn"}`}>{github.configured ? "Connected" : "Not set up"}</span>}
+    >
+      <div className="tracker">
       <dl className="env small">
         <dt>Token</dt>
         <dd><SecretState name="GITHUB_TOKEN" set={github.tokenSet} source={github.tokenSource} hint={github.tokenHint} /></dd>
@@ -154,7 +160,8 @@ function GitHubSection({ workspaceId, status, canEdit, onChange }: SectionProps)
           </details>
         </>
       )}
-    </div>
+      </div>
+    </SettingsCard>
   );
 }
 
@@ -179,12 +186,14 @@ function LinearSection({ workspaceId, status, canEdit, onChange }: SectionProps)
   const options = linear.team && !teams.some((t) => t.id === linear.team!.id) ? [linear.team, ...teams] : teams;
 
   return (
-    <div className="tracker" id="linear">
-      <div className="row">
-        <h3>Linear</h3>
-        <span className="spacer" />
-        <span className={`tag ${linear.configured ? "" : "tag-warn"}`}>{linear.configured ? "Connected" : "Not set up"}</span>
-      </div>
+    <SettingsCard
+      className="trackers-panel"
+      id="linear"
+      title="Linear"
+      description="Issues go to one team."
+      action={<span className={`tag ${linear.configured ? "" : "tag-warn"}`}>{linear.configured ? "Connected" : "Not set up"}</span>}
+    >
+      <div className="tracker">
       <dl className="env small">
         <dt>API key</dt>
         <dd><SecretState name="LINEAR_API_KEY" set={linear.keySet} source={linear.keySource} hint={linear.keyHint} /></dd>
@@ -223,6 +232,7 @@ function LinearSection({ workspaceId, status, canEdit, onChange }: SectionProps)
           </details>
         </>
       )}
-    </div>
+      </div>
+    </SettingsCard>
   );
 }

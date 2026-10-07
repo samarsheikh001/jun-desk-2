@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { api } from "./api.ts";
-import { navigate } from "./lib/router.ts";
-import { useAction } from "./useAction.ts";
-import { Card } from "@/components/ui/card.tsx";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { api } from "../api.ts";
+import { navigate } from "../lib/router.ts";
+import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { Switch } from "@/components/ui/switch.tsx";
+import { SettingRow, SettingsCard } from "../settings/layout.tsx";
 
 type ProviderId = "openai" | "workers-ai" | "chatgpt";
 type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge" | "suggestions";
@@ -25,7 +26,7 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   chatgpt: "ChatGPT sign-in (your plan)",
 };
 
-// AI-16: every AI job, in Settings order.
+// AI-16: every AI job, in the order shown.
 const JOBS: { job: AiJob; label: string; hint: string }[] = [
   { job: "answer", label: "Replies to visitors", hint: "Also the replies evals test." },
   { job: "brief", label: "Handoff briefs", hint: "Fast job: a short summary for your team." },
@@ -33,7 +34,7 @@ const JOBS: { job: AiJob; label: string; hint: string }[] = [
   { job: "draft", label: "Issue drafts", hint: "Bug reports written from a conversation." },
   { job: "topics", label: "Topic labels", hint: "Fast job: labels for the Dashboard." },
   { job: "judge", label: "Eval grading", hint: "Checks eval replies against your criteria." },
-  { job: "suggestions", label: "Suggested questions", hint: "Drafts the widget's questions from your knowledge (Appearance)." },
+  { job: "suggestions", label: "Suggested questions", hint: "Drafts the widget's questions from your knowledge (Widget page)." },
 ];
 // "Suggested for ChatGPT": the small model for fast jobs, the workspace model for the rest.
 const CHATGPT_FAST_MODEL = "gpt-6-luna";
@@ -42,6 +43,7 @@ const FAST_JOBS: AiJob[] = ["nudge", "topics", "brief"];
 export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const base = `/workspaces/${workspaceId}/ai`;
   const [state, setState] = useState<AiState | null>(null);
+  const [enabled, setEnabled] = useState(false);
   const [provider, setProvider] = useState<ProviderId>("workers-ai");
   const [model, setModel] = useState("");
   const [models, setModels] = useState<Partial<Record<AiJob, string>>>({});
@@ -53,20 +55,16 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
   const load = useCallback(async () => {
     const next = await api<AiState>(base);
     setState(next);
+    setEnabled(next.settings.enabled);
     setProvider(next.settings.provider);
     setModel(next.settings.model ?? "");
     setModels(next.settings.models ?? {});
   }, [base]);
   useEffect(() => {
     load().catch(() => {});
-    // Back from ChatGPT sign-in.
-    if (new URLSearchParams(window.location.search).get("chatgpt") === "connected") window.history.replaceState(null, "", "/settings");
+    // Back from ChatGPT sign-in (the Shell sends /settings?chatgpt=connected here).
+    if (new URLSearchParams(window.location.search).get("chatgpt") === "connected") window.history.replaceState(null, "", "/agent/settings");
   }, [load]);
-  // Linked from Reports' "AI is off" card.
-  const panel = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (state && window.location.hash === "#ai-assistant") panel.current?.scrollIntoView({ block: "start" });
-  }, [state !== null]);
 
   if (!state) return null;
   const save = (e: FormEvent<HTMLFormElement>) => {
@@ -76,7 +74,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
       await api(base, {
         method: "PUT",
         body: {
-          enabled: data.get("enabled") === "on",
+          enabled,
           provider,
           model,
           models,
@@ -94,27 +92,23 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
   const providers: ProviderId[] = ["workers-ai", "openai", ...(state.devChatgpt.available || state.settings.provider === "chatgpt" ? (["chatgpt"] as const) : [])];
 
   return (
-    <Card className="panel" id="ai-assistant" ref={panel}>
-      <div className="row">
-        <h2>AI assistant</h2>
-        <span className="spacer" />
-        <span className="muted small">
-          {state.usage.replies} / {state.settings.monthlyReplyCap} replies this month
-        </span>
-      </div>
-      <p className="muted small">When on, the assistant answers new website chats from your Knowledge, with citations, and hands off to your team when it can't help.</p>
+    <SettingsCard
+      title="AI replies"
+      id="ai-assistant"
+      description="When on, the assistant answers new website chats from your Knowledge, with citations, and hands off to your team when it can't help."
+      action={<span className="muted small nums">{state.usage.replies} / {state.settings.monthlyReplyCap} replies this month</span>}
+    >
       <form onSubmit={save} className="ai-form">
-        <label className="check">
-          <input type="checkbox" name="enabled" defaultChecked={state.settings.enabled} disabled={!canEdit} /> Answer new chats with AI
-        </label>
-        <label className="field">
-          <span>Model provider</span>
-          <NativeSelect value={provider} onChange={(e) => setProvider(e.target.value as ProviderId)} disabled={!canEdit}>
+        <SettingRow label="Answer new chats with AI" description="When off, every new chat goes straight to your team.">
+          <Switch checked={enabled} onCheckedChange={(value) => setEnabled(value)} disabled={!canEdit} aria-label="Answer new chats with AI" />
+        </SettingRow>
+        <SettingRow label="Model provider" description="Where the assistant's replies come from." htmlFor="ai-provider">
+          <NativeSelect id="ai-provider" value={provider} onChange={(e) => setProvider(e.target.value as ProviderId)} disabled={!canEdit}>
             {providers.map((p) => (
               <NativeSelectOption key={p} value={p}>{PROVIDER_LABELS[p]}</NativeSelectOption>
             ))}
           </NativeSelect>
-        </label>
+        </SettingRow>
         {provider === "openai" && !state.openaiKeyConfigured && (
           <p className="small error">Set the <code>OPENAI_API_KEY</code> Worker secret (<code>npx wrangler secret put OPENAI_API_KEY</code>) to use OpenAI.</p>
         )}
@@ -124,14 +118,18 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
               <span>Connected as <strong>{state.devChatgpt.email ?? "your ChatGPT account"}</strong>. Replies use your ChatGPT plan.</span>
             ) : (
               <span>Not connected.</span>
-            )}{" "}
-            {canEdit && state.devChatgpt.available && (
-              <Button variant="outline" size="sm" type="button" disabled={busy} onClick={() => run(async () => { const { url, paste } = await api<{ url: string; paste: boolean }>(`${base}/chatgpt/start`, { body: {} }); if (!paste) { window.location.href = url; return; } window.open(url, "_blank", "noopener"); setPasting(true); })}>
-                {state.devChatgpt.connected ? "Reconnect" : "Sign in with ChatGPT"}
-              </Button>
             )}
-            {canEdit && state.devChatgpt.connected && (
-              <Button variant="outline" size="sm" type="button" disabled={busy} onClick={() => run(async () => { await api(`${base}/chatgpt`, { method: "DELETE" }); await load(); })}>Disconnect</Button>
+            {canEdit && (state.devChatgpt.available || state.devChatgpt.connected) && (
+              <div className="row chatgpt-actions">
+                {canEdit && state.devChatgpt.available && (
+                  <Button variant="outline" size="sm" type="button" disabled={busy} onClick={() => run(async () => { const { url, paste } = await api<{ url: string; paste: boolean }>(`${base}/chatgpt/start`, { body: {} }); if (!paste) { window.location.href = url; return; } window.open(url, "_blank", "noopener"); setPasting(true); })}>
+                    {state.devChatgpt.connected ? "Reconnect" : "Sign in with ChatGPT"}
+                  </Button>
+                )}
+                {canEdit && state.devChatgpt.connected && (
+                  <Button variant="outline" size="sm" type="button" disabled={busy} onClick={() => run(async () => { await api(`${base}/chatgpt`, { method: "DELETE" }); await load(); })}>Disconnect</Button>
+                )}
+              </div>
             )}
             {pasting && (
               <div className="stack chatgpt-paste">
@@ -145,10 +143,12 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
             <div className="muted">Replies spend the signed-in ChatGPT plan. Only for a private desk: OpenAI's terms cover plan usage for your own use, not for serving the public.</div>
           </div>
         )}
-        <label className="field">
-          <span>Model <span className="muted">(optional)</span></span>
-          <Input name="model" value={model} onChange={(e) => setModel(e.target.value)} placeholder={state.defaults[provider]} disabled={!canEdit} />
-        </label>
+        <SettingRow label="Model" description={<>Optional. Empty uses the provider's default, <code>{state.defaults[provider]}</code>.</>} htmlFor="ai-model">
+          <Input id="ai-model" name="model" value={model} onChange={(e) => setModel(e.target.value)} placeholder={state.defaults[provider]} disabled={!canEdit} />
+        </SettingRow>
+        <SettingRow label="Monthly reply cap" description="When reached, chats go straight to your team. The assistant never just goes silent." htmlFor="ai-cap">
+          <Input id="ai-cap" name="cap" type="number" min={0} defaultValue={state.settings.monthlyReplyCap} disabled={!canEdit} />
+        </SettingRow>
         <details className="job-models" open={overrides > 0}>
           <summary className="small">Advanced: model per task{overrides > 0 ? ` (${overrides} set)` : ""}</summary>
           <div className="job-models-body">
@@ -184,17 +184,12 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
           </div>
         </details>
         <p className="small muted">
-          Tone, rules, procedures and tools are in{" "}
-          <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent"); }}>Agent</a>, as files you can also keep in git.
+          Tone, rules, procedures and tools are on the{" "}
+          <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent", { replace: true }); }}>Files</a> tab, as files you can also keep in git.
         </p>
-        <label className="field">
-          <span>Monthly reply cap</span>
-          <Input name="cap" type="number" min={0} defaultValue={state.settings.monthlyReplyCap} disabled={!canEdit} />
-          <small className="muted">When reached, chats go straight to your team. The assistant never just goes silent.</small>
-        </label>
         {error && <p className="error">{error}</p>}
         {canEdit && <div className="row"><Button disabled={busy}>Save</Button>{saved && <span className="muted small">Saved ✓</span>}</div>}
       </form>
-    </Card>
+    </SettingsCard>
   );
 }

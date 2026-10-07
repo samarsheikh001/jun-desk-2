@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { APPEARANCE_DEFAULTS, RADIUS_MAX, SUGGESTION_LIMIT, SUGGESTIONS_MAX, TEXT_LIMITS, textOn, widgetLook, type LauncherStyle, type WidgetTheme } from "../../shared/appearance.ts";
 import { api, ApiError } from "../api.ts";
 import { useAction } from "../useAction.ts";
+import { PageTabs } from "../components/PageTabs.tsx";
+import { IdentityPanel, InstallPanel } from "./InstallPanels.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
@@ -9,7 +11,33 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 
-// W-04 Appearance: settings on the left, and on the right the real widget (/widget in an
+// The Widget page: Look (/appearance) and Install (/appearance/install). /widget itself is the chat
+// iframe the Worker serves, so the page keeps its old address.
+export function WidgetPage({ workspaceId, workspaceName, canEdit, tab }: { workspaceId: string; workspaceName: string; canEdit: boolean; tab: "look" | "install" }) {
+  return (
+    <PageTabs
+      title="Widget"
+      value={tab}
+      className="widget-page"
+      tabs={[
+        { value: "look", label: "Look", path: "/appearance", content: <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} /> },
+        {
+          value: "install",
+          label: "Install",
+          path: "/appearance/install",
+          content: (
+            <div className="page-settings settings-sections">
+              <InstallPanel workspaceId={workspaceId} canEdit={canEdit} />
+              {canEdit && <IdentityPanel workspaceId={workspaceId} />}
+            </div>
+          ),
+        },
+      ]}
+    />
+  );
+}
+
+// W-04 Look: settings on the left, and on the right the real widget (/widget in an
 // iframe, preview mode) showing the unsaved draft, so the preview can't drift from what
 // visitors get. Only the launcher button and greeting card around it are drawn here: they
 // live in the loader on customers' pages (public/widget.js), and this copies its styles.
@@ -34,7 +62,7 @@ const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggesti
 const pick = (s: Draft): Draft => Object.fromEntries(FIELDS.filter((f) => s[f] !== undefined).map((f) => [f, s[f]])) as Draft;
 const same = (a: Draft, b: Draft) => FIELDS.every((f) => JSON.stringify(a[f] ?? null) === JSON.stringify(b[f] ?? null));
 
-export function AppearancePage({ workspaceId, workspaceName, canEdit }: { workspaceId: string; workspaceName: string; canEdit: boolean }) {
+function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string; workspaceName: string; canEdit: boolean }) {
   const [widgetKey, setWidgetKey] = useState<string | null>(null);
   const [saved, setSaved] = useState<Draft>({});
   const [draft, setDraft] = useState<Draft>({});
@@ -108,9 +136,9 @@ export function AppearancePage({ workspaceId, workspaceName, canEdit }: { worksp
 
   return (
     <div className="appear-page">
-      <aside className="appear-controls" aria-label="Appearance settings">
+      <aside className="appear-controls" aria-label="Widget look">
         <div className="appear-heading">
-          <h1>Appearance</h1>
+          <h2>Preview</h2>
           <div className="segmented" role="group" aria-label="Preview">
             <Button variant="ghost" size="sm" className={open ? "active" : ""} aria-pressed={open} onClick={() => setOpen(true)}>Chat</Button>
             <Button variant="ghost" size="sm" className={open ? "" : "active"} aria-pressed={!open} onClick={() => setOpen(false)}>Closed</Button>

@@ -2,13 +2,14 @@ import { useEffect, useState, type FormEvent } from "react";
 import { DEFAULT_AWAY_MESSAGE, describeOpening, isOpen, nextOpening, WEEKDAYS, type BusinessHours, type DayHours, type Weekday } from "../../shared/hours.ts";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
-import { Card } from "@/components/ui/card.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { Switch } from "@/components/ui/switch.tsx";
+import { SettingRow, SettingsCard } from "./layout.tsx";
 
-// I-10 business hours (Settings). The widget's look (W-04) is on the Appearance page.
+// I-10 business hours (Settings → Inbox). The widget's look (W-04) is on the Widget page's Look tab.
 
 export interface InboxSettings {
   color?: string;
@@ -69,21 +70,20 @@ export function HoursPanel({ workspaceId, settings, canEdit, onSaved }: { worksp
   };
 
   return (
-    <Card className="panel">
-      <div className="row">
-        <h2>Business hours</h2>
-        <span className="spacer" />
-        <span className="tag">{status}</span>
-      </div>
-      <p className="muted small">Outside these hours the AI still answers. When a chat is with your team, the visitor gets your away message once, and the widget says when you're back.</p>
+    <SettingsCard
+      title="Business hours"
+      description="Outside these hours the AI still answers. When a chat is with your team, the visitor gets your away message once, and the widget says when you're back."
+      action={<span className="tag">{status}</span>}
+    >
       <form onSubmit={save} className="ai-form">
-        <label className="check"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} disabled={!canEdit} /> Use business hours</label>
-        <label className="field">
-          <span>Time zone</span>
-          <NativeSelect value={timezone} onChange={(e) => setTimezone(e.target.value)} disabled={!canEdit}>
+        <SettingRow label="Use business hours" description="When off, the desk counts as always open.">
+          <Switch checked={enabled} onCheckedChange={(value) => setEnabled(value)} disabled={!canEdit} aria-label="Use business hours" />
+        </SettingRow>
+        <SettingRow label="Time zone" description="The hours below are in this time zone." htmlFor="hours-timezone">
+          <NativeSelect id="hours-timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} disabled={!canEdit}>
             {zones().map((z) => <NativeSelectOption key={z} value={z}>{z.replace(/_/g, " ")}</NativeSelectOption>)}
           </NativeSelect>
-        </label>
+        </SettingRow>
         <div className="hours-grid">
           {ALL_DAYS.map((d) => {
             const v = days[d];
@@ -112,6 +112,6 @@ export function HoursPanel({ workspaceId, settings, canEdit, onSaved }: { worksp
         {error && <p className="error small">{error}</p>}
         {canEdit && <div className="row"><Button disabled={busy}>Save</Button>{saved && <span className="muted small">Saved ✓</span>}</div>}
       </form>
-    </Card>
+    </SettingsCard>
   );
 }

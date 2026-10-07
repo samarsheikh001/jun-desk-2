@@ -2,8 +2,11 @@ import { useRef, useState, type DragEvent } from "react";
 import { KB_FILE_EXTENSIONS, MAX_KB_FILE_BYTES } from "../../shared/protocol.ts";
 import { formatSize } from "../lib/thread.ts";
 import { Button } from "@/components/ui/button.tsx";
+import { CheckIcon, InfoIcon, UploadIcon, XIcon } from "@/components/icons.tsx";
+import { KbSheetBody, KbSheetFooter } from "./KbSheet.tsx";
 
 // K-02: drag-and-drop or pick files; each uploads on its own with progress and its own error.
+// Lives in the "Add files" sheet (Chatbase's dropzone): files upload as soon as they're picked.
 
 interface Item {
   key: string;
@@ -40,11 +43,12 @@ function send(url: string, file: File, onProgress: (fraction: number) => void): 
   });
 }
 
-export function FileUpload({ base, onUploaded }: { base: string; onUploaded: () => void }) {
+export function FileUpload({ base, onUploaded, onDone }: { base: string; onUploaded: () => void; onDone: () => void }) {
   const [items, setItems] = useState<Item[]>([]);
   const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const update = (key: string, patch: Partial<Item>) => setItems((list) => list.map((i) => (i.key === key ? { ...i, ...patch } : i)));
+  const uploading = items.some((i) => i.state === "uploading");
 
   const add = async (files: File[]) => {
     const queued: { item: Item; file: File }[] = files.map((file) => {
@@ -83,52 +87,73 @@ export function FileUpload({ base, onUploaded }: { base: string; onUploaded: () 
   };
 
   return (
-    <div className="kb-upload">
-      <div
-        className={`kb-drop${over ? " over" : ""}`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setOver(true);
-        }}
-        onDragLeave={() => setOver(false)}
-        onDrop={drop}
-      >
-        <span className="small">
-          <strong>Upload files</strong>: drop PDF, DOCX, Markdown or text files here, or{" "}
-          <Button variant="link" type="button" onClick={() => input.current?.click()}>choose files</Button>
-        </span>
-        <span className="muted small">Up to {MAX_KB_FILE_BYTES / 1024 / 1024} MB each.</span>
-        <input
-          ref={input}
-          type="file"
-          multiple
-          hidden
-          accept={KB_FILE_EXTENSIONS.join(",")}
-          aria-label="Upload files"
-          onChange={(e) => {
-            void add([...(e.target.files ?? [])]);
-            e.target.value = "";
-          }}
-        />
-      </div>
-      {items.length > 0 && (
-        <ul className="kb-uploads">
-          {items.map((i) => (
-            <li key={i.key} className="small">
-              <span className="kb-upload-name" title={i.name}>{i.name}</span>
-              <span className="muted">{formatSize(i.size)}</span>
-              {i.state === "uploading" && <progress max={1} value={i.progress} aria-label={`Uploading ${i.name}`} />}
-              {i.state === "done" && <span className="muted">Uploaded ✓</span>}
-              {i.state !== "uploading" && (
-                <Button variant="link" type="button" className="muted" aria-label={`Dismiss ${i.name}`} onClick={() => setItems((list) => list.filter((x) => x.key !== i.key))}>
-                  ✕
-                </Button>
-              )}
-              {i.state === "error" && <span className="error">{i.error}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <>
+      <KbSheetBody className="kb-upload-body">
+        <div className="kb-drop-tray">
+          <div
+            className={`kb-drop${over ? " over" : ""}`}
+            role="button"
+            tabIndex={0}
+            aria-label="Upload files"
+            onClick={() => input.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                input.current?.click();
+              }
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setOver(true);
+            }}
+            onDragLeave={() => setOver(false)}
+            onDrop={drop}
+          >
+            <span className="kb-drop-icon" aria-hidden="true"><UploadIcon /></span>
+            <div className="kb-drop-text">
+              <p className="kb-drop-title"><span className="kb-only-touch">Tap here to upload</span><span className="kb-only-pointer">Click here or drag files to upload</span></p>
+              <p className="kb-drop-sub">Up to {MAX_KB_FILE_BYTES / 1024 / 1024} MB each</p>
+            </div>
+            <div className="kb-drop-exts">
+              {[".pdf", ".docx", ".md", ".txt"].map((ext) => <span key={ext}>{ext}</span>)}
+            </div>
+            <input
+              ref={input}
+              type="file"
+              multiple
+              hidden
+              accept={KB_FILE_EXTENSIONS.join(",")}
+              onChange={(e) => {
+                void add([...(e.target.files ?? [])]);
+                e.target.value = "";
+              }}
+            />
+          </div>
+          <p className="kb-hint"><InfoIcon />Make sure a PDF's text is selectable: scanned pages have no text to index.</p>
+        </div>
+        {items.length > 0 && (
+          <ul className="kb-uploads">
+            {items.map((i) => (
+              <li key={i.key} className={i.state}>
+                <span className="kb-upload-name" title={i.name}>{i.name}</span>
+                <span className="kb-note">{formatSize(i.size)}</span>
+                {i.state === "uploading" && <progress max={1} value={i.progress} aria-label={`Uploading ${i.name}`} />}
+                {i.state === "done" && <span className="kb-upload-done"><CheckIcon />Uploaded, indexing</span>}
+                {i.state !== "uploading" && (
+                  <Button variant="ghost" size="icon-xs" type="button" className="kb-upload-dismiss" aria-label={`Dismiss ${i.name}`} onClick={() => setItems((list) => list.filter((x) => x.key !== i.key))}>
+                    <XIcon />
+                  </Button>
+                )}
+                {i.state === "error" && <span className="error kb-upload-error">{i.error}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </KbSheetBody>
+      <KbSheetFooter className="kb-foot-split">
+        <Button type="button" variant="outline" size="lg" disabled={items.length === 0 || uploading} onClick={() => setItems([])}>Reset</Button>
+        <Button type="button" size="lg" disabled={uploading} onClick={onDone}>{uploading ? "Uploading…" : "Done"}</Button>
+      </KbSheetFooter>
+    </>
   );
 }

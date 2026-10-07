@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpenIcon, BotIcon, ChartColumnIcon, FlashIcon, HelpIcon, InboxIcon, PaletteIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { BookOpenIcon, BotIcon, ChartColumnIcon, ChatIcon, FlashIcon, HelpIcon, InboxIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuBadge,
@@ -11,7 +11,7 @@ import { ThemeButton } from "./components/ThemeButton.tsx";
 import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
 import { api, type Me } from "./api.ts";
 import { InboxPage } from "./inbox/InboxPage.tsx";
-import { AppearancePage } from "./appearance/AppearancePage.tsx";
+import { WidgetPage } from "./appearance/AppearancePage.tsx";
 import { AgentPage } from "./agent/AgentPage.tsx";
 import { CommandPalette, ShortcutsHelp } from "./components/CommandPalette.tsx";
 import { bridge, isControlTarget, isTypingTarget, modKey } from "./lib/bridge.ts";
@@ -21,7 +21,7 @@ import { deskServiceWorker, listenForNotificationClicks, notificationPermission,
 import { LiveSocket } from "./lib/socket.ts";
 import { ReportsPage } from "./reports/ReportsPage.tsx";
 import { navigate, usePath } from "./lib/router.ts";
-import { SettingsPage } from "./SettingsPage.tsx";
+import { movedFromSettings, SettingsDialog } from "./SettingsDialog.tsx";
 import { VisitorsPage } from "./visitors/VisitorsPage.tsx";
 import { STEP_ORDER, useOnboarding, WelcomePage } from "./welcome/WelcomePage.tsx";
 import { GetStartedCard } from "./welcome/GetStartedCard.tsx";
@@ -32,8 +32,7 @@ const NAV = [
   { id: "visitors", label: "Visitors", Icon: UsersIcon },
   { id: "knowledge", label: "Knowledge", Icon: BookOpenIcon },
   { id: "agent", label: "Agent", Icon: BotIcon },
-  { id: "appearance", label: "Appearance", Icon: PaletteIcon },
-  { id: "settings", label: "Settings", Icon: SettingsIcon },
+  { id: "appearance", label: "Widget", Icon: ChatIcon },
 ] as const;
 
 export interface Hub {
@@ -42,7 +41,39 @@ export interface Hub {
 
 /** Signed-in layout: header, navigation, the workspace hub socket, and the current page. */
 export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
-  const path = usePath();
+  // Old /settings links to the parts that moved out (widget install, AI settings, the ChatGPT
+  // sign-in's return). Loading one: the address is rewritten before the first render. Following
+  // one inside the desk: rendered as its new page at once (the dialog never flashes), and the
+  // address is replaced before paint.
+  useState(() => {
+    const { pathname, search, hash } = window.location;
+    const target = movedFromSettings(pathname, search, hash);
+    if (target) window.history.replaceState(null, "", target);
+  });
+  const urlPath = usePath();
+  const moved = movedFromSettings(urlPath, window.location.search, window.location.hash);
+  const path = moved ? moved.split("?")[0]! : urlPath;
+  useLayoutEffect(() => {
+    if (moved) navigate(moved, { replace: true });
+  }, [moved]);
+  // Settings is a dialog over the page you were on (Town's): /settings… opens it, and the page
+  // behind keeps the last other path (the inbox when you land on /settings directly).
+  const settingsOpen = path.startsWith("/settings");
+  const pageBehind = useRef("/inbox");
+  if (!settingsOpen) pageBehind.current = path;
+  const pagePath = settingsOpen ? pageBehind.current : path;
+  // Opened from inside the desk (a history entry to go back over) or by loading a /settings URL.
+  const openedInDesk = useRef(false);
+  const lastPath = useRef<string | null>(null);
+  useEffect(() => {
+    if (settingsOpen && lastPath.current !== null && !lastPath.current.startsWith("/settings")) openedInDesk.current = true;
+    if (!settingsOpen) openedInDesk.current = false;
+    lastPath.current = path;
+  }, [path, settingsOpen]);
+  const closeSettings = useCallback(() => {
+    if (openedInDesk.current) window.history.back();
+    else navigate(pageBehind.current, { replace: true });
+  }, []);
   const workspace = me.memberships?.[0];
   const [online, setOnline] = useState<PresenceEntry[]>([]);
   // V-01: kept here (not in the page) because the hub sends the full list only on connect.
@@ -164,7 +195,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           onControl: isControlTarget(e.target),
         },
         shortcutState.current,
-        { inbox: window.location.pathname.startsWith("/inbox"), modal: overlay === "palette" ? "palette" : otherDialog || overlay ? "other" : "none" },
+        { inbox: window.location.pathname.startsWith("/inbox"), modal: overlay === "palette" ? "palette" : otherDialog || overlay || settingsOpen ? "other" : "none" },
         Date.now(),
       );
       shortcutState.current = state;
@@ -174,7 +205,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [overlay, openOverlay, closeOverlay]);
+  }, [overlay, openOverlay, closeOverlay, settingsOpen]);
 
   const hub = useMemo<Hub>(
     () => ({
@@ -188,19 +219,18 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
 
   if (!workspace || !me.user) return <div className="center muted">You're not a member of any workspace.</div>;
   const section =
-    path.startsWith("/settings") ? "settings"
-    : path.startsWith("/knowledge") ? "knowledge"
-    : path.startsWith("/agent") ? "agent"
-    : path.startsWith("/appearance") ? "appearance"
-    : path.startsWith("/visitors") ? "visitors"
-    : path.startsWith("/dashboard") || path.startsWith("/reports") ? "dashboard"
-    : path.startsWith("/welcome") ? "welcome"
+    pagePath.startsWith("/knowledge") ? "knowledge"
+    : pagePath.startsWith("/agent") ? "agent"
+    : pagePath.startsWith("/appearance") ? "appearance"
+    : pagePath.startsWith("/visitors") ? "visitors"
+    : pagePath.startsWith("/dashboard") || pagePath.startsWith("/reports") ? "dashboard"
+    : pagePath.startsWith("/welcome") ? "welcome"
     : "inbox";
   const ob = onboarding.state;
   const obDone = ob ? STEP_ORDER.filter((k) => ob.steps[k]).length : 0;
   const showGetStarted = Boolean(ob && !ob.dismissed && obDone < STEP_ORDER.length && workspace.role !== "agent");
   const canEdit = workspace.role !== "agent";
-  const conversationId = path.match(/^\/inbox\/([\w-]+)/)?.[1] ?? null;
+  const conversationId = pagePath.match(/^\/inbox\/([\w-]+)/)?.[1] ?? null;
 
   return (
     // Town's sidebar (D-36): shadcn's Sidebar, collapsing to a 56px icon rail (toggle, or Ctrl/Cmd+B).
@@ -217,9 +247,9 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
               {NAV.map(({ id, label, Icon }) => (
                 <SidebarMenuItem key={id}>
                   <SidebarMenuButton
-                    isActive={section === id}
+                    isActive={section === id && !settingsOpen}
                     tooltip={label}
-                    render={<a href={`/${id}`} aria-current={section === id ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(`/${id}`); }} />}
+                    render={<a href={`/${id}`} aria-current={section === id && !settingsOpen ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(`/${id}`); }} />}
                   >
                     <Icon />
                     <span>{label}</span>
@@ -270,7 +300,20 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                     <span className="desk-user-sub">{workspace.workspaceName} · {online.length} online</span>
                   </span>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent side="right" align="end" className="min-w-56">
+                <AccountMenuContent>
+                  {/* Settings lives here, under your name (Town's profile menu), not in the main nav. */}
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="desk-user-menu-head">
+                      <span className="desk-user-name">{me.user.name}</span>
+                      {me.user.email && <span className="desk-user-sub">{me.user.email}</span>}
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => navigate("/settings")}>
+                      <SettingsIcon />
+                      Settings
+                      <DropdownMenuShortcut>G S</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
                   <DropdownMenuGroup>
                     <DropdownMenuLabel>Online now</DropdownMenuLabel>
                     {online.map((o) => (
@@ -285,7 +328,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                     <SignOutIcon />
                     Sign out
                   </DropdownMenuItem>
-                </DropdownMenuContent>
+                </AccountMenuContent>
               </DropdownMenu>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -297,9 +340,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <div className="brand"><DeskIcon /><span>Jun Desk</span></div>
       </header>
       <ScrollArea render={<main />} className="desk-main" contentClassName="desk-main-body">
-      {section === "inbox" ? (
-        <InboxPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} me={me.user} hub={hub} conversationId={conversationId} />
-      ) : section === "knowledge" ? (
+      {section === "knowledge" ? (
         <KnowledgePage workspaceId={workspace.workspaceId} canEdit={canEdit} />
       ) : section === "welcome" ? (
         <WelcomePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} onboarding={onboarding.state} reload={onboarding.reload} />
@@ -308,19 +349,26 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       ) : section === "dashboard" ? (
         <ReportsPage workspaceId={workspace.workspaceId} />
       ) : section === "appearance" ? (
-        <AppearancePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} />
+        <WidgetPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} tab={pagePath.startsWith("/appearance/install") ? "install" : "look"} />
       ) : section === "agent" ? (
-        <AgentPage workspaceId={workspace.workspaceId} canEdit={canEdit} />
+        <AgentPage workspaceId={workspace.workspaceId} canEdit={canEdit} tab={pagePath.startsWith("/agent/settings") ? "settings" : "files"} />
       ) : (
-        <SettingsPage me={me} />
+        <InboxPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} me={me.user} hub={hub} conversationId={conversationId} />
       )}
       </ScrollArea>
+      {settingsOpen && <SettingsDialog me={me} path={path} onClose={closeSettings} />}
       </SidebarInset>
       {overlay === "palette" && <CommandPalette workspaceId={workspace.workspaceId} meId={me.user.id} onClose={closeOverlay} onHelp={openHelp} onToast={showNotice} />}
       {overlay === "help" && <ShortcutsHelp onClose={closeOverlay} />}
       {notice && <div className="toast" role="status"><span>{notice}</span></div>}
     </SidebarProvider>
   );
+}
+
+/** The account menu opens beside the sidebar; on phones (the sidebar is a sheet) above the button, so it stays on screen. */
+function AccountMenuContent({ children }: { children: ReactNode }) {
+  const { isMobile } = useSidebar();
+  return <DropdownMenuContent side={isMobile ? "top" : "right"} align={isMobile ? "start" : "end"} className="min-w-56">{children}</DropdownMenuContent>;
 }
 
 /** On phones the sidebar is a sheet: going to another page closes it. */

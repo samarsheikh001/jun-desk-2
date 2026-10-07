@@ -193,14 +193,14 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
     <section className="dash-card">
       <div className="dash-card-head">
         <h2>Top topics</h2>
-        <a className="small" href="/settings#topics" onClick={goTo("/settings#topics")}>Manage</a>
+        <a className="small" href="/settings/inbox#topics" onClick={goTo("/settings/inbox#topics")}>Manage</a>
       </div>
       {top.length === 0 ? (
         <p className="muted small">
           {!aiEnabled ? (
             <>
               The AI assistant labels each chat with a short topic, like Billing or Login, and AI replies are off.{" "}
-              <a href="/settings#ai-assistant" onClick={goTo("/settings#ai-assistant")}>Turn it on</a>
+              <a href="/agent/settings" onClick={goTo("/agent/settings")}>Turn it on</a>
             </>
           ) : topics.unlabeled > 0
             ? "Topics appear after chats go quiet for a few minutes: the AI gives each one a short label, like Billing or Login."
@@ -274,7 +274,7 @@ function Overview({ r }: { r: MetricsReport }) {
             label="AI assistant"
             value="Off"
             off
-            detail={<>Your team answers every chat. <a href="/settings#ai-assistant" onClick={goTo("/settings#ai-assistant")}>Turn it on</a></>}
+            detail={<>Your team answers every chat. <a href="/agent/settings" onClick={goTo("/agent/settings")}>Turn it on</a></>}
           />
         ) : (
           <>

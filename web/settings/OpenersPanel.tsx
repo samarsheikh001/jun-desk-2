@@ -40,7 +40,7 @@ export function OpenersPanel({ workspaceId, proactive, initial }: { workspaceId:
   const dirty = JSON.stringify(drafts) !== saved;
 
   return (
-    <div className="identity openers">
+    <div className="settings-group openers">
       <h3>Page openers</h3>
       <p className="muted small">
         Offer a chat after someone has spent a while on a page, e.g. 30 seconds on <code>/pricing</code>. Only time with the tab in view counts. A visitor sees at most one card per page

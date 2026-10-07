@@ -123,10 +123,10 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
 
       <StepCard n={3} title="Turn on the AI assistant" done={s.ai}>
         {s.ai ? (
-          <p className="muted small">On. It answers new chats first and hands off to your team when it can't help. Provider, model and monthly cap are in <a href="/settings" onClick={(e) => { e.preventDefault(); navigate("/settings"); }}>Settings</a>; its rules and tools are on the <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent"); }}>Agent</a> page.</p>
+          <p className="muted small">On. It answers new chats first and hands off to your team when it can't help. Its rules and tools are on the <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent"); }}>Agent</a> page; provider, model and monthly cap on its <a href="/agent/settings" onClick={(e) => { e.preventDefault(); navigate("/agent/settings"); }}>Settings</a> tab.</p>
         ) : (
           <>
-            <p className="muted small">Uses Workers AI out of the box (no API key, included with Cloudflare). You can switch to OpenAI later in Settings.</p>
+            <p className="muted small">Uses Workers AI out of the box (no API key, included with Cloudflare). You can switch to OpenAI later on the <a href="/agent/settings" onClick={(e) => { e.preventDefault(); navigate("/agent/settings"); }}>Agent page's Settings</a> tab.</p>
             <Button disabled={busy} onClick={turnOnAi}>Turn on the AI</Button>
           </>
         )}
@@ -134,18 +134,18 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
 
       <StepCard n={4} title="Make the widget yours" done={s.brand} optional>
         {s.brand ? (
-          <p className="muted small">Branded. Logo, greeting, side and business hours are in Settings.</p>
+          <p className="muted small">Branded. Logo, greeting and side are on the <a href="/appearance" onClick={(e) => { e.preventDefault(); navigate("/appearance"); }}>Widget</a> page; business hours in <a href="/settings/inbox" onClick={(e) => { e.preventDefault(); navigate("/settings/inbox"); }}>Settings → Inbox</a>.</p>
         ) : (
           <div className="row">
             <input type="color" value={color} onChange={(e) => setColor(e.target.value)} aria-label="Brand colour" />
             <Button variant="outline" disabled={busy} onClick={saveColor}>Use this colour</Button>
-            <span className="muted small">More (logo, greeting, hours) in Settings.</span>
+            <span className="muted small">More (logo, greeting) on the <a href="/appearance" onClick={(e) => { e.preventDefault(); navigate("/appearance"); }}>Widget</a> page.</span>
           </div>
         )}
       </StepCard>
 
       <StepCard n={5} title="Put it on your site" done={s.install}>
-        <p className="muted small">Paste this in your site's <code>&lt;head&gt;</code> (or before <code>&lt;/body&gt;</code>). It's tiny; the chat loads only when someone opens it.</p>
+        <p className="muted small">Paste this in your site's <code>&lt;head&gt;</code> (or before <code>&lt;/body&gt;</code>). It's tiny; the chat loads only when someone opens it. Allowed websites, proactive help and identity verification are on the Widget page's <a href="/appearance/install" onClick={(e) => { e.preventDefault(); navigate("/appearance/install"); }}>Install</a> tab.</p>
         <div className="invite">
           <div className="row">
             <code className="small">{snippet}</code>

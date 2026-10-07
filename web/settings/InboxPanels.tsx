@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
-import { Card } from "@/components/ui/card.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SettingRow, SettingsCard } from "./layout.tsx";
 
 interface SavedReplyRow { id: string; title: string; body: string }
 interface TagRow { id: string; name: string; conversations: number }
@@ -35,16 +35,12 @@ export function SavedRepliesPanel({ workspaceId }: { workspaceId: string }) {
 
   const current = editing && editing !== "new" ? replies.find((r) => r.id === editing) : undefined;
   return (
-    <Card className="panel">
-      <div className="row">
-        <h2>Saved replies</h2>
-        <span className="spacer" />
-        {editing === null && <Button variant="outline" size="sm" onClick={() => setEditing("new")}>New saved reply</Button>}
-      </div>
-      <p className="muted small">
-        Answers your team sends often. Type <code>/</code> in the reply box to search them. <code>{"{first_name}"}</code> becomes the customer's first name and{" "}
-        <code>{"{agent_name}"}</code> yours.
-      </p>
+    <SettingsCard
+      title="Saved replies"
+      description={<>Answers your team sends often. Type <code>/</code> in the reply box to search them. <code>{"{first_name}"}</code> becomes the customer's first name and{" "}
+        <code>{"{agent_name}"}</code> yours.</>}
+      action={editing === null && <Button variant="outline" size="sm" onClick={() => setEditing("new")}>New saved reply</Button>}
+    >
       {editing !== null && (
         <form className="stack" onSubmit={save} key={editing}>
           <Input name="title" required maxLength={80} placeholder="Title, e.g. Refund policy" aria-label="Saved reply title" defaultValue={current?.title ?? ""} />
@@ -69,7 +65,8 @@ export function SavedRepliesPanel({ workspaceId }: { workspaceId: string }) {
           ))}
         </ul>
       )}
-    </Card>
+      {editing === null && replies.length === 0 && <p className="muted">No saved replies yet.</p>}
+    </SettingsCard>
   );
 }
 
@@ -84,12 +81,10 @@ export function TagsPanel({ workspaceId, canEdit }: { workspaceId: string; canEd
   }, [load]);
 
   return (
-    <Card className="panel">
-      <h2>Tags</h2>
-      <p className="muted small">Add tags from a conversation's header ("+ Tag") and filter the inbox by them. Visitors never see tags.</p>
+    <SettingsCard title="Tags" description={`Add tags from a conversation's header ("+ Tag") and filter the inbox by them. Visitors never see tags.`}>
       {error && <p className="error small">{error}</p>}
       {tags.length === 0 ? (
-        <p className="muted small">No tags yet.</p>
+        <p className="muted">No tags yet.</p>
       ) : (
         <ul className="list">
           {tags.map((t) => (
@@ -109,7 +104,7 @@ export function TagsPanel({ workspaceId, canEdit }: { workspaceId: string; canEd
           ))}
         </ul>
       )}
-    </Card>
+    </SettingsCard>
   );
 }
 
@@ -126,7 +121,7 @@ export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; can
   const [merging, setMerging] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const { busy, error, run } = useAction();
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLElement>(null);
   const load = useCallback(async () => {
     const r = await api<{ topics: TopicRow[]; max: number }>(base);
     setTopics(r.topics);
@@ -157,19 +152,17 @@ export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; can
     });
 
   return (
-    <Card className="panel" id="topics" ref={ref}>
-      <div className="row">
-        <h2>Topics</h2>
-        <span className="spacer" />
-        {canEdit && <Button variant="outline" size="sm" disabled={busy} onClick={labelNow}>{busy ? "Working…" : "Label now"}</Button>}
-      </div>
-      <p className="muted small">
-        The AI gives each chat a short topic once it's resolved or quiet for 10 minutes, reusing these when one fits (up to {max}). See them on the Dashboard and filter the inbox by them. Visitors never see topics.
-      </p>
+    <SettingsCard
+      title="Topics"
+      id="topics"
+      ref={ref}
+      description={`The AI gives each chat a short topic once it's resolved or quiet for 10 minutes, reusing these when one fits (up to ${max}). See them on the Dashboard and filter the inbox by them. Visitors never see topics.`}
+      action={canEdit && <Button variant="outline" size="sm" disabled={busy} onClick={labelNow}>{busy ? "Working…" : "Label now"}</Button>}
+    >
       {notice && <p className="ok-text small">{notice}</p>}
       {error && <p className="error small">{error}</p>}
       {topics === null ? null : topics.length === 0 ? (
-        <p className="muted small">No topics yet.</p>
+        <p className="muted">No topics yet.</p>
       ) : (
         <ul className="list">
           {topics.map((t) => (
@@ -208,7 +201,7 @@ export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; can
           ))}
         </ul>
       )}
-    </Card>
+    </SettingsCard>
   );
 }
 
@@ -244,23 +237,24 @@ export function AssignmentPanel({ workspaceId, canEdit }: { workspaceId: string;
   };
 
   return (
-    <Card className="panel" id="assignment">
-      <h2>Assignment</h2>
-      <p className="muted small">When the AI hands a chat to the team, or a new chat comes in while the AI is off.</p>
-      <form onSubmit={save} className="stack">
-        <label className="check">
-          <input type="radio" name="mode" checked={mode === "manual"} onChange={() => setMode("manual")} disabled={!canEdit} /> Manual: chats wait in Unassigned until someone takes them
-        </label>
-        <label className="check">
-          <input type="radio" name="mode" checked={mode === "round_robin"} onChange={() => setMode("round_robin")} disabled={!canEdit} /> Round robin: give each chat to the next teammate who has the dashboard open
-        </label>
-        {mode === "round_robin" && (
-          <label className="field">
-            <span>Most open chats per teammate <span className="muted">(0 = no limit)</span></span>
-            <Input type="number" min={0} max={100} step={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} disabled={!canEdit} />
+    <SettingsCard title="Assignment" id="assignment" description="Who gets a chat when the AI hands it to the team, or when a new chat comes in while the AI is off.">
+      <form onSubmit={save}>
+        <div className="settings-choices" role="radiogroup" aria-label="Assignment">
+          <label className="settings-choice">
+            <input type="radio" name="mode" checked={mode === "manual"} onChange={() => setMode("manual")} disabled={!canEdit} />
+            <span><span className="setting-row-label">Manual</span><span className="setting-row-desc">Chats wait in Unassigned until someone takes them.</span></span>
           </label>
+          <label className="settings-choice">
+            <input type="radio" name="mode" checked={mode === "round_robin"} onChange={() => setMode("round_robin")} disabled={!canEdit} />
+            <span><span className="setting-row-label">Round robin</span><span className="setting-row-desc">Give each chat to the next teammate who has the dashboard open.</span></span>
+          </label>
+        </div>
+        {mode === "round_robin" && (
+          <SettingRow label="Most open chats per teammate" description="0 = no limit." htmlFor="assign-capacity">
+            <Input id="assign-capacity" type="number" min={0} max={100} step={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} disabled={!canEdit} />
+          </SettingRow>
         )}
-        {mode === "round_robin" && <p className="muted small">If nobody's online or everyone is at the limit, the chat stays in Unassigned. Assigning someone by hand always wins.</p>}
+        {mode === "round_robin" && <p className="muted">If nobody's online or everyone is at the limit, the chat stays in Unassigned. Assigning someone by hand always wins.</p>}
         {error && <p className="error small">{error}</p>}
         {canEdit && (
           <div className="row">
@@ -269,6 +263,6 @@ export function AssignmentPanel({ workspaceId, canEdit }: { workspaceId: string;
           </div>
         )}
       </form>
-    </Card>
+    </SettingsCard>
   );
 }

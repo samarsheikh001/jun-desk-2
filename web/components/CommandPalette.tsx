@@ -32,35 +32,42 @@ const NAVIGATION: { label: string; path: string; hint?: string }[] = [
   { label: "Visitors", path: "/visitors", hint: "g v" },
   { label: "Knowledge", path: "/knowledge" },
   { label: "Agent", path: "/agent" },
-  { label: "Appearance", path: "/appearance" },
+  { label: "Widget", path: "/appearance" },
   { label: "Settings", path: "/settings", hint: "g s" },
 ];
-/** Settings sections, found by their heading (so panels need no ids). */
-const SETTINGS_SECTIONS = [
-  "Install the chat widget",
-  "Business hours",
-  "AI assistant",
-  "Assignment",
-  "Saved replies",
-  "Tags",
-  "Topics",
-  "Issue trackers",
-  "Notifications",
-  "Your passkeys",
-  "API tokens",
-  "Team",
+/**
+ * Settings sections, found by their heading where they live (so they need no ids): the settings
+ * dialog's sections, the Widget page's Install tab and the Agent page's Settings tab.
+ */
+const SETTINGS_SECTIONS: { heading: string; path: string; area?: string }[] = [
+  { heading: "General", path: "/settings/general" },
+  { heading: "Install the chat widget", path: "/appearance/install", area: "Widget" },
+  { heading: "Allowed websites", path: "/appearance/install", area: "Widget" },
+  { heading: "Proactive help", path: "/appearance/install", area: "Widget" },
+  { heading: "Identify signed-in customers", path: "/appearance/install", area: "Widget" },
+  { heading: "AI replies", path: "/agent/settings", area: "Agent" },
+  { heading: "Assignment", path: "/settings/inbox" },
+  { heading: "Business hours", path: "/settings/inbox" },
+  { heading: "Saved replies", path: "/settings/inbox" },
+  { heading: "Tags", path: "/settings/inbox" },
+  { heading: "Topics", path: "/settings/inbox" },
+  { heading: "Team", path: "/settings/team" },
+  { heading: "Notifications", path: "/settings/notifications" },
+  { heading: "Issue trackers", path: "/settings/integrations" },
+  { heading: "API tokens", path: "/settings/developer" },
+  { heading: "Your passkeys", path: "/settings/account" },
 ];
 
-/** Opens Settings and scrolls to the panel with this heading once it has rendered. */
+/** Opens the settings dialog or page tab that holds this heading and scrolls to it once it has rendered. */
 export function goToSettingsSection(heading: string): void {
-  navigate("/settings");
+  navigate(SETTINGS_SECTIONS.find((s) => s.heading === heading)?.path ?? "/settings");
   let tries = 0;
   const find = () => {
-    const h2 = Array.from(document.querySelectorAll<HTMLElement>("main.content h2")).find((h) => h.textContent?.trim() === heading);
-    if (h2) {
-      const target = h2.closest("section") ?? h2;
+    const h = Array.from(document.querySelectorAll<HTMLElement>(".settings-card-head h2")).find((h) => h.textContent?.trim() === heading);
+    if (h) {
+      const target = h.closest("section") ?? h;
       target.scrollIntoView({ block: "start" });
-      // Panels above it still loading push it down: scroll again once they have.
+      // Sections above it still loading push it down: scroll again once they have.
       for (const ms of [300, 900]) window.setTimeout(() => target.isConnected && target.scrollIntoView({ block: "start" }), ms);
     } else if (++tries < 40) window.setTimeout(find, 75);
   };
@@ -121,7 +128,7 @@ export function CommandPalette({
     }));
     const navItems: Item[] = [
       ...NAVIGATION.map<Item>((n) => ({ id: `n-${n.path}`, label: `Go to ${n.label}`, hint: n.hint, run: () => navigate(n.path) })),
-      ...SETTINGS_SECTIONS.map<Item>((s) => ({ id: `s-${s}`, label: `Settings: ${s}`, run: () => goToSettingsSection(s) })),
+      ...SETTINGS_SECTIONS.map<Item>(({ heading, area }) => ({ id: `s-${heading}`, label: `${area ?? "Settings"}: ${heading}`, run: () => goToSettingsSection(heading) })),
       { id: "help", label: "Keyboard shortcuts", hint: "?", run: onHelp },
       ...THEME_PREFS.map<Item>((t) => ({ id: `theme-${t}`, label: `Theme: ${THEME_LABEL[t]}`, keywords: ["appearance", "light", "dark", "mode"], run: () => setThemePref(t) })),
     ];

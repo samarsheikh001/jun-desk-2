@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "r
 import { api, ApiError } from "../api.ts";
 import { navigate } from "../lib/router.ts";
 import { useAction } from "../useAction.ts";
+import { PageTabs } from "../components/PageTabs.tsx";
+import { AiPanel } from "./AiPanel.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
@@ -61,7 +63,27 @@ function groupOf(path: string): string {
 
 const label = (path: string) => (path.startsWith("skills/") ? path.split("/")[1]! : path.startsWith("tools/") || path.startsWith("evals/") ? path.split("/")[1]! : path);
 
-export function AgentPage({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
+// Files (/agent): the config. Settings (/agent/settings): provider, model, ChatGPT sign-in and the monthly cap.
+export function AgentPage({ workspaceId, canEdit, tab }: { workspaceId: string; canEdit: boolean; tab: "files" | "settings" }) {
+  return (
+    <PageTabs
+      title="Agent"
+      value={tab}
+      className="agent-tabs"
+      tabs={[
+        { value: "files", label: "Files", path: "/agent", content: <FilesTab workspaceId={workspaceId} canEdit={canEdit} /> },
+        {
+          value: "settings",
+          label: "Settings",
+          path: "/agent/settings",
+          content: <div className="page-settings settings-sections"><AiPanel workspaceId={workspaceId} canEdit={canEdit} /></div>,
+        },
+      ]}
+    />
+  );
+}
+
+function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const base = `/workspaces/${workspaceId}/agent`;
   const [state, setState] = useState<AgentState | null>(null);
   const [draft, setDraft] = useState<Files>({});
@@ -197,7 +219,7 @@ export function AgentPage({ workspaceId, canEdit }: { workspaceId: string; canEd
         )}
         <div className="agent-git small">
           <div className="strong">Keep it in git</div>
-          <div className="muted">Create a token in <a href="/settings" onClick={(e) => { e.preventDefault(); navigate("/settings"); }}>Settings → API tokens</a>, then in your Jun Desk checkout:</div>
+          <div className="muted">Create a token in <a href="/settings/developer#api-tokens" onClick={(e) => { e.preventDefault(); navigate("/settings/developer#api-tokens"); }}>Settings → Developer → API tokens</a>, then in your Jun Desk checkout:</div>
           <pre>{`npm run jun -- login ${window.location.origin}\nnpm run jun -- pull support-agent\nnpm run jun -- eval support-agent\nnpm run jun -- push support-agent`}</pre>
         </div>
       </ScrollArea>
