@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
 import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
@@ -181,9 +181,14 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   /**
    * The chat opens on the ongoing conversation, or a new one; `list` is the visitor's earlier
    * conversations. `first`: a suggested question the visitor tapped, sent as the new chat's first
-   * message; `human`: they asked for the team ("Contact the team").
+   * message; `human`: they asked for the team ("Contact the team"). `mount`: the key a new chat was
+   * drawn under, kept once its first message creates the conversation so the thread isn't remounted
+   * (no "Loading…", refetch or reconnect in the middle of the visitor's first exchange).
    */
-  const [view, setView] = useState<{ kind: "list" } | { kind: "thread"; id: string | null; opener?: Opener; first?: string; human?: boolean; intent?: ChatIntent }>({ kind: "thread", id: null });
+  const [view, setView] = useState<{ kind: "list" } | { kind: "thread"; id: string | null; mount?: string; opener?: Opener; first?: string; human?: boolean; intent?: ChatIntent }>({ kind: "thread", id: null });
+  /** Chats started in this frame: each new chat gets its own key (`new<n>`), see `mount`. */
+  const [starts, setStarts] = useState(0);
+  const threadKey = view.kind === "thread" ? (view.mount ?? view.id ?? `new${starts}`) : "list";
   const [open, setOpen] = useState(window.parent === window);
   /** D-34: the panel's Expand (740px tall), the card hidden for this page (then a "Chat with us" pill), the suggestions dismissed. */
   const [grown, setGrown] = useState(false);
@@ -196,6 +201,8 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   /** Bumped when this browser's identity changes, to reload its conversations. */
   const [identityVersion, setIdentityVersion] = useState(0);
+  /** A returning visitor's conversations are loading: skeleton, not the new-chat greeting it may jump from. */
+  const [restoring, setRestoring] = useState(() => Boolean(api.token));
 
   useEffect(() => {
     api.call<WidgetConfig>("/config").then(
@@ -207,17 +214,22 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   useEffect(() => {
     if (!api.token) {
       setConversations([]);
+      setRestoring(false);
       return;
     }
+    let live = true;
     api.call<{ conversations: ConversationSummary[] }>("/conversations").then(
       (r) => {
         setConversations(r.conversations);
         // Go straight back into an ongoing conversation.
         const active = r.conversations.find((c) => c.status !== "resolved");
-        setView((v) => (active && !(v.kind === "thread" && (v.opener || v.intent)) ? { kind: "thread", id: active.id } : v));
+        setView((v) => (active && !(v.kind === "thread" && (v.id || v.opener || v.intent || v.first || v.human)) ? { kind: "thread", id: active.id } : v));
       },
       () => {},
-    );
+    ).finally(() => live && setRestoring(false));
+    return () => {
+      live = false;
+    };
   }, [api, identityVersion]);
 
   // The loader tells us when the chat is shown or hidden (read receipts only count while shown).
@@ -319,11 +331,12 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const cardLauncher = Boolean(config && config.launcher === "card" && window.parent !== window);
   const framed = Boolean(config && !asBar(config) && window.parent !== window);
   useCardFrame(cardLauncher, config?.position ?? "right", open && framed, grown && framed, closedRef, miniHidden);
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.classList.toggle("mini", cardLauncher && !open);
   }, [cardLauncher, open]);
   // The panel's entrance (the reference's `enter .25s ease-out`), drawn here to keep the loader small.
-  useEffect(() => {
+  // Started before paint, so the frame's first open paint (maybe still card-sized) is transparent.
+  useLayoutEffect(() => {
     if (!framed || !open || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     shellRef.current?.animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 250, easing: "ease-out" });
   }, [framed, open]);
@@ -348,20 +361,23 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     sessionId,
     aiEnabled: config.ai,
     open,
+    restoring,
     onStarted: (c: ConversationSummary) => {
       upsert(c);
-      // Keep the proactive opener at the top of the conversation it started.
+      // Keep the proactive opener at the top of the conversation it started, and the same thread on screen.
       setView((v) => ({
         kind: "thread",
         id: c.id,
+        mount: v.kind === "thread" ? (v.mount ?? v.id ?? `new${starts}`) : c.id,
         ...(v.kind === "thread" && v.opener ? { opener: v.opener } : {}),
         ...(v.kind === "thread" && v.human ? { human: true } : {}),
         ...(v.kind === "thread" && v.intent ? { intent: v.intent } : {}),
       }));
+      setStarts((n) => n + 1);
     },
     onConversation: upsert,
     // AI-20: after the exit button the loader closes the chat; it reopens as a plain chat.
-    endIntent: () => setView((v) => (v.kind === "thread" && v.intent ? { kind: "thread", id: v.id } : v)),
+    endIntent: () => setView((v) => (v.kind === "thread" && v.intent ? { kind: "thread", id: v.id, ...(v.mount ? { mount: v.mount } : {}) } : v)),
   };
 
   // W-04 bar launcher (D-32): one conversation at a time, opened from the bar.
@@ -374,7 +390,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     const away = config.hours && !config.hours.open ? `back ${config.hours.back ?? "soon"}` : null;
     return (
       <WidgetThread
-        key={id ?? "new"}
+        key={threadKey}
         {...threadProps}
         conversationId={id}
         summary={conversations.find((c) => c.id === id) ?? null}
@@ -476,7 +492,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         </div>
       ) : (
         <WidgetThread
-          key={view.id ?? "new"}
+          key={threadKey}
           {...threadProps}
           conversationId={view.id}
           summary={conversations.find((c) => c.id === view.id) ?? null}
@@ -519,6 +535,7 @@ function WidgetThread({
   sessionId,
   aiEnabled,
   open,
+  restoring,
   onStarted,
   onConversation,
   endIntent,
@@ -536,6 +553,8 @@ function WidgetThread({
   sessionId: string | null;
   aiEnabled: boolean;
   open: boolean;
+  /** The app is still finding the visitor's ongoing conversation (a new chat may turn into it). */
+  restoring: boolean;
   onStarted: (c: ConversationSummary) => void;
   onConversation: (c: ConversationSummary) => void;
   endIntent: () => void;
@@ -554,9 +573,11 @@ function WidgetThread({
   const [starting, setStarting] = useState<string | null>(null);
   const handling = summary?.handling ?? null;
   const contact = summary?.contact ?? null;
+  /** This thread created its conversation: it already has the first message, no need to load it. */
+  const startedHere = useRef(false);
 
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId || startedHere.current) return;
     api.call<{ conversation: ConversationSummary; messages: Message[] }>(`/conversations/${conversationId}`).then(
       (r) => {
         setInitial(r.messages);
@@ -611,6 +632,9 @@ function WidgetThread({
           ...(sessionId ? { sessionId } : {}),
         },
       });
+      startedHere.current = true;
+      setInitial([r.message]);
+      setStarting(null);
       onStarted(r.conversation);
     } catch (e) {
       setStarting(null);
@@ -679,7 +703,9 @@ function WidgetThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantsHuman, conversationId, handling, thread.state]);
 
-  if (initial === null && !error && !bar) return <div className="w-body muted pad">Loading…</div>;
+  // Skeleton rows while the conversation loads (or a returning visitor's is being found); the
+  // composer keeps its place, inert, so nothing jumps when the messages arrive.
+  const loading = !error && (initial === null || (restoring && !conversationId && !starting && !opener && !intent && !first && !classic?.human));
 
   // Once the conversation exists, an invite is its first real message: don't show it twice.
   // AI-20: the intent's fixed opening (not stored); a quick reply is sent as the visitor's own message.
@@ -722,7 +748,7 @@ function WidgetThread({
       <button type="button" className="w-exit-btn" onClick={exit}>{exitLabel}</button>
     </div>
   ) : null;
-  const messages = (
+  const messages = loading ? <ThreadSkeleton /> : (
         <MessageList
           messages={thread.messages}
           pending={starting && !conversationId ? [{ clientMsgId: "starting", body: starting, attachments: [] }] : thread.pending}
@@ -758,7 +784,9 @@ function WidgetThread({
     </>
   );
   const composer = (
-    <Composer pill placeholder={placeholder} upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
+    <div className="w-composer-wrap" inert={loading}>
+      <Composer pill placeholder={placeholder} upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
+    </div>
   );
 
   if (bar) {
@@ -813,7 +841,7 @@ function WidgetThread({
   }
 
   // A new chat starts with the greeting, as the reference's did (it isn't stored).
-  const greet = !conversationId && !starting && !opener && !opening;
+  const greet = !loading && !conversationId && !starting && !opener && !opening;
   return (
     <>
       {exitBar}
@@ -823,7 +851,8 @@ function WidgetThread({
         {messages}
         {error && <p className="error small pad">{error}</p>}
       </div>
-      {classic.suggestions.length > 0 && (
+      {/* Starters: only until the chat begins, so they don't crowd the thread. */}
+      {greet && classic.suggestions.length > 0 && (
         <div className="w-suggest" role="group" aria-label="Suggested questions">
           <div className="w-suggest-head">
             <span>Ask us things like:</span>
@@ -845,6 +874,18 @@ function WidgetThread({
       {composer}
       <Badge />
     </>
+  );
+}
+
+/** Message-shaped placeholders: the visitor's bubble, a reply's lines, and again. */
+function ThreadSkeleton() {
+  return (
+    <div className="messages w-skel" role="status" aria-label="Loading the conversation">
+      <div className="w-skel-row own"><span style={{ width: "52%" }} /></div>
+      <div className="w-skel-row"><span style={{ width: "92%" }} /><span style={{ width: "78%" }} /><span style={{ width: "44%" }} /></div>
+      <div className="w-skel-row own"><span style={{ width: "36%" }} /></div>
+      <div className="w-skel-row"><span style={{ width: "84%" }} /><span style={{ width: "58%" }} /></div>
+    </div>
   );
 }
 

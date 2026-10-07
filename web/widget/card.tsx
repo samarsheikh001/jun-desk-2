@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
 
 // W-04 "card" launcher (D-34): the closed state of the earlier Jun Desk widget, a welcome card
 // (its `.mini`) or, once dismissed, a "Chat with us" pill, drawn by the frame itself. Like the
@@ -43,7 +43,8 @@ export function useCardFrame(card: boolean, side: "left" | "right", open: boolea
       ? `display:block;top:auto;bottom:${edge};${side}:${edge};${other}:auto;width:${pill ? `${size.w}px` : cardWidth};height:${size.h}px;` +
         "border:0;border-radius:0;background:none;box-shadow:none;color-scheme:normal;animation:none"
       : null;
-  useEffect(() => {
+  // Before paint: opening, the panel would otherwise be drawn once in the card-sized frame.
+  useLayoutEffect(() => {
     if (css !== null) postToHost({ type: "jun:css", css });
   }, [css]);
 }

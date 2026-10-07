@@ -57,8 +57,13 @@ export function useThread(options: {
     setPending((p) => p.filter((m) => !ids.has(m.clientMsgId)));
   }, []);
 
-  useEffect(() => {
+  // New initial messages replace the list in the same render (an effect would paint one empty frame first).
+  const [initialSeen, setInitialSeen] = useState(options.initialMessages);
+  if (initialSeen !== options.initialMessages) {
+    setInitialSeen(options.initialMessages);
     setMessages(options.initialMessages);
+  }
+  useEffect(() => {
     lastSeq.current = options.initialMessages.at(-1)?.seq ?? 0;
   }, [options.initialMessages]);
 

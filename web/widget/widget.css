@@ -1,5 +1,8 @@
 /* Widget frame: fills the iframe the loader creates. */
 html, body, #root { height: 100%; }
+/* The frame never scrolls as a page (its lists do): while the loader resizes it, e.g. from the
+   closed card to the open panel, the panel may be drawn once in a smaller frame. */
+html, body { overflow: hidden; }
 body { background: var(--surface); }
 .w-opener { margin: 16px 16px 0; }
 
@@ -90,7 +93,7 @@ html.mini body { overflow: hidden; }
 .w-closed .w-launcher:hover { background: var(--accent-hover); }
 
 /* The visitor's earlier conversations (the reference had one chat at a time): suggestion-list type, button rows. */
-.w-home { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #ddd transparent; }
+.w-home { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
 .w-history { flex: 1; padding: 20px 16px 16px; }
 .w-history ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
 .w-shell .w-conv { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; text-align: left; }
@@ -101,7 +104,21 @@ html.mini body { overflow: hidden; }
 .w-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--accent); }
 
 /* Thread: the visitor's messages in the bubble colour, replies as text. */
-.w-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; scrollbar-width: thin; scrollbar-color: #ddd transparent; }
+.w-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+/* Scrollbars: a thin rounded thumb in the theme's colours, no arrow buttons, faint until hovered.
+   Not scrollbar-width/-color: Chrome on Windows then draws its classic bar, arrows and all, and
+   ignores the ::-webkit-scrollbar rules. Firefox (no ::-webkit-scrollbar) gets the standard ones. */
+:is(.w-body, .w-home, .b-log)::-webkit-scrollbar { width: 10px; height: 10px; }
+:is(.w-body, .w-home, .b-log)::-webkit-scrollbar-track, :is(.w-body, .w-home, .b-log)::-webkit-scrollbar-corner { background: transparent; }
+:is(.w-body, .w-home, .b-log)::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+:is(.w-body, .w-home)::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 10px; background: color-mix(in srgb, var(--muted) 30%, transparent) padding-box; }
+:is(.w-body, .w-home):hover::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--muted) 55%, transparent); }
+.b-log::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 10px; background: rgba(255, 255, 255, 0.18) padding-box; }
+.b-log:hover::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.32); }
+@supports not selector(::-webkit-scrollbar) {
+  .w-body, .w-home { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 40%, transparent) transparent; }
+  .b-log { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.25) transparent; }
+}
 /* A new chat's greeting, where the reference put it: the first reply. */
 .w-greet { margin: 0; padding: 20px 22px 0; color: var(--text-soft); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
 .w-shell .w-greet + .messages { padding-top: 14px; }
@@ -121,6 +138,18 @@ html.mini body { overflow: hidden; }
 .w-shell .attachments img { border-color: var(--border); border-radius: var(--radius-md); }
 .w-shell .attachments .file { border-color: var(--border); border-radius: var(--radius-sm); background: var(--surface); font-size: 13px; }
 .w-shell .system-msg { font-size: 12px; color: var(--muted); }
+/* Loading: message-shaped placeholders with a slow sheen (WidgetApp's ThreadSkeleton). */
+.w-composer-wrap { flex-shrink: 0; }
+.w-composer-wrap[inert] { opacity: 0.6; }
+:is(.w-shell, .b-log) .messages.w-skel, .w-skel { --sk: color-mix(in srgb, var(--text) 7%, transparent); --sk-hi: color-mix(in srgb, var(--text) 13%, transparent); display: flex; flex-direction: column; gap: 18px; animation: w-fade 300ms ease-out both; }
+.w-skel-row { display: flex; flex-direction: column; gap: 8px; padding: 0 4px; }
+.w-skel-row.own { align-items: flex-end; }
+.w-skel-row > span { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--sk) 30%, var(--sk-hi) 50%, var(--sk) 70%) 0 0 / 300% 100%; animation: w-sheen 1.6s ease-in-out infinite; }
+.w-skel-row.own > span { height: 40px; border-radius: var(--radius-md); }
+@keyframes w-sheen { from { background-position: 100% 0; } to { background-position: 0 0; } }
+.b-log .messages.w-skel { --sk: rgba(255, 255, 255, 0.08); --sk-hi: rgba(255, 255, 255, 0.16); display: flex; }
+.b-log .w-skel-row.own > span { border-radius: 16px; }
+@media (prefers-reduced-motion: reduce) { .w-skel-row > span { animation: none; } }
 /* "Thinking…" dots */
 .w-shell .bubble.typing { display: flex; align-items: center; gap: 3px; min-height: 22px; padding: 0 4px; }
 .w-shell .typing span { width: 4px; height: 4px; border-radius: 50%; background: var(--focus); animation: think 1s infinite; }
@@ -233,7 +262,7 @@ html.bar body {
 .b-close:focus-visible { outline: rgb(250, 250, 250) solid 2px; outline-offset: 2px; }
 
 .b-tab { display: flex; flex-direction: column; flex: 1 1 0%; overflow: hidden; position: relative; margin-top: 12px; border-radius: 0 0 24px 24px; clip-path: inset(0px round 0px 0px 24px 24px); }
-.b-log { display: flex; flex-direction: column; flex: 1 1 0%; overflow: hidden auto; outline-offset: -5px; overscroll-behavior: contain; scrollbar-color: rgba(9, 14, 21, 0.2) transparent; scrollbar-width: thin; margin-bottom: 15px; margin-right: 16px; border-radius: 0 0 24px 24px; padding-top: 56px; mask-image: linear-gradient(transparent 0px, transparent 40px, black 64px, black 100%); color: rgb(250, 250, 250); font-size: 14px; line-height: 1.4; }
+.b-log { display: flex; flex-direction: column; flex: 1 1 0%; overflow: hidden auto; outline-offset: -5px; overscroll-behavior: contain; margin-bottom: 15px; margin-right: 16px; border-radius: 0 0 24px 24px; padding-top: 56px; mask-image: linear-gradient(transparent 0px, transparent 40px, black 64px, black 100%); color: rgb(250, 250, 250); font-size: 14px; line-height: 1.4; }
 .b-log .muted { color: rgba(255, 255, 255, 0.7); }
 .b-log a { color: rgb(250, 250, 250); text-decoration: underline; }
 .b-log .error { color: #ff9b91; }
