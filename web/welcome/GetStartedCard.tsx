@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { navigate } from "../lib/router.ts";
 import { STEP_ORDER, type Onboarding } from "./WelcomePage.tsx";
+import { ChevronDownIcon, FlashIcon } from "@/components/icons";
 
 // T-11: the sidebar's "Get started" checklist (after Widgo's): progress bar, % badge, and a
 // link per step to where it's done. The header folds the list away (not remembered, like theirs).
@@ -24,12 +25,12 @@ export function GetStartedCard({ onboarding }: { onboarding: Onboarding }) {
       <div className="gs-track"><div className="gs-fill" style={{ width: `${percent}%` }} /></div>
       <button type="button" data-plain className="gs-head" aria-expanded={open} onClick={() => setOpen(!open)}>
         <h4>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="gs-bolt" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+          <FlashIcon className="gs-bolt" />
           Get started
         </h4>
         <span className="gs-meta">
           <span className="gs-percent">{percent}%</span>
-          <svg viewBox="0 0 16 16" aria-hidden="true" className={`gs-chevron ${open ? "open" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4" /></svg>
+          <ChevronDownIcon className={`gs-chevron ${open ? "open" : ""}`} />
         </span>
       </button>
       {open && (

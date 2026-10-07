@@ -448,11 +448,11 @@ export function Composer({
         </>
       ) : (
       <div className="composer-row">
-        <button className="ghost icon" title="Attach files" aria-label="Attach files" disabled={disabled} onClick={() => fileInput.current?.click()}>📎</button>
+        <button className="ghost icon" title="Attach files" aria-label="Attach files" disabled={disabled} onClick={() => fileInput.current?.click()}>{CLIP}</button>
         <input ref={fileInput} type="file" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
         {canShoot && (
           <button className="ghost icon" title="Send a screenshot" aria-label="Send a screenshot" disabled={disabled || shooting || shot !== null} onClick={() => void takeScreenshot()}>
-            📷
+            {CAMERA}
           </button>
         )}
         <textarea

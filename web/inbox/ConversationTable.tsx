@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import type { ConversationSummary } from "../../shared/protocol.ts";
 import { contactLabel } from "../../shared/notifications.ts";
 import { formatTime } from "../lib/thread.ts";
+import { ColumnsIcon, SearchIcon, XIcon } from "@/components/icons";
 
 // The inbox's list as Widgo's Conversations page (measured from app.widgo.ai, colours mapped to our
 // tokens): sticky title, a tab strip with counts and search, a sortable table with a column picker,
@@ -125,7 +126,7 @@ export function TabStrip<K extends string>({ tabs, active, onChange, search, chi
       ))}
       {children}
       <label className="cv-search">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+        <SearchIcon />
         <input
           ref={search.inputRef}
           data-plain
@@ -138,7 +139,7 @@ export function TabStrip<K extends string>({ tabs, active, onChange, search, chi
         />
         {search.value && (
           <button type="button" data-plain className="cv-search-clear" onClick={() => search.onChange("")} aria-label="Clear search">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" /></svg>
+            <XIcon />
           </button>
         )}
       </label>
@@ -187,7 +188,7 @@ export function ColumnPicker({ hidden, onToggle }: { hidden: Set<Column>; onTogg
   return (
     <>
       <button ref={button} type="button" data-plain className="cv-columns" onClick={() => (open ? setOpen(false) : show())} title="Columns" aria-label="Columns" aria-expanded={open}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5" /><path d="M9 4v16M15 4v16" /></svg>
+        <ColumnsIcon />
       </button>
       {open && at && (
         <div ref={menu} className="cv-columns-menu" style={{ position: "fixed", top: at.top, left: at.left, width: PICKER_WIDTH }}>

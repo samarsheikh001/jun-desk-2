@@ -40,6 +40,8 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.83",
     "@base-ui/react": "^1.8.0",
+    "@hugeicons/core-free-icons": "^4.3.5",
+    "@hugeicons/react": "^1.1.10",
     "@simplewebauthn/browser": "^14.0.0",
     "@simplewebauthn/server": "^14.0.3",
     "ai": "^7.0.127",
@@ -48,7 +50,6 @@
     "d3-scale": "^4.0.2",
     "d3-shape": "^3.2.0",
     "hono": "^4.13.13",
-    "lucide-react": "^1.52.0",
     "maplibre-gl": "^6.12.0",
     "motion": "^14.0.0",
     "react": "^19.3.0",

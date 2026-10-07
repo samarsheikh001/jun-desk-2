@@ -1,5 +1,5 @@
-import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
-import { Button } from "@/components/ui/button.tsx";
+import { MonitorIcon, MoonIcon, SunIcon } from "@/components/icons";
+import { SidebarMenuButton } from "@/components/ui/sidebar.tsx";
 import { setThemePref, THEME_LABEL, THEME_PREFS, useThemePref } from "../lib/theme.ts";
 
 const ICON = { system: MonitorIcon, light: SunIcon, dark: MoonIcon } as const;
@@ -11,8 +11,9 @@ export function ThemeButton() {
   const Icon = ICON[pref];
   const title = `Theme: ${THEME_LABEL[pref]} (switch to ${THEME_LABEL[next]})`;
   return (
-    <Button type="button" variant="outline" size="icon-sm" className="theme-switch" onClick={() => setThemePref(next)} aria-label={title} title={title}>
-      <Icon aria-hidden="true" />
-    </Button>
+    <SidebarMenuButton type="button" className="theme-switch" onClick={() => setThemePref(next)} aria-label={title} tooltip={title}>
+      <Icon />
+      <span>Theme: {THEME_LABEL[pref]}</span>
+    </SidebarMenuButton>
   );
 }

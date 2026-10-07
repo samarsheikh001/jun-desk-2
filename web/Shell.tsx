@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpenIcon, BotIcon, ChartColumnIcon, InboxIcon, PaletteIcon, SearchIcon, SettingsIcon, UsersIcon } from "lucide-react";
-import { Button } from "@/components/ui/button.tsx";
+import { BookOpenIcon, BotIcon, ChartColumnIcon, FlashIcon, HelpIcon, InboxIcon, PaletteIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
+import {
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuBadge,
+  SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
+} from "@/components/ui/sidebar.tsx";
 import { DeskIcon } from "./components/DeskIcon.tsx";
 import { ThemeButton } from "./components/ThemeButton.tsx";
 import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
@@ -199,44 +203,99 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const conversationId = path.match(/^\/inbox\/([\w-]+)/)?.[1] ?? null;
 
   return (
-    <div className="shell">
-      <ScrollArea render={<header />} className="sidebar" contentClassName="sidebar-body">
-        <div className="brand"><DeskIcon /><span>Jun Desk</span></div>
-        <nav aria-label="Main">
-          {NAV.map(({ id, label, Icon }) => (
-            <a
-              key={id}
-              href={`/${id}`}
-              className={`nav-item ${section === id ? "active" : ""}`}
-              aria-current={section === id ? "page" : undefined}
-              onClick={(e) => { e.preventDefault(); navigate(`/${id}`); }}
-            >
-              <Icon aria-hidden="true" />
-              {label}
-              {id === "visitors" && visitors.length > 0 && <span className="nav-count">{visitors.length}</span>}
-            </a>
-          ))}
-        </nav>
-        <div className="sidebar-foot">
-          {ob && showGetStarted && section !== "welcome" && <GetStartedCard onboarding={ob} />}
-          <div className="sidebar-tools">
-            <Button variant="outline" size="sm" className="palette-open" onClick={() => openOverlay("palette")} aria-keyshortcuts="Control+K Meta+K" title="Search and commands">
-              <SearchIcon aria-hidden="true" /><span className="palette-open-label">Search</span> <kbd>{modKey()} K</kbd>
-            </Button>
-            <ThemeButton />
-            <Button variant="outline" size="icon-sm" className="shortcuts-open" onClick={openHelp} aria-label="Keyboard shortcuts" aria-keyshortcuts="Shift+?" title="Keyboard shortcuts (?)">?</Button>
-          </div>
-          <div className="sidebar-user">
-            <span className="presence" title={online.map((o) => o.name).join(", ")}>
-              {online.slice(0, 5).map((o) => (
-                <span key={o.userId} className="avatar" title={`${o.name} is online`}>{o.name.slice(0, 1).toUpperCase()}</span>
+    // Town's sidebar (D-36): shadcn's Sidebar, collapsing to a 56px icon rail (toggle, or Ctrl/Cmd+B).
+    <SidebarProvider className="shell">
+      <CloseSheetOnNavigate path={path} />
+      <Sidebar collapsible="icon" className="desk-sidebar">
+        <SidebarHeader className="desk-sidebar-head">
+          <SidebarTrigger />
+          <div className="brand"><DeskIcon /><span>Jun Desk</span></div>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarMenu aria-label="Main">
+              {NAV.map(({ id, label, Icon }) => (
+                <SidebarMenuItem key={id}>
+                  <SidebarMenuButton
+                    isActive={section === id}
+                    tooltip={label}
+                    render={<a href={`/${id}`} aria-current={section === id ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(`/${id}`); }} />}
+                  >
+                    <Icon />
+                    <span>{label}</span>
+                  </SidebarMenuButton>
+                  {id === "visitors" && visitors.length > 0 && <SidebarMenuBadge className="nav-count">{visitors.length}</SidebarMenuBadge>}
+                </SidebarMenuItem>
               ))}
-            </span>
-            <span className="workspace">{workspace.workspaceName}</span>
-            <Button variant="ghost" size="sm" onClick={async () => { await api("/auth/logout", { body: {} }); onSignOut(); }}>Sign out</Button>
-          </div>
-        </div>
-      </ScrollArea>
+            </SidebarMenu>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter>
+          {ob && showGetStarted && section !== "welcome" && (
+            <>
+              <div className="desk-sidebar-expanded"><GetStartedCard onboarding={ob} /></div>
+              <SidebarMenu className="desk-sidebar-collapsed">
+                <SidebarMenuItem>
+                  <SidebarMenuButton tooltip={`Get started (${obDone} of ${STEP_ORDER.length})`} render={<a href="/welcome" onClick={(e) => { e.preventDefault(); navigate("/welcome"); }} />}>
+                    <FlashIcon />
+                    <span>Get started</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </>
+          )}
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton type="button" onClick={() => openOverlay("palette")} aria-keyshortcuts="Control+K Meta+K" tooltip={`Search (${modKey()} K)`}>
+                <SearchIcon />
+                <span>Search</span>
+                <kbd className="ml-auto">{modKey()} K</kbd>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <ThemeButton />
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton type="button" onClick={openHelp} aria-keyshortcuts="Shift+?" tooltip="Keyboard shortcuts (?)">
+                <HelpIcon />
+                <span>Keyboard shortcuts</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<SidebarMenuButton type="button" size="lg" className="desk-user" aria-label="Account" />}>
+                  <span className="avatar me" aria-hidden="true">{me.user.name.slice(0, 1).toUpperCase()}</span>
+                  <span className="desk-user-text">
+                    <span className="desk-user-name">{me.user.name}</span>
+                    <span className="desk-user-sub">{workspace.workspaceName} · {online.length} online</span>
+                  </span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="right" align="end" className="min-w-56">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Online now</DropdownMenuLabel>
+                    {online.map((o) => (
+                      <DropdownMenuItem key={o.userId} disabled>
+                        <span className="avatar" aria-hidden="true">{o.name.slice(0, 1).toUpperCase()}</span>
+                        {o.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={async () => { await api("/auth/logout", { body: {} }); onSignOut(); }}>
+                    <SignOutIcon />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      </Sidebar>
+      <SidebarInset className="desk-inset">
+      <header className="desk-mobile-bar">
+        <SidebarTrigger />
+        <div className="brand"><DeskIcon /><span>Jun Desk</span></div>
+      </header>
       <ScrollArea render={<main />} className="desk-main" contentClassName="desk-main-body">
       {section === "inbox" ? (
         <InboxPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} me={me.user} hub={hub} conversationId={conversationId} />
@@ -256,9 +315,17 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <SettingsPage me={me} />
       )}
       </ScrollArea>
+      </SidebarInset>
       {overlay === "palette" && <CommandPalette workspaceId={workspace.workspaceId} meId={me.user.id} onClose={closeOverlay} onHelp={openHelp} onToast={showNotice} />}
       {overlay === "help" && <ShortcutsHelp onClose={closeOverlay} />}
       {notice && <div className="toast" role="status"><span>{notice}</span></div>}
-    </div>
+    </SidebarProvider>
   );
+}
+
+/** On phones the sidebar is a sheet: going to another page closes it. */
+function CloseSheetOnNavigate({ path }: { path: string }) {
+  const { setOpenMobile } = useSidebar();
+  useEffect(() => setOpenMobile(false), [path, setOpenMobile]);
+  return null;
 }
