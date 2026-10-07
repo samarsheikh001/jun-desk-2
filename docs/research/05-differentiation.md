@@ -72,7 +72,7 @@ Open-source answer to Gleap, inside a real desk.
 ### Pillar 2 — "Your desk, your Cloudflare"
 - Deploy button → working AI desk in minutes (T-09, T-11). No Postgres, Redis or server to babysit.
 - Idle cost ≈ $0; conversations and debug data never leave your account; BYO Claude key or zero-key Workers AI.
-- Consent-first, sub-5 KB widget (W-01, V-06) as supporting proof points.
+- Consent-first, sub-6 KB widget (5 KB until D-38) (W-01, V-06) as supporting proof points.
 - Why it wins: Chatwoot is the default OSS choice, and its self-host is a 4 GB VPS + on-call burden.
 
 ### Pillar 3 — "Support agent as code"

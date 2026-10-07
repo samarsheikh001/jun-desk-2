@@ -12,6 +12,14 @@
  * identify() takes a JWT your backend signs with the desk's identity secret (data-user-token works too).
  * reportError() tells support what failed in your app's own words ("Row 42: missing email"); masked
  * like everything else and kept in memory with the errors above.
+ * Intents (AI-20): JunDesk.open({ intent: "cancel", onExit: function () { location.href = "/billing/cancel"; } })
+ * opens a chat for a purpose. A skill in your agent config defines the intent (skills/<name>/SKILL.md
+ * frontmatter: intent, opening, replies, exit): the chat starts with its opening line and quick
+ * replies, and the AI follows that skill. If it has an exit ("Cancel anyway"), that button stays
+ * visible for the whole chat; one click closes the chat and calls onExit(), where your app goes on
+ * (e.g. to its own cancel screen). An intent with an exit but no onExit function opens a plain chat
+ * instead (with a console warning): the flow never starts without a way out. Names: [a-z0-9_-], max 40
+ * (anything else opens a plain chat).
  */
 (function () {
   var script = document.currentScript;
@@ -315,7 +323,7 @@
   function load() {
     if (!frame.src) frame.src = origin + "/widget?key=" + encodeURIComponent(key) + (consented ? "" : "&persist=0");
   }
-  var pendingOpener;
+  var pendingOpener, onExit;
   function setOpen(next) {
     open = next;
     if (open) hideNudge(), load(), openers = 0;
@@ -346,6 +354,13 @@
     if (type == "jun:open" || type == "jun:close") setOpen(type == "jun:open");
     // The bar frame sizes and clips itself (it knows what it shows); only our own frame gets here.
     if (type == "jun:css") frame.style.cssText = e.data.css;
+    // AI-20: the intent's exit button ("Cancel anyway"): close, then hand back to the host app, once.
+    if (type == "jun:exit" && onExit) {
+      var done = onExit;
+      onExit = 0;
+      setOpen(false);
+      done();
+    }
     if (type == "jun:context-request") post({ type: "jun:context", id: e.data.id, context: snapshot() });
     if (type == "jun:unread") {
       var n = Number(e.data.count) || 0;
@@ -355,7 +370,12 @@
   });
 
   window.JunDesk = {
-    open: function () { setOpen(true); },
+    // AI-20: open({ intent, onExit }) starts an intent's chat (see the header). The frame checks the
+    // name (a bad one opens a plain chat) and whether the intent needs onExit.
+    open: function (o) {
+      if (o && o.intent) pendingOpener = { intent: o.intent, exit: !!(onExit = typeof o.onExit == "function" && o.onExit) };
+      setOpen(true);
+    },
     close: function () { setOpen(false); },
     toggle: function () { setOpen(!open); },
     // Signed-in user: a JWT from your backend. The chat and the visitor list then know who it is.

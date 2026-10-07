@@ -29,9 +29,11 @@
           <button id="pay">Pay invoice</button>
           <button id="chart">Show usage chart</button>
           <button id="export">Export CSV</button>
+          <button id="cancel">Cancel subscription</button>
           <span id="status" class="note"></span>
         </p>
         <p class="note">Try it: click a button (one request fails, one throws a JavaScript error, and Export does nothing however often you click it), then ask in the chat "why can't I pay my invoice?". The widget shares what went wrong, masked, so the AI and your team can see it.</p>
+        <p class="note">Cancel subscription opens the chat with the <code>cancel</code> intent (AI-20; needs a <code>skills/…/SKILL.md</code> with <code>intent: cancel</code>, like the <code>jun init</code> starter). "Cancel anyway" closes it and runs this page's own cancel step.</p>
       </div>
       <p class="note" id="missing" hidden>Add <code>?key=wk_…</code> to the URL. Widget → Install in the desk has a link with your key.</p>
     </main>
@@ -46,6 +48,14 @@
         var usage = undefined;
         document.getElementById("status").textContent = "Chart failed to load.";
         setTimeout(function () { usage.series.map(String); });
+      };
+      // AI-20: the app's own cancel button opens the chat with the cancel intent; onExit is the app's real cancellation.
+      document.getElementById("cancel").onclick = function () {
+        if (!window.JunDesk) return;
+        window.JunDesk.open({
+          intent: "cancel",
+          onExit: function () { document.getElementById("status").textContent = "Subscription cancelled (demo: your app's own cancel step runs here)."; },
+        });
       };
       var key = new URLSearchParams(location.search).get("key");
       if (key) {

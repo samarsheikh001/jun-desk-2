@@ -1,7 +1,7 @@
 import { isStepCount, jsonSchema, streamText, tool, type ToolSet } from "ai";
 import type { AiStep, Message } from "../../shared/protocol.ts";
 import { INLINE_SKILLS_MAX_CHARS, parseReply, searchQuery, streamVisible, systemPrompt, toChatMessages, type ReplyOutcome } from "./agent.ts";
-import type { AgentConfig, ToolUser } from "./config.ts";
+import { intentSkill, type AgentConfig, type ToolUser } from "./config.ts";
 import type { AgentModel } from "./providers.ts";
 import { searchKnowledge, type SearchHit } from "./search.ts";
 import { httpTools, secretsFromEnv, type ToolAction } from "./tools.ts";
@@ -31,6 +31,8 @@ export interface RunInput {
   temperature?: number;
   /** The customer, when the host app verified who they are (V-03). */
   user?: ToolUser | null;
+  /** AI-20: the intent the host app opened the chat with (its skill and built-in rules join the prompt). */
+  intent?: string | null;
 }
 
 export interface RunResult {
@@ -95,6 +97,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     technical: input.technical ?? [],
     today: today(input.timezone),
     ...(input.user ? { customer: input.user } : {}),
+    ...(input.intent ? { intent: { name: input.intent, skill: intentSkill(config, input.intent) } } : {}),
   });
 
   const result = streamText({

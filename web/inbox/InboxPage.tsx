@@ -54,6 +54,13 @@ function CsatBadge({ rating }: { rating: CsatRating | null }) {
   return <em className={`tag csat-tag ${rating}`} title={rating === "good" ? "The customer rated this Good" : "The customer rated this Bad"}>{rating === "good" ? "👍" : "👎"}</em>;
 }
 
+/** AI-20: the intent the customer's app opened the chat with (agents only), and whether they took its exit. */
+function IntentBadge({ intent }: { intent: ConversationSummary["intent"] }) {
+  if (!intent) return null;
+  const title = `Opened from the customer's app with the intent "${intent.name}"${intent.exitedAt ? `; they clicked the exit button ${formatTime(intent.exitedAt)}` : ""}`;
+  return <em className="tag intent-tag" title={title}>Intent: {intent.name}{intent.exitedAt ? " · exited" : ""}</em>;
+}
+
 /** A-02: Reports links to /inbox?topic=<id>; the topic's chats are mostly resolved, so show all. */
 const initialTopic = () => new URLSearchParams(window.location.search).get("topic") ?? "";
 
@@ -509,6 +516,7 @@ function Thread({
             {contactLabel(conversation.contact)}
             {conversation.contact.verified && <span className="verified" title="Identity verified by your site">✓</span>}
             <CsatBadge rating={conversation.csat.rating} />
+            <IntentBadge intent={conversation.intent} />
           </div>
           <div className="cv-drawer-meta">
             <span>{thread.state === "open" ? "Live" : thread.state === "connecting" ? "Connecting…" : "Reconnecting…"}</span>

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { systemPrompt } from "./agent.ts";
-import { DEFAULT_MAX_REPLIES, defaultFiles, fillTemplate, parseConfig, splitFrontmatter } from "./config.ts";
+import { DEFAULT_MAX_REPLIES, defaultFiles, fillTemplate, intentSkill, parseConfig, splitFrontmatter } from "./config.ts";
+import { TEMPLATE } from "../../packages/cli/src/template.ts";
 import { buildRequest, httpTools, shapeOutput } from "./tools.ts";
 import { dedupeSse } from "./workers-ai.ts";
 
@@ -189,6 +190,93 @@ test("prompt includes procedures, tools, handoff topics and today's date", () =>
   const catalog = systemPrompt({ workspaceName: "Acme", persona: "", skills: config.skills, skillCatalog: true, hits: [] });
   assert.match(catalog, /activate_skill/);
   assert.doesNotMatch(catalog, /Look it up with lookup_order/);
+});
+
+const CANCEL_SKILL = `---
+name: cancellation
+description: The customer wants to cancel.
+intent: cancel
+opening: "Sorry to see you go. What's the main reason?"
+replies: [Too expensive, Other, Too expensive]
+exit: Cancel anyway
+---
+Too expensive: offer 50% off for 3 months (offer: discount_50_3m). Nothing else.
+`;
+
+test("AI-20: a skill's frontmatter defines an intent (opening, replies, exit)", () => {
+  const { config, issues } = parseConfig({ "AGENTS.md": "Be kind.", "skills/cancellation/SKILL.md": CANCEL_SKILL, "skills/refund/SKILL.md": REFUND_SKILL });
+  assert.deepEqual(issues, []);
+  assert.deepEqual(intentSkill(config, "cancel")?.intent, {
+    name: "cancel",
+    opening: "Sorry to see you go. What's the main reason?",
+    replies: ["Too expensive", "Other"], // deduped
+    exit: "Cancel anyway",
+  });
+  assert.equal(intentSkill(config, "refund"), null);
+  assert.equal(config.skills.find((s) => s.name === "refund")!.intent, undefined);
+  // A bare intent (no opening, replies or exit) is fine.
+  const bare = parseConfig({ "AGENTS.md": "x", "skills/upgrade/SKILL.md": "---\nname: upgrade\ndescription: Upgrading.\nintent: upgrade\n---\nHelp them pick a plan.\n" });
+  assert.deepEqual(bare.issues, []);
+  assert.deepEqual(bare.config.skills[0]!.intent, { name: "upgrade", opening: null, replies: [], exit: null });
+});
+
+test("AI-20: intent frontmatter is validated, one skill per intent", () => {
+  const skill = (folder: string, extra: string) => `---\nname: ${folder}\ndescription: d\n${extra}\n---\nSteps.\n`;
+  const check = (extra: string, pattern: RegExp) => {
+    const { config, issues } = parseConfig({ "AGENTS.md": "x", "skills/a/SKILL.md": skill("a", extra) });
+    assert.equal(config.skills.length, 0, extra);
+    assert.match(issues.map((i) => i.message).join("\n"), pattern, extra);
+  };
+  check("intent: Cancel Now", /intent must be a short name/);
+  check("opening: Hi", /only apply with intent/);
+  check("intent: cancel\nreplies: [a, b]", /replies need an opening/);
+  check(`intent: cancel\nopening: Why?\nreplies: [${Array.from({ length: 9 }, (_, i) => `r${i}`).join(", ")}]`, /at most 8/);
+  check("intent: cancel\nexit: [x]", /exit must be a short button label/);
+  check(`intent: cancel\nexit: ${"x".repeat(41)}`, /exit must be a short button label/);
+  const dup = parseConfig({ "AGENTS.md": "x", "skills/a/SKILL.md": skill("a", "intent: cancel"), "skills/b/SKILL.md": skill("b", "intent: cancel") });
+  assert.deepEqual(dup.config.skills.map((s) => s.name), ["a"]);
+  assert.match(dup.issues[0]!.message, /already defined by skills\/a\/SKILL\.md/);
+  assert.equal(dup.issues[0]!.path, "skills/b/SKILL.md");
+});
+
+test("AI-20: eval cases can run as an intent chat", () => {
+  const ok = parseConfig({ "AGENTS.md": "x", "evals/c.yaml": "- name: c\n  intent: cancel\n  message: Too expensive\n" });
+  assert.deepEqual(ok.issues, []);
+  assert.equal(ok.config.evals[0]!.intent, "cancel");
+  const bad = parseConfig({ "AGENTS.md": "x", "evals/c.yaml": "- name: c\n  intent: Cancel!\n  message: hi\n" });
+  assert.match(bad.issues[0]!.message, /intent must be an intent name/);
+});
+
+test("AI-20: the prompt follows the intent's skill once, with the exit and offer rules", () => {
+  const { config } = parseConfig({ "AGENTS.md": "x", "skills/cancellation/SKILL.md": CANCEL_SKILL, "skills/refund/SKILL.md": REFUND_SKILL });
+  const prompt = systemPrompt({ workspaceName: "Acme", persona: "", skills: config.skills, hits: [], intent: { name: "cancel", skill: intentSkill(config, "cancel") } });
+  assert.match(prompt, /opened it from Acme's app with the intent "cancel"/);
+  assert.match(prompt, /fixed question "Sorry to see you go\. What's the main reason\?" and quick replies \(Too expensive, Other\)/);
+  assert.match(prompt, /Never invent offers/);
+  assert.match(prompt, /wait for a clear yes/);
+  assert.match(prompt, /point them to the "Cancel anyway" button/);
+  assert.equal(prompt.split("offer 50% off for 3 months").length, 2, "the intent's procedure appears once");
+  assert.match(prompt, /## refund\nWhen:/, "other procedures stay");
+  // Without the intent the skill is an ordinary procedure, and there's no exit rule.
+  const plain = systemPrompt({ workspaceName: "Acme", persona: "", skills: config.skills, hits: [] });
+  assert.match(plain, /## cancellation\nWhen:/);
+  assert.doesNotMatch(plain, /Cancel anyway|intent/);
+  // An intent no skill defines is only mentioned.
+  const unknown = systemPrompt({ workspaceName: "Acme", persona: "", hits: [], intent: { name: "upgrade", skill: null } });
+  assert.match(unknown, /with the intent "upgrade"\. No procedure is defined for it/);
+});
+
+test("jun init starter files parse cleanly, examples included (renamed to .yaml)", () => {
+  const files = Object.fromEntries(Object.entries(TEMPLATE).map(([path, text]) => [path.replace(/\.example$/, ""), text]));
+  const { config, issues } = parseConfig(files);
+  assert.deepEqual(issues, []);
+  const spec = intentSkill(config, "cancel")?.intent;
+  assert.equal(spec?.exit, "Cancel anyway");
+  assert.equal(spec?.replies.length, 6);
+  const offer = config.tools.find((t) => t.name === "apply_save_offer")!;
+  assert.equal(offer.method, "POST");
+  assert.deepEqual(offer.body, { userId: "{user.id}", offer: "{offer}" });
+  assert.ok(config.evals.some((e) => e.intent === "cancel"));
 });
 
 test("Workers AI stream dedupe drops the legacy copies of each chunk", async () => {

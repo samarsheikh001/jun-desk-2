@@ -269,6 +269,8 @@ export function ConversationRows({ rows, columns, selected, cursor, empty, membe
                     <a id={`conv-${c.id}`} href={`/inbox/${c.id}`} onFocus={() => onFocusRow(c.id)} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(c.id); }}>{contactLabel(c.contact)}</a>
                     {c.contact.verified && <span className="verified" title="Identity verified by your site">✓</span>}
                     {c.handling === "ai" && <em className="tag ai-tag" title="The AI assistant is answering">AI</em>}
+                    {/* AI-20: opened from the customer's app with an intent (agents only). */}
+                    {c.intent && <em className="tag intent-tag" title={`Opened from the customer's app with the intent "${c.intent.name}"`}>{c.intent.name}</em>}
                     {c.debugIssueCount > 0 && <em className="tag issue-tag" title="Errors or failed requests in the visitor's browser">⚠ {c.debugIssueCount}</em>}
                   </div>
                   {name && c.contact.email && <div className="cv-email">{c.contact.email}</div>}

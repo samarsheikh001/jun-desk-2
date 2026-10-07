@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
 import { offersRating } from "../../shared/inbox.ts";
+import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList } from "../components/MessageList.tsx";
@@ -63,6 +64,15 @@ interface Opener {
   page?: boolean;
 }
 
+/**
+ * AI-20: the host app opened the chat with an intent (JunDesk.open({ intent, onExit })). `spec`: the
+ * skill's opening, quick replies and exit (none of them for an intent no skill defines). The exit
+ * button shows whenever the spec has one: the chat only starts with it when the host passed onExit.
+ */
+interface ChatIntent {
+  spec: IntentSpec;
+}
+
 class WidgetApi {
   readonly key: string;
   token: string | null;
@@ -71,9 +81,11 @@ class WidgetApi {
     this.token = readToken(key);
   }
 
-  async call<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  async call<T>(path: string, init: { method?: string; body?: unknown; keepalive?: boolean } = {}): Promise<T> {
     const response = await fetch(`/api/widget/${this.key}${path}`, {
       method: init.method ?? (init.body === undefined ? "GET" : "POST"),
+      // Outlives this frame when the host page navigates away right after (AI-20's "Cancel anyway").
+      ...(init.keepalive ? { keepalive: true } : {}),
       headers: { ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}), ...(this.token ? { "X-Visitor-Token": this.token } : {}) },
       body: init.body === undefined ? null : JSON.stringify(init.body),
     });
@@ -171,7 +183,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
    * conversations. `first`: a suggested question the visitor tapped, sent as the new chat's first
    * message; `human`: they asked for the team ("Contact the team").
    */
-  const [view, setView] = useState<{ kind: "list" } | { kind: "thread"; id: string | null; opener?: Opener; first?: string; human?: boolean }>({ kind: "thread", id: null });
+  const [view, setView] = useState<{ kind: "list" } | { kind: "thread"; id: string | null; opener?: Opener; first?: string; human?: boolean; intent?: ChatIntent }>({ kind: "thread", id: null });
   const [open, setOpen] = useState(window.parent === window);
   /** D-34: the panel's Expand (740px tall), the card hidden for this page (then a "Chat with us" pill), the suggestions dismissed. */
   const [grown, setGrown] = useState(false);
@@ -202,7 +214,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         setConversations(r.conversations);
         // Go straight back into an ongoing conversation.
         const active = r.conversations.find((c) => c.status !== "resolved");
-        setView((v) => (active && !(v.kind === "thread" && v.opener) ? { kind: "thread", id: active.id } : v));
+        setView((v) => (active && !(v.kind === "thread" && (v.opener || v.intent)) ? { kind: "thread", id: active.id } : v));
       },
       () => {},
     );
@@ -210,6 +222,31 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
 
   // The loader tells us when the chat is shown or hidden (read receipts only count while shown).
   useEffect(() => {
+    /**
+     * AI-20: the intent's opening, replies and exit come from its skill (no AI call). Opened again in
+     * the same page while its chat is on screen, it carries on there; otherwise it starts a new chat,
+     * so an intent never mixes into an unrelated conversation.
+     */
+    const startIntent = async (name: string, hostExit: boolean) => {
+      let spec: IntentSpec | null;
+      try {
+        spec = (await api.call<{ intent: IntentSpec | null }>(`/intents/${name}`)).intent;
+      } catch (err) {
+        // Can't tell whether it has an exit: a plain chat, not tagged (the AI would expect the button).
+        console.warn(`[Jun Desk] couldn't load intent "${name}": ${(err as Error).message}`);
+        setView({ kind: "thread", id: null });
+        return;
+      }
+      // Hard rule (D-37): a flow with an exit button never starts without a way out.
+      if (spec?.exit && !hostExit) {
+        console.warn(`[Jun Desk] intent "${name}" has an exit ("${spec.exit}") but JunDesk.open() got no onExit function: opening a plain chat.`);
+        setView({ kind: "thread", id: null });
+        return;
+      }
+      // No skill defines it: a plain chat, still tagged with the intent (agents and the AI see it).
+      const intent: ChatIntent = { spec: spec ?? { name, opening: null, replies: [], exit: null } };
+      setView((v) => (v.kind === "thread" && v.intent?.spec.name === name ? { ...v, intent } : { kind: "thread", id: null, intent }));
+    };
     const onMessage = (e: MessageEvent) => {
       if (e.source !== window.parent) return;
       const data = e.data as Record<string, unknown> | null;
@@ -239,7 +276,13 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       }
       // The visitor clicked "Chat with us" on a nudge or an agent's invite: a new chat with that opener.
       const opener = data?.type === "jun:proactive" ? (data.opener as Opener | undefined) : undefined;
-      if (opener && typeof opener.text === "string") {
+      // AI-20: the host app opened the chat with an intent.
+      const wanted = data?.type === "jun:proactive" ? (data.opener as { intent?: unknown; exit?: unknown } | undefined) : undefined;
+      if (wanted && isIntentName(wanted.intent)) {
+        if (typeof data!.sessionId === "string") setSessionId(data!.sessionId);
+        postToHost({ type: "jun:proactive-shown" });
+        void startIntent(wanted.intent, wanted.exit === true);
+      } else if (opener && typeof opener.text === "string") {
         if (typeof data!.sessionId === "string") setSessionId(data!.sessionId);
         setView({
           kind: "thread",
@@ -308,9 +351,17 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     onStarted: (c: ConversationSummary) => {
       upsert(c);
       // Keep the proactive opener at the top of the conversation it started.
-      setView((v) => ({ kind: "thread", id: c.id, ...(v.kind === "thread" && v.opener ? { opener: v.opener } : {}), ...(v.kind === "thread" && v.human ? { human: true } : {}) }));
+      setView((v) => ({
+        kind: "thread",
+        id: c.id,
+        ...(v.kind === "thread" && v.opener ? { opener: v.opener } : {}),
+        ...(v.kind === "thread" && v.human ? { human: true } : {}),
+        ...(v.kind === "thread" && v.intent ? { intent: v.intent } : {}),
+      }));
     },
     onConversation: upsert,
+    // AI-20: after the exit button the loader closes the chat; it reopens as a plain chat.
+    endIntent: () => setView((v) => (v.kind === "thread" && v.intent ? { kind: "thread", id: v.id } : v)),
   };
 
   // W-04 bar launcher (D-32): one conversation at a time, opened from the bar.
@@ -328,6 +379,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         conversationId={id}
         summary={conversations.find((c) => c.id === id) ?? null}
         opener={view.kind === "thread" ? view.opener : undefined}
+        intent={view.kind === "thread" ? view.intent : undefined}
         bar={{
           head: <BarHead name={config.workspaceName} logoUrl={config.logoUrl} sub={away} onClose={() => setBarOpen(false)} />,
           suggestions: config.suggestions,
@@ -429,6 +481,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           conversationId={view.id}
           summary={conversations.find((c) => c.id === view.id) ?? null}
           opener={view.opener}
+          intent={view.intent}
           first={view.first}
           classic={{
             greeting: config.greeting,
@@ -468,6 +521,8 @@ function WidgetThread({
   open,
   onStarted,
   onConversation,
+  endIntent,
+  intent,
   bar,
 }: {
   api: WidgetApi;
@@ -483,6 +538,8 @@ function WidgetThread({
   open: boolean;
   onStarted: (c: ConversationSummary) => void;
   onConversation: (c: ConversationSummary) => void;
+  endIntent: () => void;
+  intent?: ChatIntent | undefined;
   /** W-04 bar launcher: the chat panel's header, the suggested questions, and opening or folding it. */
   bar?: { head: ReactNode; suggestions: string[]; side: "left" | "right"; setOpen: (open: boolean) => void };
   /**
@@ -544,7 +601,15 @@ function WidgetThread({
     try {
       await api.ensureVisitor();
       const r = await api.call<{ conversation: ConversationSummary; message: Message }>("/conversations", {
-        body: { clientMsgId: crypto.randomUUID(), body, attachments, context, ...(opener?.inviteId ? { inviteId: opener.inviteId } : {}), ...(sessionId ? { sessionId } : {}) },
+        body: {
+          clientMsgId: crypto.randomUUID(),
+          body,
+          attachments,
+          context,
+          ...(opener?.inviteId ? { inviteId: opener.inviteId } : {}),
+          ...(intent ? { intent: intent.spec.name } : {}),
+          ...(sessionId ? { sessionId } : {}),
+        },
       });
       onStarted(r.conversation);
     } catch (e) {
@@ -563,7 +628,7 @@ function WidgetThread({
   }, [first, conversationId]);
 
   // W-04 bar: the chat panel shows once there's something in it; the frame sizes itself to fit.
-  const hasChat = Boolean(conversationId || starting || opener);
+  const hasChat = Boolean(conversationId || starting || opener || intent?.spec.opening || intent?.spec.exit);
   const panel = Boolean(bar && open && hasChat);
   const bottom = useRef<HTMLDivElement>(null);
   const pill = useRef<HTMLDivElement>(null);
@@ -617,7 +682,21 @@ function WidgetThread({
   if (initial === null && !error && !bar) return <div className="w-body muted pad">Loading…</div>;
 
   // Once the conversation exists, an invite is its first real message: don't show it twice.
-  const openerMessage = opener && !(opener.inviteId && thread.messages.length > 0) ? (
+  // AI-20: the intent's fixed opening (not stored); a quick reply is sent as the visitor's own message.
+  const opening = intent?.spec.opening;
+  const intentMessage = intent && opening ? (
+    <div className="msg other ai w-opener">
+      <div className="bubble">{opening}</div>
+      {!conversationId && !starting && intent.spec.replies.length > 0 && (
+        <div className="w-replies" role="group" aria-label="Quick replies">
+          {intent.spec.replies.map((r) => (
+            <button key={r} type="button" className="w-reply" onClick={() => void send(r, [])}>{r}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null;
+  const openerMessage = intentMessage ?? (opener && !(opener.inviteId && thread.messages.length > 0) ? (
     opener.inviteId ? (
       <div className="msg other w-opener">
         <div className="meta small muted">{opener.from}</div>
@@ -628,6 +707,20 @@ function WidgetThread({
         <div className="bubble">{opener.page ? opener.text : `${opener.text} Tell me what you were trying to do and I'll take a look.`}</div>
       </div>
     )
+  ) : null);
+  // AI-20 hard rule (D-37): an intent's exit button ("Cancel anyway") is always on screen for the
+  // whole conversation, outside the scrolling chat, and one click: it records the exit (never waited
+  // on) and hands back to the host app's onExit through the loader. No confirm step of ours.
+  const exitLabel = intent?.spec.exit;
+  const exit = () => {
+    if (conversationId) api.call(`/conversations/${conversationId}/exit`, { body: {}, keepalive: true }).catch(() => {});
+    postToHost({ type: "jun:exit" });
+    endIntent();
+  };
+  const exitBar = exitLabel ? (
+    <div className="w-exit">
+      <button type="button" className="w-exit-btn" onClick={exit}>{exitLabel}</button>
+    </div>
   ) : null;
   const messages = (
         <MessageList
@@ -676,6 +769,7 @@ function WidgetThread({
             <Glass />
             <div className="b-panel">
               {bar.head}
+              {exitBar}
               <div className="b-tab">
                 <div className="b-log" role="log">
                   {openerMessage}
@@ -706,6 +800,7 @@ function WidgetThread({
   if (!classic) {
     return (
       <>
+        {exitBar}
         <div className="w-body">
           {openerMessage}
           {messages}
@@ -718,9 +813,10 @@ function WidgetThread({
   }
 
   // A new chat starts with the greeting, as the reference's did (it isn't stored).
-  const greet = !conversationId && !starting && !opener;
+  const greet = !conversationId && !starting && !opener && !opening;
   return (
     <>
+      {exitBar}
       <div className="w-body">
         {openerMessage}
         {greet && <p className="w-greet">{classic.greeting}</p>}

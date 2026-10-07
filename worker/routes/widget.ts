@@ -17,6 +17,9 @@ import { completeText, createModel, loadAiSettings } from "../ai/providers.ts";
 import { describeOpening, isOpen, nextOpening, type BusinessHours } from "../../shared/hours.ts";
 import { textOn, widgetLook } from "../../shared/appearance.ts";
 import { storeUpload } from "./files.ts";
+import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
+import { loadAgentConfig } from "../ai/config-store.ts";
+import { intentSkill } from "../ai/config.ts";
 
 // Public API used by the widget frame. Visitors are anonymous contacts identified by a
 // random token their browser keeps (sent as `X-Visitor-Token`, or as the second
@@ -333,11 +336,14 @@ widget.post("/widget/:key/conversations", async (c) => {
   const ref: ConversationRef = { conversationId: newId("cv"), workspaceId: inbox.workspaceId };
   // The AI answers first when it's enabled; otherwise (or after an agent's invite) the team does.
   const handling = !invite && (await loadAiSettings(c.env, inbox.workspaceId)).enabled ? "ai" : "human";
+  // AI-20: the host app opened the chat with an intent (JunDesk.open({ intent })). Recorded even
+  // when no skill defines it (the AI is told; agents see it).
+  const intent = isIntentName(body.intent) && !invite ? body.intent : null;
   await c.env.DB.prepare(
-    `INSERT INTO conversations (id, workspace_id, inbox_id, contact_id, handling, assignee_id, last_message_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO conversations (id, workspace_id, inbox_id, contact_id, handling, assignee_id, last_message_at, created_at, updated_at, intent)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(ref.conversationId, inbox.workspaceId, inbox.inboxId, contactId, handling, invite?.user_id ?? null, now, now, now)
+    .bind(ref.conversationId, inbox.workspaceId, inbox.inboxId, contactId, handling, invite?.user_id ?? null, now, now, now, intent)
     .run();
   const participant: Participant = { role: "visitor", contactId };
   let message;
@@ -373,6 +379,43 @@ widget.post("/widget/:key/conversations/:cid/messages", async (c) => {
   const ref = await visitorConversation(c, inbox, contactId);
   const message = await sendMessage(c.env, ref, { role: "visitor", contactId }, sendInput(await readJson(c.req)));
   return c.json({ message });
+});
+
+// AI-20: how the widget starts a chat the host app opened with an intent: the opening line,
+// quick replies and exit label from the skill that defines it. Never an AI call. `intent: null`
+// when no skill defines it (the widget then opens a plain chat, still tagged with the intent).
+widget.get("/widget/:key/intents/:name", async (c) => {
+  const inbox = await widgetInbox(c);
+  const name = c.req.param("name");
+  if (!isIntentName(name)) throw new HttpError(400, "invalid_field", "Bad intent name.");
+  const spec: IntentSpec | null = intentSkill(await loadAgentConfig(c.env, inbox.workspaceId), name)?.intent ?? null;
+  c.header("Cache-Control", "no-store");
+  return c.json({ intent: spec });
+});
+
+// AI-20: the visitor clicked the intent's exit button ("Cancel anyway"). The widget has already
+// handed over to the host app's onExit (it never waits for this); here we only record it, once,
+// and leave agents a note.
+widget.post("/widget/:key/conversations/:cid/exit", async (c) => {
+  const inbox = await widgetInbox(c);
+  const { contactId } = await visitor(c, inbox);
+  const ref = await visitorConversation(c, inbox, contactId);
+  const now = Date.now();
+  const row = await c.env.DB.prepare("SELECT intent FROM conversations WHERE id = ?").bind(ref.conversationId).first<{ intent: string | null }>();
+  if (!row?.intent) throw new HttpError(409, "no_intent", "This conversation wasn't opened with an intent.");
+  const updated = await c.env.DB.prepare("UPDATE conversations SET intent_exited_at = ?, updated_at = ? WHERE id = ? AND intent_exited_at IS NULL")
+    .bind(now, now, ref.conversationId)
+    .run();
+  if (updated.meta.changes > 0) {
+    const exit = intentSkill(await loadAgentConfig(c.env, inbox.workspaceId), row.intent)?.intent?.exit;
+    // The note also refreshes the conversation (and its intent label) in agents' inboxes.
+    await c.env.CONVERSATION.getByName(ref.conversationId).addNote(
+      ref,
+      `The customer clicked ${exit ? `"${exit}"` : "the exit button"} (intent: ${row.intent}) and went on in your app.`,
+      `intent-exit:${ref.conversationId}`,
+    );
+  }
+  return c.json({ ok: true });
 });
 
 // W-08: whether anyone on the team is online, so the widget knows to ask for an email right away.

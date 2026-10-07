@@ -43,7 +43,7 @@
 | ID | Feature | Size | |
 |---|---|---|---|
 | C-01 | Web widget channel | — | 🚀 |
-| W-01 | Loader under 5 KB with a stand-in bubble | M | 🚀 |
+| W-01 | Loader under 6 KB (was 5 KB, D-38) with a stand-in bubble | M | 🚀 |
 | W-02 | Widget isolated in an iframe or shadow DOM | S | 🚀 |
 | I-01 | Real-time inbox with status views | L | 🚀 |
 | I-03 | Typing indicators, read receipts, agent presence | S | 🚀 |

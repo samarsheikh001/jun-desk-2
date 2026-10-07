@@ -1,8 +1,10 @@
 import { parse as parseYaml } from "yaml";
+import { INTENT_NAME, MAX_INTENT_EXIT, MAX_INTENT_OPENING, MAX_INTENT_REPLIES, MAX_INTENT_REPLY, type IntentSpec } from "../../shared/intents.ts";
 
 // Support agent as code (AI-18). A config is a set of text files, the same in git and in the desk:
 //   AGENTS.md                 persona, tone, rules; optional frontmatter guardrails
-//   skills/<name>/SKILL.md    procedures (Agent Skills format: name + description frontmatter)
+//   skills/<name>/SKILL.md    procedures (Agent Skills format: name + description frontmatter;
+//                             optional intent/opening/replies/exit for AI-20 intent-launched chats)
 //   tools/<name>.yaml         HTTP lookups the AI may call (AI-05)
 //   evals/<name>.yaml         test cases for `jun eval` (AI-19)
 // Parsing is pure so the Worker, tests and the eval runner share it.
@@ -15,6 +17,8 @@ export interface Skill {
   name: string;
   description: string;
   instructions: string;
+  /** AI-20: the host app can open a chat with this intent (JunDesk.open({ intent })); this skill is its procedure. */
+  intent?: IntentSpec;
 }
 
 export interface ToolInput {
@@ -47,6 +51,8 @@ export interface EvalCase {
   file: string;
   name: string;
   messages: string[];
+  /** AI-20: run the case as a chat the host app opened with this intent (JunDesk.open({ intent })). */
+  intent?: string;
   expect: { outcome?: EvalOutcome; tools?: string[]; criteria?: string };
 }
 
@@ -183,8 +189,50 @@ function parseSkill(path: string, folder: string, text: string, issues: ConfigIs
   if (!description) issues.push({ path, message: "description is required: say when this procedure applies." });
   else if (description.length > 1024) issues.push({ path, message: "description must be at most 1024 characters." });
   if (!body.trim()) issues.push({ path, message: "The procedure itself (below the frontmatter) is empty." });
-  if (name !== folder || !description || description.length > 1024 || !body.trim()) return null;
-  return { name, description, instructions: body.trim() };
+  const before = issues.length;
+  const intent = parseIntent(path, data, issues);
+  if (name !== folder || !description || description.length > 1024 || !body.trim() || issues.length > before) return null;
+  return { name, description, instructions: body.trim(), ...(intent ? { intent } : {}) };
+}
+
+/** One line of plain text for the widget: shown as is, so no line breaks. */
+function oneLine(value: unknown, max: number): string | null {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text && text.length <= max && !/[^\S ]/.test(text) ? text : null;
+}
+
+/** AI-20 frontmatter: `intent` (name), `opening`, `replies`, `exit`. Null when the skill has no intent. */
+function parseIntent(path: string, data: Record<string, unknown>, issues: ConfigIssue[]): IntentSpec | null {
+  const extras = (["opening", "replies", "exit"] as const).filter((k) => data[k] !== undefined);
+  if (data.intent === undefined) {
+    if (extras.length) issues.push({ path, message: `${extras.join(", ")} only apply with intent: <name> (the name your app passes to JunDesk.open).` });
+    return null;
+  }
+  if (typeof data.intent !== "string" || !INTENT_NAME.test(data.intent)) {
+    issues.push({ path, message: "intent must be a short name of lowercase letters, digits, _ or - (like cancel), at most 40 characters." });
+    return null;
+  }
+  let opening: string | null = null;
+  if (data.opening !== undefined) {
+    opening = oneLine(data.opening, MAX_INTENT_OPENING);
+    if (!opening) issues.push({ path, message: `opening must be one line of text, at most ${MAX_INTENT_OPENING} characters.` });
+  }
+  let replies: string[] = [];
+  if (data.replies !== undefined) {
+    const list = Array.isArray(data.replies) ? data.replies.map((r) => oneLine(typeof r === "number" ? String(r) : r, MAX_INTENT_REPLY)) : null;
+    if (!list || list.some((r) => r === null) || list.length > MAX_INTENT_REPLIES) {
+      issues.push({ path, message: `replies must be a list of at most ${MAX_INTENT_REPLIES} short answers (each at most ${MAX_INTENT_REPLY} characters).` });
+    } else {
+      replies = [...new Set(list as string[])];
+    }
+  }
+  if (replies.length && !opening) issues.push({ path, message: "replies need an opening (the question they answer)." });
+  let exit: string | null = null;
+  if (data.exit !== undefined) {
+    exit = oneLine(data.exit, MAX_INTENT_EXIT);
+    if (!exit) issues.push({ path, message: `exit must be a short button label, like "Cancel anyway" (at most ${MAX_INTENT_EXIT} characters).` });
+  }
+  return { name: data.intent, opening, replies, exit };
 }
 
 const INPUT_TYPES = ["string", "number", "integer", "boolean"] as const;
@@ -306,7 +354,7 @@ function parseEvals(path: string, text: string, issues: ConfigIssue[]): EvalCase
       issues.push({ path, message: `${where}: must be a map with name, message(s) and expect.` });
       return;
     }
-    unknownKeys(path, raw, ["name", "message", "messages", "expect"], issues, `${where}: `);
+    unknownKeys(path, raw, ["name", "message", "messages", "intent", "expect"], issues, `${where}: `);
     const name = typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : where;
     const messages =
       typeof raw.message === "string" ? [raw.message]
@@ -314,6 +362,10 @@ function parseEvals(path: string, text: string, issues: ConfigIssue[]): EvalCase
       : [];
     if (!messages.length || messages.some((m) => !m.trim())) {
       issues.push({ path, message: `${name}: give the customer's message (message: "…") or messages (a list).` });
+      return;
+    }
+    if (raw.intent !== undefined && !(typeof raw.intent === "string" && INTENT_NAME.test(raw.intent))) {
+      issues.push({ path, message: `${name}: intent must be an intent name (like cancel), as your app passes to JunDesk.open.` });
       return;
     }
     const expect: EvalCase["expect"] = {};
@@ -336,9 +388,14 @@ function parseEvals(path: string, text: string, issues: ConfigIssue[]): EvalCase
         else issues.push({ path, message: `${name}: expect.criteria must be a sentence describing a good reply.` });
       }
     }
-    cases.push({ file: path, name, messages, expect });
+    cases.push({ file: path, name, messages, ...(typeof raw.intent === "string" ? { intent: raw.intent } : {}), expect });
   });
   return cases;
+}
+
+/** AI-20: the skill that defines an intent, if any. */
+export function intentSkill(config: Pick<AgentConfig, "skills">, name: string): Skill | null {
+  return config.skills.find((s) => s.intent?.name === name) ?? null;
 }
 
 /** Parses and validates a config. Invalid files are reported and left out; it never throws. */
@@ -363,6 +420,11 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
     if (path === "AGENTS.md" || path === "README.md") continue;
     if ((m = SKILL_PATH.exec(path))) {
       const skill = parseSkill(path, m[1]!, text, issues);
+      const taken = skill?.intent && config.skills.find((s) => s.intent?.name === skill.intent!.name);
+      if (taken) {
+        issues.push({ path, message: `Intent "${skill!.intent!.name}" is already defined by skills/${taken.name}/SKILL.md (one skill per intent).` });
+        continue;
+      }
       if (skill) config.skills.push(skill);
     } else if ((m = TOOL_PATH.exec(path))) {
       if (config.tools.some((t) => t.name === m![1])) {

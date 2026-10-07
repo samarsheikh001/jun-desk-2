@@ -8,7 +8,7 @@ import { defineConfig, type Plugin } from "vite";
 
 /**
  * public/widget.js stays readable in the repo; the copy we serve is minified (it runs on
- * every customer page, budget: 5 KB gzipped). Keeps the license header.
+ * every customer page, budget: 6 KB gzipped, D-38). Keeps the license header.
  */
 function minifyLoader(): Plugin {
   return {

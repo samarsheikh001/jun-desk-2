@@ -57,7 +57,7 @@ function message(seq: number, body: string, authorType: Message["authorType"] = 
 }
 
 /** One reply, with the same shortcut the live desk takes when the customer asks for a person. */
-function answer(ctx: EvalContext, config: AgentConfig, history: Message[], technical: string[] = []): Promise<RunResult> {
+function answer(ctx: EvalContext, config: AgentConfig, history: Message[], technical: string[] = [], intent: string | null = null): Promise<RunResult> {
   if (asksForHuman(history.at(-1)?.body ?? "")) {
     return Promise.resolve({
       raw: "",
@@ -67,7 +67,7 @@ function answer(ctx: EvalContext, config: AgentConfig, history: Message[], techn
       usage: { inputTokens: 0, outputTokens: 0 },
     });
   }
-  return runAgent({ env: ctx.env, workspaceId: ctx.workspaceId, workspaceName: ctx.workspaceName, model: ctx.model, config, history, technical, mockTools: ctx.mockTools, temperature: 0 });
+  return runAgent({ env: ctx.env, workspaceId: ctx.workspaceId, workspaceName: ctx.workspaceName, model: ctx.model, config, history, technical, mockTools: ctx.mockTools, temperature: 0, intent });
 }
 
 /** Runs several turns of a test case; replies come from the config under test. */
@@ -76,7 +76,7 @@ async function runCase(ctx: EvalContext, c: EvalCase): Promise<RunResult> {
   let result: RunResult | null = null;
   for (const [i, body] of c.messages.entries()) {
     history.push(message(i * 2 + 1, body));
-    result = await answer(ctx, ctx.candidate, history);
+    result = await answer(ctx, ctx.candidate, history, [], c.intent ?? null);
     if (result.outcome.kind === "handoff") break;
     history.push(message(i * 2 + 2, result.outcome.text, "ai"));
   }
@@ -111,21 +111,22 @@ interface ReplayTurn {
   conversationId: string;
   history: Message[];
   technical: string[];
+  intent: string | null;
 }
 
 /** The first customer message of recent conversations the AI handled. */
 async function replayTurns(ctx: EvalContext): Promise<ReplayTurn[]> {
   const rows = await ctx.env.DB.prepare(
-    `SELECT c.id FROM conversations c
+    `SELECT c.id, c.intent FROM conversations c
      WHERE c.workspace_id = ? AND EXISTS (
        SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.internal = 0
          AND (m.author_type = 'ai' OR (m.author_type = 'system' AND m.meta LIKE '%handoffReason%')))
      ORDER BY c.last_message_at DESC LIMIT ?`,
   )
     .bind(ctx.workspaceId, ctx.sample)
-    .all<{ id: string }>();
+    .all<{ id: string; intent: string | null }>();
   const turns: ReplayTurn[] = [];
-  for (const { id } of rows.results) {
+  for (const { id, intent } of rows.results) {
     const messages = await loadMessages(ctx.env.DB, id, { includeInternal: false, limit: 40 });
     const first = messages.findIndex((m) => m.authorType === "visitor" && m.body.trim());
     if (first === -1) continue;
@@ -138,13 +139,13 @@ async function replayTurns(ctx: EvalContext): Promise<ReplayTurn[]> {
       const context = JSON.parse(snapshot.context) as DebugContext;
       technical = [`Page: ${context.page.url}`, ...describeEvents(context).slice(-25)];
     }
-    turns.push({ conversationId: id, history: messages.slice(0, first + 1), technical });
+    turns.push({ conversationId: id, history: messages.slice(0, first + 1), technical, intent });
   }
   return turns;
 }
 
 async function replay(ctx: EvalContext, turn: ReplayTurn): Promise<EvalEvent> {
-  const run = (config: AgentConfig) => answer(ctx, config, turn.history, turn.technical);
+  const run = (config: AgentConfig) => answer(ctx, config, turn.history, turn.technical, turn.intent);
   const [liveRun, candidateRun] = await Promise.all([run(ctx.live), run(ctx.candidate)]);
   const live = view(liveRun);
   const candidate = view(candidateRun);

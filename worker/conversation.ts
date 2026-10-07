@@ -529,10 +529,12 @@ export class Conversation extends DurableObject<Env> {
         throw error;
       }
 
-      const [workspace, technical, user] = await Promise.all([
+      const [workspace, technical, user, intent] = await Promise.all([
         this.env.DB.prepare("SELECT name FROM workspaces WHERE id = ?").bind(ref.workspaceId).first<{ name: string }>(),
         this.#technicalContext(ref),
         this.#verifiedCustomer(ref),
+        // AI-20: the intent the host app opened the chat with.
+        this.env.DB.prepare("SELECT intent FROM conversations WHERE id = ?").bind(ref.conversationId).first<{ intent: string | null }>(),
       ]);
 
       // Stream what the visitor may see: nothing that could be a HANDOFF line, never an ESCALATE line.
@@ -550,6 +552,7 @@ export class Conversation extends DurableObject<Env> {
         technical: technical.lines,
         ...(technical.timezone ? { timezone: technical.timezone } : {}),
         user,
+        intent: intent?.intent ?? null,
         // Citations stream already resolved (numbered by first use, with their sources).
         onVisible: (visible, hits) => {
           const { text, sources } = streamCitations(visible, hits);

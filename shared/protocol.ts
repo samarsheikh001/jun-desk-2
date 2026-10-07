@@ -1,6 +1,7 @@
 // Shared by the Worker, the dashboard and the widget. Plain TypeScript with no Worker,
 // DOM or Node APIs, so every tsconfig can include this file.
 
+import type { ConversationIntent } from "./intents.ts";
 import type { NotificationPayload } from "./notifications.ts";
 
 export type ConversationStatus = "open" | "pending" | "snoozed" | "resolved";
@@ -98,6 +99,8 @@ export interface ConversationSummary {
    * conversation isn't `ratedThisRound`.
    */
   csat: { rating: CsatRating | null; ratedThisRound: boolean };
+  /** AI-20: the intent the host app opened the chat with (null otherwise). Agents only; always null for visitors. */
+  intent: ConversationIntent | null;
 }
 
 /** Messages a client sends on a conversation socket. */

@@ -526,6 +526,7 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 .conv-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0; }
 .verified { margin-left: 6px; color: var(--success); font-size: 12px; font-weight: 665; }
 .ai-tag { margin-left: 6px; }
+.intent-tag { margin-left: 6px; background: var(--secondary); border-color: transparent; }
 .csat-tag { margin-left: 6px; padding: 0 6px; }
 .csat-tag.bad { background: color-mix(in oklch, var(--destructive) 12%, transparent); }
 .issue-count, .issue-tag { color: var(--destructive); font-weight: 665; }

@@ -52,6 +52,12 @@ button.w-thumb:hover:not(:disabled) { border-color: var(--accent); }
 /* "Contact the team" and "Start a new chat" (.action-row) */
 .w-actions { display: flex; gap: 6px; padding: 0 16px 8px; flex-shrink: 0; }
 .w-shell .w-action-btn { flex: 1; padding: 5px 6px; font-size: 11px; line-height: 1.5; font-weight: 500; white-space: nowrap; border-radius: var(--radius-xs); }
+/* AI-20 intent chats: the opening's quick replies, and the exit button (D-37: always on screen, under the header, one click). */
+.w-replies { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+:is(.w-shell, .b-panel) .w-reply { text-align: left; padding: 5px 9px; font-size: 11px; line-height: 1.5; background: var(--bg); color: inherit; border: 1px solid var(--border); border-radius: var(--radius-xs); }
+.w-exit { display: flex; justify-content: flex-end; padding: 6px 16px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+.b-panel .w-exit { padding: 8px 16px 0; border: 0; }
+:is(.w-shell, .b-panel) .w-exit-btn { padding: 4px 12px; font-size: 12px; line-height: 1.5; font-weight: 500; background: var(--bg); color: inherit; border: 1px solid var(--border); border-radius: var(--radius-xs); }
 /* "Built with Jun Desk" (.footer-brand) */
 .w-badge { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 0 12px; color: var(--muted); font-size: 10px; flex-shrink: 0; }
 :is(.w-shell, .w-closed) .w-badge-logo { width: 14px; height: 14px; }
