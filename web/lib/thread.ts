@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Attachment, ClientEvent, ConversationEvent, ConversationSummary, Message, Source } from "../../shared/protocol.ts";
+import type { AiStep, Attachment, ClientEvent, ConversationEvent, ConversationSummary, Message, Source } from "../../shared/protocol.ts";
 import { LiveSocket, type SocketState } from "./socket.ts";
 
 export interface PendingMessage {
@@ -23,6 +23,8 @@ export function useThread(options: {
   /** Whose typing/read state to show: the dashboard watches the visitor, the widget watches agents. */
   other: "visitor" | "agent";
   onConversation?: (conversation: ConversationSummary) => void;
+  /** AI-11: the AI made a tool call (agents only; recorded before the event is sent). */
+  onAiAction?: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>(options.initialMessages);
   const [pending, setPending] = useState<PendingMessage[]>([]);
@@ -32,11 +34,15 @@ export function useThread(options: {
   /** The AI's reply as it streams in, and whether it's working on one. */
   const [aiStream, setAiStream] = useState<{ streamId: string; text: string; sources: Source[] } | null>(null);
   const [aiThinking, setAiThinking] = useState(false);
+  /** Tool steps per AI reply (keyed by its clientMsgId, `ai:<seq>`), this session only: never stored. */
+  const [aiSteps, setAiSteps] = useState<Record<string, AiStep[]>>({});
   const socket = useRef<LiveSocket<ConversationEvent> | null>(null);
   const lastSeq = useRef(0);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const onConversation = useRef(options.onConversation);
   onConversation.current = options.onConversation;
+  const onAiAction = useRef(options.onAiAction);
+  onAiAction.current = options.onAiAction;
 
   const merge = useCallback((incoming: Message[]) => {
     if (incoming.length === 0) return;
@@ -57,6 +63,7 @@ export function useThread(options: {
   }, [options.initialMessages]);
 
   useEffect(() => {
+    setAiSteps({}); // keyed per conversation
     if (!options.socketUrl) return;
     const base = options.socketUrl;
     const live = new LiveSocket<ConversationEvent>({
@@ -71,7 +78,18 @@ export function useThread(options: {
           if (event.message.authorType === "ai") setAiStream(null);
         } else if (event.type === "ai_status") {
           setAiThinking(event.state === "thinking");
-          if (event.state === "idle") setAiStream(null);
+          if (event.state === "idle") {
+            setAiStream(null);
+            // The turn is over: nothing is still running, even if a "done" got lost.
+            setAiSteps((all) => (Object.values(all).some((steps) => steps.some((s) => s.state === "running")) ? Object.fromEntries(Object.entries(all).map(([turn, steps]) => [turn, steps.map((s) => ({ ...s, state: "done" as const }))])) : all));
+          }
+        } else if (event.type === "ai_step") {
+          const { turn, step } = event;
+          setAiSteps((all) => {
+            const steps = all[turn] ?? [];
+            const at = steps.findIndex((s) => s.id === step.id);
+            return { ...all, [turn]: at >= 0 ? steps.map((s, i) => (i === at ? step : s)) : [...steps, step] };
+          });
         } else if (event.type === "ai_delta") {
           setAiStream((current) =>
             current?.streamId === event.streamId && !event.replace
@@ -88,6 +106,8 @@ export function useThread(options: {
         } else if (event.type === "conversation") {
           setOtherReadSeq((s) => Math.max(s, options.other === "visitor" ? event.conversation.visitorReadSeq : event.conversation.agentReadSeq));
           onConversation.current?.(event.conversation);
+        } else if (event.type === "ai_action") {
+          onAiAction.current?.();
         } else if (event.type === "error" && event.clientMsgId) {
           const { clientMsgId, message } = event;
           setPending((p) => p.map((m) => (m.clientMsgId === clientMsgId ? { ...m, failed: message } : m)));
@@ -124,6 +144,7 @@ export function useThread(options: {
     state,
     aiStream,
     aiThinking,
+    aiSteps,
     /** Visitor asks for a person (W-07). */
     requestHuman: () => sendEvent({ type: "handoff" }),
     merge,

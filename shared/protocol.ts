@@ -110,6 +110,13 @@ export type ClientEvent =
   /** Visitor asks for a person (W-07). */
   | { type: "handoff" };
 
+/** One tool call as the visitor sees it (`ai_step`): a label and whether it's still running. */
+export interface AiStep {
+  id: string;
+  label: string;
+  state: "running" | "done";
+}
+
 /** Messages the conversation socket sends. */
 export type ConversationEvent =
   | { type: "messages"; messages: Message[] } // backlog after `?since=` on connect
@@ -124,6 +131,13 @@ export type ConversationEvent =
    * Citations arrive resolved; `sources`, when present, is every source cited so far.
    */
   | { type: "ai_delta"; streamId: string; text: string; replace?: boolean; sources?: Source[] }
+  /**
+   * Visitors and agents: the AI is using a tool for the reply with clientMsgId `turn` (`ai:<seq>`).
+   * Visitor-safe by construction: `label` is the tool's admin-written `status:` (or a generic one) and
+   * `id` is an opaque per-turn counter, never the tool's name, inputs, output, URL or errors. A failed
+   * call still ends `done`. Ephemeral: not stored, so history shows no steps.
+   */
+  | { type: "ai_step"; turn: string; step: AiStep }
   /** Agents only: the AI called a tool (AI-11). Details via GET /api/conversations/:id/actions. */
   | { type: "ai_action"; tool: string; status: "ok" | "error" }
   | { type: "error"; code: string; message: string; clientMsgId?: string };

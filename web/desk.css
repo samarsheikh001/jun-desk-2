@@ -648,10 +648,11 @@ button.small:not([data-slot]) { min-height: 28px; padding: 2px 10px; font-size: 
 .contact-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .contact-history a { display: grid; gap: 1px; padding: 6px 8px; border-radius: var(--radius); background: var(--muted); color: var(--foreground); text-decoration: none; }
 .contact-history a:hover { background: var(--accent); }
-.ai-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.ai-actions li { display: grid; gap: 2px; padding: 6px 8px; border-radius: var(--radius); background: var(--muted); font-size: 12px; }
-.ai-output { max-height: 120px; }
-.ai-actions pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 11px; }
+/* AI-11 tool chips (web/inbox/ToolCalls.tsx): rows rise in as calls arrive. */
+.tool-row-in { animation: tool-row-in 300ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+@keyframes tool-row-in { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .tool-row-in { animation: none; } }
+.msg > .tool-calls { max-width: 420px; margin-bottom: 4px; }
 
 /* ---------- AI settings ---------- */
 .ai-form { display: grid; gap: 12px; margin-top: 12px; }

@@ -3,6 +3,7 @@ import {
   MAX_ATTACHMENTS,
   MAX_MESSAGE_LENGTH,
   SOCKET_PROTOCOL,
+  type AiStep,
   type Attachment,
   type AuthorType,
   type ClientEvent,
@@ -26,6 +27,7 @@ import { findMentions } from "../shared/inbox.ts";
 import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
 import { newId } from "./lib/crypto.ts";
 import { notifyTeam } from "./lib/notify.ts";
+import { secretScrubber } from "./lib/tool-secrets.ts";
 
 /** Who is on the other end of a socket or RPC call. The Worker authenticates before forwarding. */
 export type Participant =
@@ -87,6 +89,8 @@ export class Conversation extends DurableObject<Env> {
   /** The AI reply being streamed right now, so late joiners can catch up. */
   #streaming: { streamId: string; text: string; sources: Source[] } | undefined;
   #thinking = false;
+  /** The current AI turn's tool steps (visitor-safe labels only), for late joiners. Never stored. */
+  #steps: { turn: string; steps: AiStep[] } | undefined;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -139,6 +143,7 @@ export class Conversation extends DurableObject<Env> {
     const messages = await loadMessages(this.env.DB, ref.conversationId, { since, includeInternal: participant.role === "agent" });
     this.#send(server, { type: "messages", messages });
     if (this.#thinking) this.#send(server, { type: "ai_status", state: "thinking" });
+    if (this.#thinking && this.#steps) for (const step of this.#steps.steps) this.#send(server, { type: "ai_step", turn: this.#steps.turn, step });
     if (this.#streaming) this.#send(server, { type: "ai_delta", ...this.#streaming, replace: true });
 
     return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": SOCKET_PROTOCOL } });
@@ -559,6 +564,16 @@ export class Conversation extends DurableObject<Env> {
           this.#streaming = { streamId, text, sources };
         },
         onAction: (action) => actions.push(this.#recordAction(ref, last.seq, config.version, action)),
+        // Visitors and agents: only the admin's label and an opaque id (ai_action stays agents-only).
+        onStep: (step) => {
+          const turn = `ai:${last.seq}`;
+          if (this.#steps?.turn !== turn) this.#steps = { turn, steps: [] };
+          const steps = this.#steps.steps;
+          const at = steps.findIndex((s) => s.id === step.id);
+          if (at >= 0) steps[at] = step;
+          else steps.push(step);
+          this.#broadcast({ type: "ai_step", turn, step });
+        },
       });
       await Promise.all([...actions, this.#recordUsage(ref.workspaceId, month, result.usage)]);
       const { outcome, hits } = result;
@@ -584,6 +599,7 @@ export class Conversation extends DurableObject<Env> {
         },
       });
       this.#streaming = undefined;
+      this.#steps = undefined;
       this.#thinking = false;
       this.#broadcast({ type: "ai_status", state: "idle" });
       if (outcome.escalate) {
@@ -599,6 +615,7 @@ export class Conversation extends DurableObject<Env> {
     } finally {
       this.#thinking = false;
       this.#streaming = undefined;
+      this.#steps = undefined;
       this.#broadcast({ type: "ai_status", state: "idle" });
     }
   }
@@ -708,11 +725,12 @@ export class Conversation extends DurableObject<Env> {
   /** AI-11: one row per tool call; agents see them next to the conversation. */
   async #recordAction(ref: ConversationRef, messageSeq: number, configVersion: number | null, action: ToolAction): Promise<void> {
     try {
+      const scrub = secretScrubber(this.env);
       await this.env.DB.prepare(
         `INSERT INTO ai_actions (id, workspace_id, conversation_id, message_seq, config_version, tool, input, output, status, http_status, duration_ms, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-        .bind(newId("act"), ref.workspaceId, ref.conversationId, messageSeq, configVersion, action.tool, JSON.stringify(action.input), action.output, action.status, action.httpStatus, action.durationMs, Date.now())
+        .bind(newId("act"), ref.workspaceId, ref.conversationId, messageSeq, configVersion, action.tool, scrub(JSON.stringify(action.input)), scrub(action.output), action.status, action.httpStatus, action.durationMs, Date.now())
         .run();
       this.#broadcast({ type: "ai_action", tool: action.tool, status: action.status }, { agentsOnly: true });
     } catch (error) {

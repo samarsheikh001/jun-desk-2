@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
-import type { Attachment, Message, Source } from "../../shared/protocol.ts";
+import type { AiStep, Attachment, Message, Source } from "../../shared/protocol.ts";
 import { mentionParts } from "../../shared/inbox.ts";
 import { formatSize, formatTime, isImage, type PendingMessage } from "../lib/thread.ts";
 
@@ -68,6 +68,8 @@ export interface AiAnswerView {
   streaming: boolean;
   /** The newest thing in the thread (follow-ups only make sense there). */
   latest: boolean;
+  /** Tool steps of this reply seen live (visitor-safe labels); empty for history. */
+  steps: AiStep[];
 }
 
 /**
@@ -87,6 +89,8 @@ export function MessageList({
   onDismiss,
   mentionNames = [],
   renderAi,
+  aiActions,
+  aiSteps,
 }: {
   messages: Message[];
   pending: PendingMessage[];
@@ -102,6 +106,10 @@ export function MessageList({
   mentionNames?: string[];
   /** Draws AI answers (and the one streaming) instead of the plain bubble. */
   renderAi?: (answer: AiAnswerView) => ReactNode;
+  /** Dashboard only (AI-11): the tool calls made while answering the visitor message with this seq. */
+  aiActions?: (visitorSeq: number) => ReactNode;
+  /** The widget: live tool steps per AI reply (`ai:<seq>`), drawn by `renderAi`. */
+  aiSteps?: Record<string, AiStep[]>;
 }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -133,6 +141,11 @@ export function MessageList({
   const lastVisitorSeq = [...messages].reverse().find((m) => m.authorType === "visitor")?.seq;
   const streamKey = lastVisitorSeq !== undefined && !messages.some((m) => m.clientMsgId === `ai:${lastVisitorSeq}`) ? `ai:${lastVisitorSeq}` : "ai:stream";
   const last = messages.at(-1);
+  // An AI reply's clientMsgId is `ai:<seq of the visitor message it answers>`.
+  const actionsFor = (key: string) => {
+    const seq = /^ai:(\d+)$/.exec(key)?.[1];
+    return seq && aiActions ? aiActions(Number(seq)) : null;
+  };
   const rows: ReactNode[] = messages.map((m, i) => {
     if (m.authorType === "system") {
       return (
@@ -149,7 +162,7 @@ export function MessageList({
     if (m.authorType === "ai" && renderAi) {
       return (
         <div key={m.clientMsgId} className={`msg ${own ? "own" : "other"} ai`}>
-          {renderAi({ body: m.body, sources: m.meta.sources ?? [], followUps: m.meta.followUps ?? [], streaming: false, latest: m === last && pending.length === 0 && !aiStream?.text })}
+          {renderAi({ body: m.body, sources: m.meta.sources ?? [], followUps: m.meta.followUps ?? [], streaming: false, latest: m === last && pending.length === 0 && !aiStream?.text, steps: aiSteps?.[m.clientMsgId] ?? [] })}
           <Attachments attachments={m.attachments} />
         </div>
       );
@@ -157,6 +170,7 @@ export function MessageList({
     return (
       <div key={m.authorType === "ai" ? m.clientMsgId : m.id} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""} ${m.internal ? "note" : ""}`}>
         {showAuthor && <div className="author muted small">{m.internal && <span className="tag note-tag">Note</span>}{authorLabel(m)} · {formatTime(m.createdAt)}</div>}
+        {m.authorType === "ai" && actionsFor(m.clientMsgId)}
         {m.body && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : m.body}</div>}
         <Attachments attachments={m.attachments} />
         {m.authorType === "ai" && <Sources sources={m.meta.sources} />}
@@ -184,18 +198,27 @@ export function MessageList({
     rows.push(
       renderAi ? (
         <div key={streamKey} className={`msg ${aiSide} ai streaming`}>
-          {renderAi({ body: aiStream.text, sources: aiStream.sources ?? [], followUps: [], streaming: true, latest: true })}
+          {renderAi({ body: aiStream.text, sources: aiStream.sources ?? [], followUps: [], streaming: true, latest: true, steps: aiSteps?.[streamKey] ?? [] })}
         </div>
       ) : (
         <div key={streamKey} className={`msg ${aiSide} ai streaming`}>
           <div className="author muted small">AI assistant · writing…</div>
+          {actionsFor(streamKey)}
           <div className="bubble">{withCitations(aiStream.text, aiStream.sources)}</div>
         </div>
       ),
     );
+  } else if (aiThinking && renderAi && aiSteps?.[streamKey]?.length) {
+    // Tools are running before the first word: the reply's row (same key) shows its steps.
+    rows.push(
+      <div key={streamKey} className={`msg ${aiSide} ai streaming`}>
+        {renderAi({ body: "", sources: [], followUps: [], streaming: true, latest: true, steps: aiSteps[streamKey] })}
+      </div>,
+    );
   } else if (aiThinking) {
     rows.push(
       <div key="ai:thinking" className={`msg ${aiSide} ai`}>
+        {lastVisitorSeq !== undefined && actionsFor(`ai:${lastVisitorSeq}`)}
         <div className="bubble typing" aria-label="The AI assistant is writing a reply">
           <span /><span /><span />
         </div>

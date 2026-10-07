@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Source } from "../../shared/protocol.ts";
+import type { AiStep, Source } from "../../shared/protocol.ts";
 import type { AiAnswerView } from "../components/MessageList.tsx";
 
 // An AI answer in the widget: words resolve out of a blur as they stream, citations become
@@ -109,8 +109,54 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+/**
+ * The AI's tool steps above its answer: open with a shimmering label while it works, then one
+ * quiet line the visitor can open. Labels are the admin's `status:` text, nothing else.
+ */
+function Steps({ steps, working }: { steps: AiStep[]; working: boolean }) {
+  const [manual, setManual] = useState<boolean | null>(null);
+  const expanded = manual ?? working;
+  const running = [...steps].reverse().find((s) => s.state === "running");
+  const label = working ? (running?.label ?? "Working on it") : steps.length === 1 ? steps[0]!.label : `Used ${steps.length} steps`;
+  return (
+    <div className={`w-steps${working ? " working" : ""}`}>
+      <button type="button" className="w-steps-head" aria-expanded={expanded} onClick={() => setManual(!expanded)}>
+        <svg className="w-steps-spark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
+        </svg>
+        <span role="status" className="w-steps-label">
+          <span key={working ? "working" : "done"} className={working ? "w-steps-shimmer" : "w-steps-done"}>{label}</span>
+        </span>
+        <svg className="w-steps-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      <div className={`w-steps-panel${expanded ? " open" : ""}`} inert={!expanded}>
+        <div>
+          <ol className="w-steps-list">
+            {steps.map((s) => (
+              <li key={s.id} className="w-step">
+                {s.state === "running" ? (
+                  <span className="w-step-spin" role="img" aria-label="In progress" />
+                ) : (
+                  <svg className="w-step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Done">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                )}
+                <span className="w-step-label">{s.label}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AiAnswer({ answer, onFollowUp }: { answer: AiAnswerView; onFollowUp?: (question: string) => void }) {
-  const { body, sources, followUps, streaming, latest } = answer;
+  const { body, sources, followUps, streaming, latest, steps } = answer;
+  // Open while tools run before (or between) the words; folded once the answer is being written.
+  const working = streaming && (!body || steps.some((s) => s.state === "running"));
   const tokens = useMemo(() => tokenize(body), [body]);
   // Animate a reply that started streaming here; history shows as it is.
   const [live] = useState(streaming);
@@ -124,7 +170,8 @@ export function AiAnswer({ answer, onFollowUp }: { answer: AiAnswerView; onFollo
 
   return (
     <div className="w-answer">
-      <div className="bubble">
+      {steps.length > 0 && <Steps steps={steps} working={working} />}
+      {(body || !steps.length) && <div className="bubble">
         {tokens.slice(0, shown).map((t, i) => {
           const anim = live ? " w-anim" : "";
           if (t.kind === "word") return <span key={i} className={`w-word${anim}`}>{t.text}</span>;
@@ -138,7 +185,7 @@ export function AiAnswer({ answer, onFollowUp }: { answer: AiAnswerView; onFollo
           );
         })}
         {!done && <span className="w-caret" aria-hidden="true" />}
-      </div>
+      </div>}
 
       {done && sources.length > 0 && (
         <>

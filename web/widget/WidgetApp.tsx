@@ -640,6 +640,7 @@ function WidgetThread({
           aiStream={thread.aiStream}
           // Show the AI "typing" the instant the visitor sends, not when the server gets going.
           aiThinking={thread.aiThinking || awaitingAi}
+          aiSteps={thread.aiSteps}
           onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
           onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
           // Follow-ups only while the AI is still the one answering.

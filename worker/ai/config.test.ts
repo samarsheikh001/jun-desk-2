@@ -125,6 +125,47 @@ test("tool output is picked and capped; calls are reported", async () => {
   assert.equal(await mocked.lookup_order!.execute!({ orderNumber: "A-1" }, { toolCallId: "1", messages: [] } as never), '{"status":"delivered","orderedOn":"2026-09-02","total":"$49.00"}');
 });
 
+test("tool status: optional one-line label for visitors, validated", () => {
+  const ok = parseConfig({ "AGENTS.md": "x", "tools/lookup_order.yaml": `${ORDER_TOOL}status: "  Checking your order  "\n` });
+  assert.deepEqual(ok.issues, []);
+  assert.equal(ok.config.tools[0]!.status, "Checking your order");
+  assert.equal(parseConfig({ "AGENTS.md": "x", "tools/lookup_order.yaml": ORDER_TOOL }).config.tools[0]!.status, undefined);
+
+  const bad = (status: string) => parseConfig({ "AGENTS.md": "x", "tools/t.yaml": `description: d\nurl: https://x.test\n${status}\n` });
+  for (const [yaml, message] of [
+    ["status: ''", /status must be a short text/],
+    ["status: 42", /status must be a short text/],
+    [`status: ${"x".repeat(61)}`, /at most 60 characters/],
+    ["status: |\n  Checking\n  your order", /one line/],
+    ["status: 'Checking {orderNumber}'", /no \{placeholders\}/],
+  ] as const) {
+    const { config, issues } = bad(yaml);
+    assert.match(issues.map((i) => i.message).join("\n"), message, yaml);
+    assert.deepEqual(config.tools, []);
+  }
+});
+
+test("tool calls report visitor-safe steps: the label only, running then done, also on failure", async () => {
+  const spec = parseConfig({ "AGENTS.md": "x", "tools/lookup_order.yaml": `${ORDER_TOOL}status: Checking your order\n` }).config.tools[0]!;
+  const plain = parseConfig({ "AGENTS.md": "x", "tools/other.yaml": "description: d\nurl: https://x.test/secret-path" }).config.tools[0]!;
+  const steps: unknown[] = [];
+  const tools = httpTools([spec, plain], {
+    secrets: () => "k",
+    fetch: (async () => new Response("internal failure detail", { status: 500 })) as typeof fetch,
+    onStep: (s) => steps.push(s),
+  });
+  await tools.lookup_order!.execute!({ orderNumber: "A-1" }, { toolCallId: "call_x", messages: [] } as never);
+  await tools.other!.execute!({}, { toolCallId: "call_y", messages: [] } as never);
+  assert.deepEqual(steps, [
+    { id: "s1", label: "Checking your order", state: "running" },
+    { id: "s1", label: "Checking your order", state: "done" },
+    { id: "s2", label: "Looking that up", state: "running" },
+    { id: "s2", label: "Looking that up", state: "done" },
+  ]);
+  // Nothing about the tool, its input or its result.
+  assert.doesNotMatch(JSON.stringify(steps), /lookup_order|other|A-1|500|internal|x\.test|call_/);
+});
+
 test("prompt includes procedures, tools, handoff topics and today's date", () => {
   const { config } = parseConfig({
     "AGENTS.md": "---\nhandoffTopics: [legal questions]\n---\nBe warm.",

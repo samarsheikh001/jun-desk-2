@@ -15,6 +15,7 @@ import { normalizeDomains } from "../lib/origins.ts";
 import { object, readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
 import { storeUpload } from "./files.ts";
+import { secretScrubber } from "../lib/tool-secrets.ts";
 
 const STATUSES: ConversationStatus[] = ["open", "pending", "snoozed", "resolved"];
 
@@ -218,13 +219,22 @@ conversations.get("/conversations/:cid/actions", async (c) => {
   )
     .bind(ref.conversationId)
     .all<{ id: string; message_seq: number; config_version: number | null; tool: string; input: string; output: string | null; status: "ok" | "error"; http_status: number | null; duration_ms: number; created_at: number }>();
+  // Rows are scrubbed when written; this also covers rows from before that, or a secret set later.
+  const scrub = secretScrubber(c.env);
+  const scrubInput = (json: string): Record<string, unknown> => {
+    try {
+      return JSON.parse(scrub(json)) as Record<string, unknown>;
+    } catch {
+      return {}; // a secret spanning JSON syntax: show nothing rather than fail
+    }
+  };
   const actions: AiAction[] = rows.results.map((r) => ({
     id: r.id,
     messageSeq: r.message_seq,
     configVersion: r.config_version,
     tool: r.tool,
-    input: JSON.parse(r.input) as Record<string, unknown>,
-    output: r.output,
+    input: scrubInput(r.input),
+    output: r.output === null ? null : scrub(r.output),
     status: r.status,
     httpStatus: r.http_status,
     durationMs: r.duration_ms,

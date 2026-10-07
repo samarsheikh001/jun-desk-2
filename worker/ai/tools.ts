@@ -1,5 +1,6 @@
 import { jsonSchema, tool, type ToolSet } from "ai";
-import { fillTemplate, type ToolSpec, type ToolUser } from "./config.ts";
+import type { AiStep } from "../../shared/protocol.ts";
+import { DEFAULT_TOOL_STATUS, fillTemplate, type ToolSpec, type ToolUser } from "./config.ts";
 
 // HTTP tools (AI-05): each tools/<name>.yaml becomes a tool the model can call.
 // Every call is reported through onAction for the audit log (AI-11).
@@ -24,6 +25,11 @@ export interface ToolRunOptions {
   mock?: boolean;
   fetch?: typeof fetch;
   onAction?: (action: ToolAction) => void;
+  /**
+   * What the visitor may see of each call: the tool's `status:` label, running then done (also
+   * when it failed). Never its name, inputs, output or errors. Live chats only; evals leave it out.
+   */
+  onStep?: (step: AiStep) => void;
   /** The verified customer for {user.*}; null when they aren't signed in. */
   user?: ToolUser | null;
 }
@@ -128,12 +134,22 @@ async function callTool(spec: ToolSpec, input: Record<string, unknown>, options:
 /** AI SDK tools for a config's HTTP tools. Failed calls return an error the model can explain. */
 export function httpTools(specs: ToolSpec[], options: ToolRunOptions): ToolSet {
   const tools: ToolSet = {};
+  let calls = 0;
   for (const spec of specs) {
+    const label = spec.status ?? DEFAULT_TOOL_STATUS;
     tools[spec.name] = tool({
       description: spec.description,
       inputSchema: inputSchema(spec),
       execute: async (input: Record<string, unknown>) => {
-        const action = await callTool(spec, input, options);
+        // An opaque id per call: the model's toolCallId or the tool name would tell the visitor more.
+        const id = `s${++calls}`;
+        options.onStep?.({ id, label, state: "running" });
+        let action: ToolAction;
+        try {
+          action = await callTool(spec, input, options);
+        } finally {
+          options.onStep?.({ id, label, state: "done" });
+        }
         options.onAction?.(action);
         return action.status === "ok"
           ? action.output

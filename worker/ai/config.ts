@@ -37,6 +37,8 @@ export interface ToolSpec {
   pick?: string[];
   /** Canned response used instead of the real call by `jun eval --mock-tools`. */
   mock?: unknown;
+  /** What the visitor sees while the AI uses this tool ("Checking your order"); never the tool's name or data. */
+  status?: string;
 }
 
 export type EvalOutcome = "answer" | "handoff" | "escalate";
@@ -186,6 +188,9 @@ function parseSkill(path: string, folder: string, text: string, issues: ConfigIs
 }
 
 const INPUT_TYPES = ["string", "number", "integer", "boolean"] as const;
+/** The visitor's label for a tool call without its own `status:`. */
+export const DEFAULT_TOOL_STATUS = "Looking that up";
+export const MAX_TOOL_STATUS = 60;
 
 function parseTool(path: string, name: string, text: string, issues: ConfigIssue[]): ToolSpec | null {
   const data = yaml(path, text, issues);
@@ -195,7 +200,7 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     return null;
   }
   const before = issues.length;
-  unknownKeys(path, data, ["description", "method", "url", "headers", "query", "body", "input", "pick", "mock"], issues);
+  unknownKeys(path, data, ["description", "method", "url", "headers", "query", "body", "input", "pick", "mock", "status"], issues);
 
   const description = typeof data.description === "string" ? data.description.trim() : "";
   if (!description) issues.push({ path, message: "description is required: tell the AI what this returns and when to use it." });
@@ -240,6 +245,17 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     else issues.push({ path, message: "pick must be a list of field names." });
   }
 
+  // Shown to visitors as is, so plain text only: no placeholders, no line breaks.
+  let status: string | undefined;
+  if (data.status !== undefined) {
+    const value = typeof data.status === "string" ? data.status.trim() : "";
+    if (!value) issues.push({ path, message: 'status must be a short text for the customer, like "Checking your order".' });
+    else if (/[^\S ]/.test(value)) issues.push({ path, message: "status must be one line of plain text." });
+    else if (value.length > MAX_TOOL_STATUS) issues.push({ path, message: `status must be at most ${MAX_TOOL_STATUS} characters.` });
+    else if (/[{}]/.test(value)) issues.push({ path, message: "status is shown as is: no {placeholders}." });
+    else status = value;
+  }
+
   // Every {placeholder} must be an input or a secret.
   const templated = [url, ...Object.values(headers), ...Object.values(query), JSON.stringify(data.body ?? null)];
   for (const source of templated) {
@@ -270,6 +286,7 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     input,
     ...(pick ? { pick } : {}),
     ...(data.mock !== undefined ? { mock: data.mock } : {}),
+    ...(status ? { status } : {}),
   };
 }
 

@@ -41,7 +41,7 @@ const NEW_FILES = {
   }),
   tool: (name: string) => ({
     path: `tools/${name}.yaml`,
-    text: `description: What this returns and when the AI should use it.\nmethod: GET\nurl: https://api.example.com/things/{id}\nheaders:\n  Authorization: Bearer {secrets.API_KEY}   # Worker secret JUN_SECRET_API_KEY\ninput:\n  id:\n    type: string\n    description: What the AI should pass\n`,
+    text: `description: What this returns and when the AI should use it.\nstatus: Looking that up   # what the customer sees while it runs, e.g. "Checking your order"\nmethod: GET\nurl: https://api.example.com/things/{id}\nheaders:\n  Authorization: Bearer {secrets.API_KEY}   # Worker secret JUN_SECRET_API_KEY\ninput:\n  id:\n    type: string\n    description: What the AI should pass\n`,
   }),
   eval: (name: string) => ({
     path: `evals/${name}.yaml`,

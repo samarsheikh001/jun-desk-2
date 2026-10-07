@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ConversationIssue, ConversationStatus, ConversationSummary, CsatRating, Message } from "../../shared/protocol.ts";
+import type { AiAction, ConversationIssue, ConversationStatus, ConversationSummary, CsatRating, Message } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { fillSavedReply } from "../../shared/inbox.ts";
 import { contactLabel } from "../../shared/notifications.ts";
@@ -9,6 +9,7 @@ import { matchesFilter } from "../lib/commands.ts";
 import { MessageList } from "../components/MessageList.tsx";
 import { navigate } from "../lib/router.ts";
 import { DebugPanel } from "./DebugPanel.tsx";
+import { ToolCalls } from "./ToolCalls.tsx";
 import { configuredProviders, IssueDialog, type FiledIssue } from "./IssueDialog.tsx";
 import { ConversationDrawer, DrawerClose } from "./ConversationDrawer.tsx";
 import {
@@ -393,12 +394,34 @@ function Thread({
     api<{ savedReplies: SavedReply[] }>(`/workspaces/${workspaceId}/saved-replies`).then((r) => setSavedReplies(r.savedReplies), () => {});
   }, [workspaceId]);
 
+  // AI-11: tool calls, reloaded as each one is recorded (the `ai_action` event) and when an AI reply lands.
+  const [actions, setActions] = useState<AiAction[]>([]);
+  const [actionTick, setActionTick] = useState(0);
   const thread = useThread({
     socketUrl: initial ? `/api/conversations/${conversationId}/ws` : null,
     initialMessages: useMemo(() => initial ?? [], [initial]),
     other: "visitor",
     onConversation: setConversation,
+    onAiAction: () => setActionTick((t) => t + 1),
   });
+  const aiReplies = thread.messages.filter((m) => m.authorType === "ai").length;
+  useEffect(() => setActions([]), [conversationId]);
+  useEffect(() => {
+    let live = true;
+    // A burst of calls in one turn becomes one request.
+    const timer = setTimeout(() => {
+      api<{ actions: AiAction[] }>(`/conversations/${conversationId}/actions`).then((r) => live && setActions(r.actions), () => {});
+    }, actionTick ? 150 : 0);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [conversationId, actionTick, aiReplies]);
+  const actionsBySeq = useMemo(() => {
+    const by = new Map<number, AiAction[]>();
+    for (const a of actions) by.set(a.messageSeq, [...(by.get(a.messageSeq) ?? []), a]);
+    return by;
+  }, [actions]);
   const onTyping = useTypingSignal(thread.setTyping);
 
   // Mark as read while the thread is open and visible.
@@ -476,7 +499,7 @@ function Thread({
   }
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "Teammate";
 
-  // Refresh the side panel when the visitor writes (new context) or the AI answers (new actions).
+  // Refresh the side panel's browser context when the visitor writes or the AI answers.
   const visitorMessages = thread.messages.filter((m) => m.authorType === "visitor" || m.authorType === "ai").length;
   return (
     <>
@@ -585,6 +608,10 @@ function Thread({
         onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId, undefined, p.internal)}
         onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
         mentionNames={members.map((m) => m.name)}
+        aiActions={(seq) => {
+          const calls = actionsBySeq.get(seq);
+          return calls ? <ToolCalls actions={calls} defaultOpen={false} /> : null;
+        }}
       />
       </ScrollArea>
       <Composer
@@ -603,7 +630,7 @@ function Thread({
         }}
       />
       </section>
-      <DebugPanel conversationId={conversationId} workspaceId={workspaceId} contact={conversation.contact} refreshKey={visitorMessages + conversation.debugIssueCount * 1000} />
+      <DebugPanel conversationId={conversationId} workspaceId={workspaceId} contact={conversation.contact} refreshKey={visitorMessages + conversation.debugIssueCount * 1000} actions={actions} />
       </div>
     </>
   );

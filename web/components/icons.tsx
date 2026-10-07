@@ -44,6 +44,7 @@ import {
   Tick02Icon,
   Upload04Icon,
   UserMultipleIcon,
+  Wrench01Icon,
 } from "@hugeicons/core-free-icons";
 import type { ComponentProps } from "react";
 
@@ -93,6 +94,7 @@ export const SidebarIcon = make(SidebarLeft01Icon);
 export const SignOutIcon = make(Logout01Icon);
 export const SunIcon = make(Sun03Icon);
 export const TextIcon = make(HugeTextIcon);
+export const ToolIcon = make(Wrench01Icon);
 export const TrashIcon = make(Delete02Icon);
 export const UploadIcon = make(Upload04Icon);
 export const UsersIcon = make(UserMultipleIcon);

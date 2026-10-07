@@ -115,7 +115,7 @@ npm run jun -- push support-agent -m "Refund window is now 30 days"
 |---|---|
 | `AGENTS.md` | Tone and rules. Frontmatter: `maxReplies`, `handoffTopics` |
 | `skills/<name>/SKILL.md` | Procedures in plain language, in the [Agent Skills](https://agentskills.io) format |
-| `tools/<name>.yaml` | HTTP lookups the AI may call, e.g. order status. Secrets go in headers as `{secrets.NAME}` (Worker secret `JUN_SECRET_NAME`) |
+| `tools/<name>.yaml` | HTTP lookups the AI may call, e.g. order status. Secrets go in headers as `{secrets.NAME}` (Worker secret `JUN_SECRET_NAME`). `status:` is the one line the customer sees while it runs ("Checking your order"; default "Looking that up"); they never see the tool's name, inputs or results |
 | `evals/<name>.yaml` | A customer message and what a good reply does: outcome, tools called, or criteria |
 
 Every save is a version you can restore, and every tool call is logged next to the conversation. In CI, set `JUN_DESK_URL` and `JUN_DESK_TOKEN` and run `jun eval --fail-on-change`.

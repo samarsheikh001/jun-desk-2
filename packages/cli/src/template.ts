@@ -43,6 +43,7 @@ description: The customer asks for a refund, their money back, or to cancel a ch
 `,
   "tools/lookup_order.yaml.example": `# Rename to lookup_order.yaml to enable. The AI calls it when a customer asks about an order.
 description: Look up an order by its number. Returns status, order date and total.
+status: Checking your order                      # what the customer sees while it runs (default "Looking that up")
 method: GET
 url: https://api.example.com/orders/{orderNumber}
 headers:

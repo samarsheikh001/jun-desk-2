@@ -1,5 +1,5 @@
 import { isStepCount, jsonSchema, streamText, tool, type ToolSet } from "ai";
-import type { Message } from "../../shared/protocol.ts";
+import type { AiStep, Message } from "../../shared/protocol.ts";
 import { INLINE_SKILLS_MAX_CHARS, parseReply, searchQuery, streamVisible, systemPrompt, toChatMessages, type ReplyOutcome } from "./agent.ts";
 import type { AgentConfig, ToolUser } from "./config.ts";
 import type { AgentModel } from "./providers.ts";
@@ -22,6 +22,8 @@ export interface RunInput {
   /** Called with what the visitor may see so far (control lines held back), and the knowledge it may cite. */
   onVisible?: (visible: string, hits: SearchHit[]) => void;
   onAction?: (action: ToolAction) => void;
+  /** Visitor-safe progress of each HTTP tool call (its `status:` label only). Live chats only. */
+  onStep?: (step: AiStep) => void;
   /** Use tools' mock responses (evals). */
   mockTools?: boolean;
   timezone?: string;
@@ -56,7 +58,13 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     input.onAction?.(action);
   };
 
-  const tools: ToolSet = httpTools(config.tools, { secrets: secretsFromEnv(input.env), mock: Boolean(input.mockTools), onAction, user: input.user ?? null });
+  const tools: ToolSet = httpTools(config.tools, {
+    secrets: secretsFromEnv(input.env),
+    mock: Boolean(input.mockTools),
+    onAction,
+    ...(input.onStep ? { onStep: input.onStep } : {}),
+    user: input.user ?? null,
+  });
   const skillChars = config.skills.reduce((n, s) => n + s.instructions.length + s.description.length, 0);
   const skillCatalog = skillChars > INLINE_SKILLS_MAX_CHARS;
   if (skillCatalog) {
