@@ -166,12 +166,12 @@ function applyLook(look: WidgetLook): void {
     root.style.setProperty("--accent", look.color);
     root.style.setProperty("--accent-text", textOn(look.color));
   }
-  // The bar and the island have one look each (the bar white with the chat on dark glass, the
-  // island dark glass tinted with the brand colour). Their page stays light: a frame whose colour
-  // scheme differs from the host page's gets an opaque backdrop.
+  // The bar has one look (a white bar, the chat on dark glass). Its page stays light: a frame
+  // whose colour scheme differs from the host page's gets an opaque backdrop. The island follows
+  // the theme like the chat window; its page stays light the same way (widget.css).
   root.classList.toggle("bar", asBar(look));
   root.classList.toggle("island", asIsland(look));
-  if (look.theme === "auto" || asBar(look) || asIsland(look)) delete root.dataset.theme;
+  if (look.theme === "auto" || asBar(look)) delete root.dataset.theme;
   else root.dataset.theme = look.theme;
   for (const [name, value] of Object.entries(radiusVars(look.radius))) root.style.setProperty(name, value);
 }
@@ -848,7 +848,7 @@ function WidgetThread({
     const live = Boolean(thread.aiStream?.text);
     const shown: IslandState = state === "answer" && thinking && !loading ? "thinking" : state;
     return (
-      <Island state={shown} live={live}>
+      <Island state={shown} live={live} onOpen={() => island.setOpen(true)}>
         {shown === "rest" && <RestPill suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} onOpen={() => island.setOpen(true)} />}
         {shown === "nudge" && opener && <NudgeLine text={opener.text} from={opener.from ?? null} onAsk={() => island.setOpen(true)} onDismiss={dismissNudge} />}
         {shown === "open" && (

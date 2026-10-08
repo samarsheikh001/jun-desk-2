@@ -194,7 +194,7 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
                 look.launcher === "bar"
                   ? "An \"Ask anything…\" bar instead of a button, showing your suggested questions. The chat opens above it on dark glass. Theme and rounding don't apply to it."
                   : look.launcher === "island"
-                    ? "A small pill at the bottom centre that changes shape with each moment: it opens into a question box, shrinks to a status line while the assistant works, grows around the answer, and offers help as one line. Dark glass tinted with your brand colour; theme, side and rounding don't apply to it. \"/\" opens it."
+                    ? "A small pill at the bottom centre that changes shape with each moment: it opens into a question box, shrinks to a status line while the assistant works, grows around the answer, and offers help as one line. Follows your theme, brand colour and rounding; the side doesn't apply. \"/\" opens it."
                     : "The greeting card shows your greeting above the button until the visitor dismisses it or opens the chat (once per visit)."
               }
               htmlFor="appear-launcher"

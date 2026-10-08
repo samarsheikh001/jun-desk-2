@@ -344,131 +344,137 @@ html.bar body {
 /* ---------- W-04 "island" launcher (D-39) ----------
    One control at the bottom centre that changes shape with each moment (web/widget/island.tsx): a
    resting pill, the question box, a status line while the assistant works, the latest answer, the
-   whole conversation, or a one-line offer of help. Dark glass tinted with the brand colour, in the
-   system font. html.island is a transparent frame the loader sizes and clips from what
-   useIslandFrame reports; the morph happens in here, with the frame's clip following it. */
+   whole conversation, or a one-line offer of help. It takes the chat window's look (D-34): the
+   theme's palette, the brand colour on the light and the send button, the corner rounding on its
+   open shapes, Outfit. html.island is a transparent frame the loader sizes and clips from what
+   useIslandFrame reports; the morph happens in here, with the frame's clip following it. The
+   page keeps a light colour scheme whatever the theme (a frame whose scheme differs from the host
+   page's gets an opaque backdrop); the palette still comes from data-theme. */
 :root.island, :root.island[data-theme] { color-scheme: light; }
 html.island, html.island body, html.island #root { background: transparent; }
-html.island body { overflow: hidden; color: #f5f5f7; font: 14px/1.45 system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"; }
-.i-root { --i-ink: #f5f5f7; --i-ink-2: rgba(255, 255, 255, 0.72); --i-ink-3: rgba(255, 255, 255, 0.5); --i-line: rgba(255, 255, 255, 0.1); --i-inset: rgba(255, 255, 255, 0.08); --i-hover: rgba(255, 255, 255, 0.13); position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 24px; overflow: visible; }
+html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Desk Outfit", Arial, sans-serif; }
+.i-root { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 24px; overflow: visible; }
 @media (max-width: 639px) { .i-root { padding-bottom: 12px; } }
-/* The shell springs to the measured size (the proposal's stiffness 380 / damping 30, about 0.65s with a slight overshoot). */
-.i-shell { position: relative; overflow: hidden; border-radius: 28px; background: rgba(20, 21, 25, 0.86); backdrop-filter: blur(24px) saturate(1.2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.35), 0 0 56px -12px color-mix(in srgb, var(--accent) 55%, transparent); transition: width 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), height 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), border-radius 0.65s cubic-bezier(0.34, 1.25, 0.5, 1); }
-@supports not (backdrop-filter: blur(24px)) { .i-shell { background: rgba(20, 21, 25, 0.96); } }
+/* The shell springs to the measured size (the proposal's stiffness 380 / damping 30, about 0.65s with a slight overshoot).
+   Its shadow stays well inside the 32px the frame keeps visible around it, so nothing is cut off. */
+.i-shell { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: 28px; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.1); transition: width 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), height 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), border-radius 0.65s cubic-bezier(0.34, 1.25, 0.5, 1); }
 /* While an answer streams in, the shell grows with it without bouncing. */
 .i-shell.i-live { transition-duration: 0.25s; transition-timing-function: ease-out; }
-.i-s-open, .i-s-answer, .i-s-panel { border-radius: 24px; }
-.i-tint { position: absolute; inset: 0; background: var(--accent); opacity: 0.07; pointer-events: none; }
+.i-s-open, .i-s-answer, .i-s-panel { border-radius: var(--radius); }
 /* Content sits on the bottom edge (the box stays put while the shell grows) and arrives from a blur after the old content has gone. */
 .i-view { position: absolute; left: 0; bottom: 0; animation: i-in 0.3s 0.14s both; }
 @keyframes i-in { from { opacity: 0; filter: blur(6px); } to { opacity: 1; filter: none; } }
-.i-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); }
+.i-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--accent); }
 .i-dot.pulse { animation: i-pulse 1.4s ease-in-out infinite; }
-@keyframes i-pulse { 0%, 100% { opacity: 0.55; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }
-.i-root button { font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.i-root :is(button, a, textarea, input):focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@keyframes i-pulse { 0%, 100% { opacity: 0.45; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }
+.i-root button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.i-root :is(button, a, textarea, input):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* Resting: the light, the hint typing out the suggested questions (or a new reply), and the "/" key. */
-.i-rest { display: flex; align-items: center; gap: 12px; width: 100%; height: 56px; padding: 0 16px 0 20px; border: 0; background: transparent; color: var(--i-ink); font-size: 14px; text-align: left; }
+.i-rest { display: flex; align-items: center; gap: 12px; width: 100%; height: 54px; padding: 0 16px 0 20px; border: 0; background: transparent; color: var(--text); font-size: 14px; text-align: left; transition: background 0.15s; }
+.i-rest:hover { background: var(--hover); }
 .i-rest:focus-visible { outline-offset: -4px; border-radius: 28px; }
-.i-rest .b-hint { position: static; flex: 1; min-width: 0; height: 20px; color: var(--i-ink-2); }
+.i-rest .b-hint { position: static; flex: 1; min-width: 0; height: 20px; color: var(--muted); }
 .i-rest-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.i-kbd { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--i-inset); box-shadow: inset 0 0 0 1px var(--i-line); color: var(--i-ink-3); font: 12px/1 "Jun Desk Mono", ui-monospace, monospace; }
+.i-kbd { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted); font: 12px/1 "Jun Desk Mono", ui-monospace, monospace; }
 @media (hover: none) { .i-kbd { display: none; } }
 
 /* Nudge: a one-line offer with Ask; × or 8 s puts it to rest. */
-.i-nudge { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 10px 10px 10px 20px; }
-.i-nudge-text { flex: 1; min-width: 0; color: var(--i-ink); font-size: 13.5px; line-height: 1.4; }
-.i-nudge-from { color: var(--i-ink-2); }
+.i-nudge { display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 9px 9px 9px 20px; }
+.i-nudge-text { flex: 1; min-width: 0; color: var(--text-soft); font-size: 13.5px; line-height: 1.45; }
+.i-nudge-from { color: var(--muted); }
 .i-ask { height: 32px; padding: 0 14px; border: 0; border-radius: 16px; background: var(--accent); color: var(--accent-text); font-size: 13px; font-weight: 600; }
-.i-ask:hover { opacity: 0.9; }
-.i-ghost { display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 10px; border: 0; border-radius: 14px; background: transparent; color: var(--i-ink-2); font-size: 12px; font-weight: 500; white-space: nowrap; transition: background 0.15s, color 0.15s; }
-.i-ghost:hover { background: var(--i-hover); color: var(--i-ink); }
+.i-ask:hover { background: var(--accent-hover); }
+.i-ghost { display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 10px; border: 0; border-radius: 14px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; transition: background 0.15s, color 0.15s; }
+.i-ghost:hover { background: var(--hover); color: var(--text); }
 .i-x { width: 28px; padding: 0; font-size: 20px; font-weight: 300; line-height: 1; }
 
 /* Thinking: one specific line (a running tool step's label, else "Thinking…"). */
-.i-status { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 20px; }
-.i-status-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; background: linear-gradient(90deg, var(--i-ink-2) 35%, var(--i-ink) 50%, var(--i-ink-2) 65%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: w-shimmer 1.6s linear infinite; }
+.i-status { display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 20px; }
+.i-status-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; background: linear-gradient(90deg, var(--muted) 35%, var(--text) 50%, var(--muted) 65%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: w-shimmer 1.6s linear infinite; }
 
 /* Open: the suggested questions over the box. */
 .i-open { display: flex; flex-direction: column; padding: 10px; }
 .i-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px 10px; }
-.i-chip { max-width: 100%; padding: 7px 12px; border: 0; border-radius: 16px; background: var(--i-inset); box-shadow: inset 0 0 0 1px var(--i-line); color: var(--i-ink); font-size: 13px; line-height: 1.4; text-align: left; animation: b-rise 0.35s cubic-bezier(0.22, 0.61, 0.36, 1) both; transition: background 0.15s; }
-.i-chip:hover { background: var(--i-hover); }
-.i-error { margin: 0; padding: 6px 12px 8px; color: #ff9b91; font-size: 13px; }
+.i-chip { max-width: 100%; padding: 6px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-size: 12.5px; line-height: 1.5; text-align: left; animation: b-rise 0.35s cubic-bezier(0.22, 0.61, 0.36, 1) both; transition: background 0.15s; }
+.i-chip:hover { background: var(--hover); }
+.i-error { margin: 0; padding: 6px 12px 8px; color: var(--error); font-size: 13px; }
 
 /* The header of the answer and panel states. */
 .i-head { display: flex; align-items: center; gap: 10px; flex: none; height: 48px; padding: 0 10px 0 20px; }
-.i-avatar { width: 20px; height: 20px; flex: none; border-radius: 6px; object-fit: cover; }
-.i-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--i-ink); font-size: 13px; font-weight: 600; }
+.i-avatar { width: 20px; height: 20px; flex: none; border-radius: var(--radius-xs); object-fit: contain; }
+.i-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; font-weight: 600; }
 .i-spacer { flex: 1; }
-.i-exit { height: 26px; padding: 0 10px; border: 0; border-radius: 13px; background: var(--i-inset); box-shadow: inset 0 0 0 1px var(--i-line); color: var(--i-ink); font-size: 12px; font-weight: 500; white-space: nowrap; }
-.i-exit:hover { background: var(--i-hover); }
+.i-exit { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-xs); background: var(--bg); color: var(--text); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.i-exit:hover { background: var(--hover); }
 
-/* Answer (the latest exchange) and panel (the whole conversation). */
+/* Answer (the latest exchange) and panel (the whole conversation): the chat window's thread styles. */
 .i-answer, .i-panel { display: flex; flex-direction: column; }
 .i-panel { height: 100%; }
-.i-body { position: relative; overflow-y: auto; overscroll-behavior: contain; color: var(--i-ink); font-size: 14px; line-height: 1.45; }
+.i-body { position: relative; overflow-y: auto; overscroll-behavior: contain; color: var(--text); font-size: 14px; line-height: 1.5; }
 .i-answer .i-body { max-height: min(340px, calc(100vh - 190px)); }
 .i-panel .i-body { flex: 1; min-height: 0; }
 .i-body::-webkit-scrollbar { width: 10px; }
 .i-body::-webkit-scrollbar-track { background: transparent; }
 .i-body::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
-.i-body::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 10px; background: rgba(255, 255, 255, 0.18) padding-box; }
-.i-body:hover::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.32); }
-@supports not selector(::-webkit-scrollbar) { .i-body { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.25) transparent; } }
+.i-body::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 10px; background: color-mix(in srgb, var(--muted) 30%, transparent) padding-box; }
+.i-body:hover::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--muted) 55%, transparent); }
+@supports not selector(::-webkit-scrollbar) { .i-body { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 40%, transparent) transparent; } }
 .i-body .messages { flex: none; display: block; overflow: visible; gap: 0; padding: 2px 20px 6px; }
-.i-body .msg { display: flow-root; max-width: 100%; padding-bottom: 12px; }
+.i-body .msg { display: flow-root; max-width: 100%; padding-bottom: 12px; font-size: 14px; line-height: 1.6; }
 .i-body .msg .author, .i-body .seen, .i-body .msg .meta { display: none; }
-.i-body .bubble { padding: 0; border: 0; border-radius: 14px; background: transparent; color: var(--i-ink); font-size: 14px; line-height: 1.45; }
-.i-body .msg.ai .bubble { background: transparent; color: var(--i-ink); }
-.i-body .msg.own .bubble { float: right; max-width: 85%; padding: 8px 12px; background: var(--i-inset); color: var(--i-ink); }
+.i-body .bubble { padding: 0; border: 0; border-radius: var(--radius-md); background: none; color: var(--text-soft); overflow-wrap: anywhere; white-space: pre-wrap; }
+.i-body .msg.ai .bubble { background: none; color: var(--text-soft); }
+.i-body .msg.own .bubble { float: right; max-width: 85%; padding: 8px 12px; background: var(--bubble); color: var(--bubble-text); }
 .i-body .msg.own > :not(.bubble) { clear: both; text-align: right; }
 /* In the answer state the question is a quiet line above its answer. */
-.i-answer .i-body .msg.own .bubble { float: none; max-width: 100%; padding: 0 0 2px; background: transparent; color: var(--i-ink-3); font-size: 12.5px; }
 .i-answer .i-body .msg.own { margin-left: 0; align-self: flex-start; text-align: left; }
+.i-answer .i-body .msg.own .bubble { float: none; max-width: 100%; padding: 0 0 2px; background: none; color: var(--muted); font-size: 12.5px; }
 .i-answer .i-body .msg.own > :not(.bubble) { text-align: left; }
-.i-body .bubble.typing { display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 56px; height: 32px; padding: 0; border-radius: 16px; background: var(--i-inset); }
-.i-body .typing span { background: var(--i-ink); }
-.i-body .bubble code, .i-body .cite { background: var(--i-inset); color: var(--i-ink); }
-.i-body .sources, .i-body .sources a { color: var(--i-ink-2); }
-.i-body .attachments img { border: 0; border-radius: 14px; }
-.i-body .attachments .file { border: 0; border-radius: 14px; background: var(--i-inset); color: var(--i-ink); }
-.i-body .system-msg { display: block; padding: 0 0 12px; color: var(--i-ink-2); font-size: 12px; text-align: center; }
+.i-body .bubble.typing { display: flex; align-items: center; gap: 3px; min-height: 22px; padding: 0; }
+.i-body .typing span { background: var(--focus); }
+.i-body .bubble code { font-family: "Jun Desk Mono", monospace; font-size: 0.88em; background: var(--code); border-radius: 4px; padding: 0.15em 0.35em; }
+.i-body .bubble a, .i-body .sources a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+.i-body .cite { padding: 0 3px; border-radius: 4px; background: var(--code); color: var(--link); text-decoration: none; }
+.i-body .sources { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.i-body .attachments img { border-color: var(--border); border-radius: var(--radius-md); }
+.i-body .attachments .file { border-color: var(--border); border-radius: var(--radius-sm); background: var(--surface); font-size: 13px; }
+.i-body .system-msg { display: block; padding: 0 0 12px; color: var(--muted); font-size: 12px; text-align: center; }
 .i-body .w-opener { margin: 4px 20px 0; }
-.i-body .w-reply { padding: 6px 10px; border-color: var(--i-line); border-radius: 12px; background: var(--i-inset); color: var(--i-ink); font-size: 12.5px; }
+.i-body .w-reply { padding: 5px 9px; border: 1px solid var(--border); border-radius: var(--radius-xs); background: var(--bg); color: inherit; font-size: 11.5px; line-height: 1.5; }
 .i-body .w-human { padding: 0 20px 10px; border: 0; background: none; text-align: left; }
-.i-body .w-human button.link { color: var(--i-ink-2); font-size: 12px; text-decoration: underline; }
-.i-body .w-csat, .i-body .w-email { margin: 0 20px 10px; padding: 10px 12px; border: 0; border-radius: 14px; background: var(--i-inset); color: var(--i-ink); }
-.i-body .w-csat button.ghost, .i-body .w-email button.ghost { color: var(--i-ink); border-color: var(--i-line); }
-.i-body input, .i-body textarea { border: 0; border-radius: 10px; background: #fff; color: #141416; }
-.i-body .messages.w-skel { --sk: rgba(255, 255, 255, 0.08); --sk-hi: rgba(255, 255, 255, 0.16); display: flex; padding: 8px 20px; }
-.i-body .w-answer { --a-ink: #f5f5f7; --a-ink-2: rgba(255, 255, 255, 0.78); --a-ink-3: rgba(255, 255, 255, 0.55); --a-inset: rgba(255, 255, 255, 0.08); --a-hover: rgba(255, 255, 255, 0.12); --a-line: rgba(255, 255, 255, 0.12); --a-canvas: rgb(40, 41, 46); }
+.i-body .w-human button.link { color: var(--muted); font-size: 12px; text-decoration: underline; }
+.i-body .w-csat, .i-body .w-email { gap: 8px; margin: 0 20px 10px; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--quote); color: var(--text-soft); font-size: 12px; }
+.i-body .w-email input, .i-body .w-csat textarea { padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--field); color: var(--text); font-size: 13px; outline: none; }
+.i-body .w-email button:not(.w-x, .ghost), .i-body .w-csat button:not(.w-x, .w-thumb, .ghost) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.i-body .messages.w-skel { display: flex; padding: 8px 20px; }
 
-/* The box: one dark field with "+", the input and Send. */
+/* The box: the chat window's flat filled field, with "+", the input and Send. */
 .i-view .composer.pill { flex: none; padding: 0 8px 8px; }
 .i-open .composer.pill { padding: 0; }
-.i-view .composer-box { min-height: 44px; padding: 6px; border-radius: 20px; background: var(--i-inset); box-shadow: inset 0 0 0 1px var(--i-line); justify-content: center; }
-.i-view .composer.pill textarea { min-height: 32px; max-height: 154px; margin: 0; padding: 6px 8px; border: 0; border-radius: 0; background: transparent; color: var(--i-ink); font-family: inherit; font-size: 14px; line-height: 20px; outline: none; }
-.i-view .composer.pill textarea::placeholder { color: var(--i-ink-3); opacity: 1; }
-.i-view .composer-plus { width: 32px; height: 32px; border-radius: 16px; background: transparent; color: var(--i-ink-2); }
-.i-view .composer-plus:hover:not(:disabled), .i-view .composer-plus.active { background: var(--i-hover); color: var(--i-ink); }
-.i-view .composer-send { width: 32px; height: 32px; border-radius: 16px; background: var(--accent); color: var(--accent-text); }
-.i-view .composer-send:hover:not(:disabled) { opacity: 0.9; }
-.i-view .composer.pill .composer-send:disabled { opacity: 1; background: var(--i-inset); color: var(--i-ink-3); }
-.i-view .composer-file { border-radius: 13px; background: var(--i-inset); color: var(--i-ink); }
-.i-view .composer-menu { position: relative; margin: 0 0 6px; padding: 4px; border-radius: 14px; background: rgb(40, 41, 46); box-shadow: inset 0 0 0 1px var(--i-line), 0 8px 24px rgba(0, 0, 0, 0.4); color: var(--i-ink); }
-.i-view .composer-menu-glide { border-radius: 10px; background: var(--i-hover); }
-.i-view .composer-menu button { border-radius: 10px; color: inherit; }
-.i-view .composer-shot { margin: 0 0 8px; border-radius: 14px; background: var(--i-inset); color: var(--i-ink); }
-.i-view .composer-shot-actions button { color: var(--i-ink); }
+.i-view .composer-box { min-height: 44px; padding: 6px; border-radius: var(--radius); background: var(--hover); justify-content: center; }
+.i-view .composer.pill textarea { min-height: 30px; max-height: 120px; margin: 0; padding: 5px 6px; border: 0; border-radius: 0; background: transparent; color: var(--text); font-size: 13px; line-height: 20px; outline: none; }
+.i-view .composer.pill textarea::placeholder { color: var(--muted); }
+.i-view .composer-plus { width: 30px; height: 30px; border-radius: var(--radius-xs); background: transparent; color: var(--muted); }
+.i-view .composer-plus:hover:not(:disabled), .i-view .composer-plus.active { background: var(--border-soft); color: var(--text); }
+.i-view .composer-send { width: 30px; height: 30px; border-radius: var(--radius-xs); background: var(--accent); color: var(--accent-text); }
+.i-view .composer-send:hover:not(:disabled) { background: var(--accent-hover); }
+.i-view .composer.pill .composer-send:disabled { opacity: 1; background: var(--border); color: var(--muted); }
+.i-view .composer-file { border-radius: var(--radius-xs); background: var(--surface); box-shadow: 0 0 0 1px var(--border); color: var(--text-soft); }
+.i-view .composer-menu { position: relative; margin: 0 0 6px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), 0 1px 3px rgb(0 0 0 / 0.06); }
+.i-view .composer-menu-glide { border-radius: var(--radius-xs); background: var(--hover); }
+.i-view .composer-menu button { border-radius: var(--radius-xs); color: var(--text); }
+.i-view .composer-menu-icon { color: var(--text-soft); }
+.i-view .composer-shot { margin: 0 0 8px; border-color: var(--border); border-radius: var(--radius-md); background: var(--quote); }
+.i-view .composer-shot-actions button { padding: 5px 9px; font-size: 12px; }
+.i-view .composer-shot-actions button:not(.ghost) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 @media (hover: none) and (pointer: coarse) { .i-view .composer.pill textarea { font-size: 16px; } }
 /* Reduce motion: no spring, bounce, blur or shimmer; states cross-fade. */
 @media (prefers-reduced-motion: reduce) {
   .i-shell { transition: none; }
   .i-view { animation: i-fade 0.15s both; }
   .i-chip, .i-dot.pulse { animation: none; }
-  .i-status-text { animation: none; background: none; color: var(--i-ink-2); }
+  .i-status-text { animation: none; background: none; color: var(--muted); }
 }
 @keyframes i-fade { from { opacity: 0; } to { opacity: 1; } }
 

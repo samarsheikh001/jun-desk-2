@@ -19,8 +19,8 @@ export type IslandState = "rest" | "nudge" | "open" | "thinking" | "answer" | "p
 
 /** Each state's width; phones cap every width at the frame minus 24px. */
 const WIDTHS: Record<IslandState, number> = { rest: 360, nudge: 440, open: 660, thinking: 420, answer: 560, panel: 660 };
-/** Room around the island kept visible for its glow and shadow. */
-const GLOW = 24;
+/** Room around the island kept visible for its shadow (which `.i-shell` keeps well inside it). */
+const GLOW = 32;
 /** The island's distance from the bottom of the viewport (matches `.i-root`'s padding). */
 const edge = (width: number) => (width < 640 ? 12 : 24);
 /** The frame's spring: a slight overshoot, about 0.65s (the proposal's stiffness 380 / damping 30). */
@@ -28,7 +28,7 @@ export const SPRING = "cubic-bezier(.34, 1.25, .5, 1)";
 
 /**
  * Sizes the frame: a fixed transparent box at the bottom centre (up to 720×680), clipped to the
- * island's box plus its glow so the rest of the frame doesn't take the page's clicks. The clip
+ * island's box plus its shadow so the rest of the frame doesn't take the page's clicks. The clip
  * animates with the same curve as the island, so the two stay together.
  */
 function useIslandFrame(box: { w: number; h: number }, live: boolean): void {
@@ -50,8 +50,21 @@ function useIslandFrame(box: { w: number; h: number }, live: boolean): void {
  * the shell then springs to that exact size (measure, then move). A key per state swaps the content
  * with a short fade and un-blur.
  */
-export function Island({ state, live, children }: { state: IslandState; live: boolean; children: ReactNode }) {
+export function Island({ state, live, onOpen, children }: { state: IslandState; live: boolean; onOpen: () => void; children: ReactNode }) {
   const content = useRef<HTMLDivElement>(null);
+  // "/" opens the resting island from inside the frame too (after Escape the focus is still here;
+  // the loader handles the key on the host page).
+  useEffect(() => {
+    if (state !== "rest" && state !== "nudge") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        onOpen();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [state, onOpen]);
   const [measured, setMeasured] = useState(56);
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
@@ -76,7 +89,6 @@ export function Island({ state, live, children }: { state: IslandState; live: bo
   return (
     <div className="i-root">
       <div className={`i-shell i-s-${state}${live ? " i-live" : ""}`} style={{ width: w, height: h }} role="region" aria-label="Chat">
-        <div className="i-tint" aria-hidden="true" />
         <div key={state} className="i-view" ref={content} style={{ width: w, ...(state === "panel" ? { height: panelHeight } : {}) }}>
           {children}
         </div>
