@@ -450,7 +450,7 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-body .messages.w-skel { display: flex; padding: 8px 20px; }
 
 /* The box: the chat window's flat filled field, with "+", the input and Send. */
-.i-view .composer.pill { flex: none; padding: 0 8px 8px; }
+.i-view .composer.pill { flex: none; padding: 0 8px 8px; border: 0; background: transparent; }
 .i-open .composer.pill { padding: 0; }
 .i-view .composer-box { min-height: 44px; padding: 6px; border-radius: var(--radius); background: var(--hover); justify-content: center; }
 .i-view .composer.pill textarea { min-height: 30px; max-height: 120px; margin: 0; padding: 5px 6px; border: 0; border-radius: 0; background: transparent; color: var(--text); font-size: 13px; line-height: 20px; outline: none; }
