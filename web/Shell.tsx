@@ -7,6 +7,7 @@ import {
   SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar.tsx";
 import { DeskIcon } from "./components/DeskIcon.tsx";
+import { PageErrorBoundary } from "./components/PageErrorBoundary.tsx";
 import { ThemeButton } from "./components/ThemeButton.tsx";
 import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
 import { api, type Me } from "./api.ts";
@@ -340,6 +341,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <div className="brand"><DeskIcon /><span>Jun Desk</span></div>
       </header>
       <ScrollArea render={<main />} className="desk-main" contentClassName="desk-main-body">
+      <PageErrorBoundary key={section}>
       {section === "knowledge" ? (
         <KnowledgePage workspaceId={workspace.workspaceId} canEdit={canEdit} />
       ) : section === "welcome" ? (
@@ -355,8 +357,9 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       ) : (
         <InboxPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} me={me.user} hub={hub} conversationId={conversationId} />
       )}
+      </PageErrorBoundary>
       </ScrollArea>
-      {settingsOpen && <SettingsDialog me={me} path={path} onClose={closeSettings} />}
+      {settingsOpen && <PageErrorBoundary><SettingsDialog me={me} path={path} onClose={closeSettings} /></PageErrorBoundary>}
       </SidebarInset>
       {overlay === "palette" && <CommandPalette workspaceId={workspace.workspaceId} meId={me.user.id} onClose={closeOverlay} onHelp={openHelp} onToast={showNotice} />}
       {overlay === "help" && <ShortcutsHelp onClose={closeOverlay} />}

@@ -155,6 +155,8 @@
 
 **Before launch (checklist):** re-gate ChatGPT sign-in and switch the owner's desk to an API key (D-27: it's always on for now so the owner's desk runs on their ChatGPT plan); CLA bot (D-14); make the repo public and test the Deploy button; demo video; post.
 
+**Order (2026-10-08):** done: widget polish (first-message remount, skeleton, scrollbars), the Visitors crash fix and a page error boundary in the desk. *Under consideration next:* CLA bot, demo video (could be recorded as a walkthrough of the desk), launch post. *Backlog until then:* retry the Deploy button (Cloudflare GitHub app needs access to all repos; delete the empty `jun-desk-test` repo first) and re-gating ChatGPT sign-in (D-27). Both stay launch blockers.
+
 | ID | Feature | Size | |
 |---|---|---|---|
 | T-11 | First-run setup wizard | M | 🚀 |
