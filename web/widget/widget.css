@@ -594,7 +594,7 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .w-act-ghost:hover { background: var(--hover); color: var(--text); }
 .w-act-ghost:disabled { opacity: 0.6; cursor: default; }
 .w-act-status { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--text-soft); }
-.w-act-status svg { width: 15px; height: 15px; flex: none; color: var(--accent); }
+.w-act-status svg { width: 15px; height: 15px; flex: none; color: var(--text); } /* not the brand colour: it can be near black on a dark theme */
 .w-act-state { font-weight: 600; color: var(--text); }
 .w-act-result { min-width: 0; overflow-wrap: anywhere; }
 .w-act-result::before { content: "·"; margin-right: 7px; color: var(--muted); }
