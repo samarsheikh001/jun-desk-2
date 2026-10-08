@@ -73,6 +73,8 @@ function sendInput(body: Record<string, unknown>) {
     attachments: Array.isArray(body.attachments) ? (body.attachments as Attachment[]) : [],
     // Debug snapshot from the loader (P1); sanitized by the Conversation object.
     context: body.context,
+    // AI-21: the page's actions; sanitized by the Conversation object.
+    ...(body.actions !== undefined ? { actions: body.actions } : {}),
   };
 }
 

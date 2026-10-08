@@ -1,6 +1,7 @@
 // Shared by the Worker, the dashboard and the widget. Plain TypeScript with no Worker,
 // DOM or Node APIs, so every tsconfig can include this file.
 
+import type { ActionStatus, MessageAction } from "./actions.ts";
 import type { ConversationIntent } from "./intents.ts";
 import type { NotificationPayload } from "./notifications.ts";
 
@@ -31,6 +32,8 @@ export interface MessageMeta {
   mentions?: string[];
   /** S-08: on the internal "Issue created" note. */
   issue?: ConversationIssue;
+  /** AI-21: the page action this AI message proposed; its status changes as the widget runs it. */
+  action?: MessageAction;
 }
 
 export type IssueProvider = "github" | "linear";
@@ -107,11 +110,16 @@ export interface ConversationSummary {
 export type ClientEvent =
   /** `context`: the visitor's debug snapshot from the loader (visitors only; see shared/debug.ts). */
   /** `internal`: an agent's note (I-05), never shown to the visitor or the AI. */
-  | { type: "send"; clientMsgId: string; body: string; attachments?: Attachment[]; context?: unknown; internal?: boolean }
+  /** `actions`: AI-21, the page actions on the visitor's page right now (visitors only; see shared/actions.ts). */
+  | { type: "send"; clientMsgId: string; body: string; attachments?: Attachment[]; context?: unknown; internal?: boolean; actions?: unknown }
   | { type: "typing"; typing: boolean }
   | { type: "read"; seq: number }
   /** Visitor asks for a person (W-07). */
-  | { type: "handoff" };
+  | { type: "handoff" }
+  /** AI-21: the visitor's answers for a proposed action's missing params (visitors only). */
+  | { type: "action_input"; runId: string; input: Record<string, unknown> }
+  /** AI-21: what happened when the page ran (or didn't run) the action (visitors only). */
+  | { type: "action_result"; runId: string; status: Exclude<ActionStatus, "pending">; result?: string; canUndo?: boolean };
 
 /** One tool call as the visitor sees it (`ai_step`): a label and whether it's still running. */
 export interface AiStep {

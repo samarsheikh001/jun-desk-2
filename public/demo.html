@@ -35,6 +35,11 @@
         <p class="note">Try it: click a button (one request fails, one throws a JavaScript error, and Export does nothing however often you click it), then ask in the chat "why can't I pay my invoice?". The widget shares what went wrong, masked, so the AI and your team can see it.</p>
         <p class="note">Cancel subscription opens the chat with the <code>cancel</code> intent (AI-20; needs a <code>skills/…/SKILL.md</code> with <code>intent: cancel</code>, like the <code>jun init</code> starter). "Cancel anyway" closes it and runs this page's own cancel step.</p>
       </div>
+      <div class="card" id="plans">
+        <h2>Page actions</h2>
+        <p>This page registers what can be done here, as WebMCP tools (AI-21): <code>upgrade_plan</code> (asks which plan, then confirms), <code>export_csv</code> (runs at once), and a plain <code>document.modelContext.registerTool</code> call for <code>show_usage</code>. Try "upgrade me to the growth plan", "export my usage", or "show my usage".</p>
+        <p class="note" id="plan-note">Current plan: <strong id="plan-name">Team</strong></p>
+      </div>
       <p class="note" id="missing" hidden>Add <code>?key=wk_…</code> to the URL. Widget → Install in the desk has a link with your key.</p>
     </main>
     <script>
@@ -57,6 +62,39 @@
           onExit: function () { document.getElementById("status").textContent = "Subscription cancelled (demo: your app's own cancel step runs here)."; },
         });
       };
+      // AI-21 page actions: a WebMCP tool plus Jun's extras (pages, element, context, undo), and a plain WebMCP registration.
+      var plan = "team";
+      function registerActions() {
+        var card = document.getElementById("plans");
+        window.JunDesk.registerAction({
+          name: "upgrade_plan",
+          description: "Change this account's plan",
+          inputSchema: { type: "object", properties: { plan: { type: "string", enum: ["starter", "team", "growth"], description: "The plan to move to" } }, required: ["plan"] },
+          annotations: { consequentialHint: true },
+          element: card,
+          context: function () { return { currentPlan: plan }; },
+          execute: function (input) {
+            var previous = plan;
+            plan = input.plan;
+            document.getElementById("plan-name").textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
+            return new Promise(function (r) { setTimeout(function () { r({ summary: "Moved to the " + plan + " plan", previous: previous }); }, 600); });
+          },
+          undo: function (result) { plan = result.previous; document.getElementById("plan-name").textContent = plan.charAt(0).toUpperCase() + plan.slice(1); },
+        });
+        window.JunDesk.registerAction({
+          name: "export_csv",
+          description: "Download this month's usage as a CSV file",
+          risk: "auto",
+          execute: function () { document.getElementById("status").textContent = "usage-2026-10.csv downloaded (demo)"; return "usage-2026-10.csv (18 rows)"; },
+        });
+        document.modelContext.registerTool({
+          name: "show_usage",
+          description: "Scroll to the usage section and show this month's numbers",
+          inputSchema: { type: "object", properties: {} },
+          annotations: { readOnlyHint: true },
+          execute: function () { document.getElementById("chart").scrollIntoView({ block: "center" }); return "Usage: 4,210 events this month"; },
+        });
+      }
       var key = new URLSearchParams(location.search).get("key");
       if (key) {
         var s = document.createElement("script");
@@ -67,6 +105,7 @@
         if (new URLSearchParams(location.search).get("consent")) s.setAttribute("data-consent", "required");
         // ?capture=off tries the site switch that turns off debug capture (and with it the nudges).
         if (new URLSearchParams(location.search).get("capture") === "off") s.setAttribute("data-capture", "off");
+        s.onload = registerActions;
         document.body.appendChild(s);
       } else {
         document.getElementById("missing").hidden = false;

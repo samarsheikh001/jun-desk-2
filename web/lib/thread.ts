@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ActionStatus } from "../../shared/actions.ts";
 import type { AiStep, Attachment, ClientEvent, ConversationEvent, ConversationSummary, Message, Source } from "../../shared/protocol.ts";
 import { LiveSocket, type SocketState } from "./socket.ts";
 
@@ -132,9 +133,9 @@ export function useThread(options: {
 
   /** Optimistically shows the message and sends it over the socket. Returns false if offline. */
   const send = useCallback(
-    (body: string, attachments: Attachment[] = [], clientMsgId: string = crypto.randomUUID(), context?: unknown, internal = false) => {
+    (body: string, attachments: Attachment[] = [], clientMsgId: string = crypto.randomUUID(), context?: unknown, internal = false, actions?: unknown) => {
       setPending((p) => [...p.filter((m) => m.clientMsgId !== clientMsgId), { clientMsgId, body, attachments, ...(internal ? { internal } : {}) }]);
-      const sent = sendEvent({ type: "send", clientMsgId, body, attachments, ...(context !== undefined ? { context } : {}), ...(internal ? { internal } : {}) });
+      const sent = sendEvent({ type: "send", clientMsgId, body, attachments, ...(context !== undefined ? { context } : {}), ...(internal ? { internal } : {}), ...(actions !== undefined ? { actions } : {}) });
       if (!sent) setPending((p) => p.map((m) => (m.clientMsgId === clientMsgId ? { ...m, failed: "Not connected. Retry when back online." } : m)));
       return sent;
     },
@@ -152,6 +153,11 @@ export function useThread(options: {
     aiSteps,
     /** Visitor asks for a person (W-07). */
     requestHuman: () => sendEvent({ type: "handoff" }),
+    /** AI-21: the visitor's answers for a proposed action's missing params. */
+    actionInput: (runId: string, input: Record<string, unknown>) => sendEvent({ type: "action_input", runId, input }),
+    /** AI-21: what the page did with the action (or that it was cancelled, gone, undone). */
+    actionResult: (runId: string, status: Exclude<ActionStatus, "pending">, result?: string, canUndo?: boolean) =>
+      sendEvent({ type: "action_result", runId, status, ...(result ? { result } : {}), ...(canUndo ? { canUndo } : {}) }),
     merge,
     send,
     setTyping: (isTyping: boolean) => sendEvent({ type: "typing", typing: isTyping }),

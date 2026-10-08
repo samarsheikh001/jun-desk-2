@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { AiStep, Attachment, Message, Source } from "../../shared/protocol.ts";
+import { actionStatusText, actionSummary, type MessageAction } from "../../shared/actions.ts";
 import { mentionParts } from "../../shared/inbox.ts";
 import { formatSize, formatTime, isImage, type PendingMessage } from "../lib/thread.ts";
 
@@ -70,6 +71,10 @@ export interface AiAnswerView {
   latest: boolean;
   /** Tool steps of this reply seen live (visitor-safe labels); empty for history. */
   steps: AiStep[];
+  /** AI-21: the page action this reply proposed (the widget draws its card). */
+  action?: MessageAction;
+  /** When the message was written (the card runs an `auto` action by itself only for a fresh reply). */
+  createdAt?: number;
 }
 
 /**
@@ -162,7 +167,7 @@ export function MessageList({
     if (m.authorType === "ai" && renderAi) {
       return (
         <div key={m.clientMsgId} className={`msg ${own ? "own" : "other"} ai`}>
-          {renderAi({ body: m.body, sources: m.meta.sources ?? [], followUps: m.meta.followUps ?? [], streaming: false, latest: m === last && pending.length === 0 && !aiStream?.text, steps: aiSteps?.[m.clientMsgId] ?? [] })}
+          {renderAi({ body: m.body, sources: m.meta.sources ?? [], followUps: m.meta.followUps ?? [], streaming: false, latest: m === last && pending.length === 0 && !aiStream?.text, steps: aiSteps?.[m.clientMsgId] ?? [], ...(m.meta.action ? { action: m.meta.action } : {}), createdAt: m.createdAt })}
           <Attachments attachments={m.attachments} />
         </div>
       );
@@ -174,6 +179,12 @@ export function MessageList({
         {m.body && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : m.body}</div>}
         <Attachments attachments={m.attachments} />
         {m.authorType === "ai" && <Sources sources={m.meta.sources} />}
+        {m.authorType === "ai" && m.meta.action && (
+          <div className="ai-page-action small muted" title={`Page action ${m.meta.action.name} · run ${m.meta.action.runId}`}>
+            Page action: {actionSummary(m.meta.action)} · {actionStatusText(m.meta.action.status)}
+            {m.meta.action.result && m.meta.action.status !== "pending" ? ` · ${m.meta.action.result}` : ""}
+          </div>
+        )}
         {m.seq === lastSeenSeq && <div className="seen muted small">Seen</div>}
       </div>
     );

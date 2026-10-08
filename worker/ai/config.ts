@@ -45,7 +45,20 @@ export interface ToolSpec {
   status?: string;
 }
 
-export type EvalOutcome = "answer" | "handoff" | "escalate";
+/** `action`: AI-21, the reply proposed a page action (the card), with or without text. */
+export type EvalOutcome = "answer" | "handoff" | "escalate" | "action";
+
+/** AI-21: a page action a test case puts on the customer's page (the WebMCP shape, plus `mock`). */
+export interface EvalAction {
+  name: string;
+  description: string;
+  inputSchema?: unknown;
+  risk?: string;
+  context?: unknown;
+  key?: string;
+  /** What the page would return when it runs; fed back as the result for later turns. */
+  mock?: string;
+}
 
 export interface EvalCase {
   file: string;
@@ -53,7 +66,9 @@ export interface EvalCase {
   messages: string[];
   /** AI-20: run the case as a chat the host app opened with this intent (JunDesk.open({ intent })). */
   intent?: string;
-  expect: { outcome?: EvalOutcome; tools?: string[]; criteria?: string };
+  /** AI-21: the actions on the customer's page for every turn of the case. */
+  actions?: EvalAction[];
+  expect: { outcome?: EvalOutcome; tools?: string[]; criteria?: string; action?: { name: string; input?: Record<string, unknown> } };
 }
 
 export interface AgentConfig {
@@ -338,7 +353,7 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
   };
 }
 
-const OUTCOMES: EvalOutcome[] = ["answer", "handoff", "escalate"];
+const OUTCOMES: EvalOutcome[] = ["answer", "handoff", "escalate", "action"];
 
 function parseEvals(path: string, text: string, issues: ConfigIssue[]): EvalCase[] {
   const data = yaml(path, text, issues);
@@ -354,7 +369,7 @@ function parseEvals(path: string, text: string, issues: ConfigIssue[]): EvalCase
       issues.push({ path, message: `${where}: must be a map with name, message(s) and expect.` });
       return;
     }
-    unknownKeys(path, raw, ["name", "message", "messages", "intent", "expect"], issues, `${where}: `);
+    unknownKeys(path, raw, ["name", "message", "messages", "intent", "actions", "expect"], issues, `${where}: `);
     const name = typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : where;
     const messages =
       typeof raw.message === "string" ? [raw.message]
@@ -368,13 +383,36 @@ function parseEvals(path: string, text: string, issues: ConfigIssue[]): EvalCase
       issues.push({ path, message: `${name}: intent must be an intent name (like cancel), as your app passes to JunDesk.open.` });
       return;
     }
+    const actions: EvalAction[] = [];
+    if (raw.actions !== undefined) {
+      if (!Array.isArray(raw.actions)) {
+        issues.push({ path, message: `${name}: actions must be a list of page actions (name, description, inputSchema…).` });
+        return;
+      }
+      for (const [j, a] of raw.actions.entries()) {
+        if (!isRecord(a) || typeof a.name !== "string" || !a.name.trim() || typeof a.description !== "string" || !a.description.trim()) {
+          issues.push({ path, message: `${name}: actions[${j}] needs a name and a description.` });
+          return;
+        }
+        unknownKeys(path, a, ["name", "description", "inputSchema", "risk", "context", "key", "mock", "annotations"], issues, `${name}: actions[${j}].`);
+        actions.push({
+          name: a.name.trim(),
+          description: a.description.trim(),
+          ...(a.inputSchema !== undefined ? { inputSchema: a.inputSchema } : {}),
+          ...(typeof a.risk === "string" ? { risk: a.risk } : {}),
+          ...(a.context !== undefined ? { context: a.context } : {}),
+          ...(typeof a.key === "string" ? { key: a.key } : {}),
+          ...(typeof a.mock === "string" ? { mock: a.mock } : {}),
+        });
+      }
+    }
     const expect: EvalCase["expect"] = {};
     if (raw.expect !== undefined) {
       if (!isRecord(raw.expect)) {
         issues.push({ path, message: `${name}: expect must be a map.` });
         return;
       }
-      unknownKeys(path, raw.expect, ["outcome", "tools", "criteria"], issues, `${name}: expect.`);
+      unknownKeys(path, raw.expect, ["outcome", "tools", "criteria", "action"], issues, `${name}: expect.`);
       if (raw.expect.outcome !== undefined) {
         if (OUTCOMES.includes(raw.expect.outcome as EvalOutcome)) expect.outcome = raw.expect.outcome as EvalOutcome;
         else issues.push({ path, message: `${name}: expect.outcome must be one of ${OUTCOMES.join(", ")}.` });
@@ -387,8 +425,16 @@ function parseEvals(path: string, text: string, issues: ConfigIssue[]): EvalCase
         if (typeof raw.expect.criteria === "string" && raw.expect.criteria.trim()) expect.criteria = raw.expect.criteria.trim();
         else issues.push({ path, message: `${name}: expect.criteria must be a sentence describing a good reply.` });
       }
+      if (raw.expect.action !== undefined) {
+        const a = raw.expect.action;
+        if (typeof a === "string" && a.trim()) expect.action = { name: a.trim() };
+        else if (isRecord(a) && typeof a.name === "string" && a.name.trim()) {
+          unknownKeys(path, a, ["name", "input"], issues, `${name}: expect.action.`);
+          expect.action = { name: a.name.trim(), ...(isRecord(a.input) ? { input: a.input } : {}) };
+        } else issues.push({ path, message: `${name}: expect.action must be an action name, or a map with name and input.` });
+      }
     }
-    cases.push({ file: path, name, messages, ...(typeof raw.intent === "string" ? { intent: raw.intent } : {}), expect });
+    cases.push({ file: path, name, messages, ...(typeof raw.intent === "string" ? { intent: raw.intent } : {}), ...(actions.length ? { actions } : {}), expect });
   });
   return cases;
 }

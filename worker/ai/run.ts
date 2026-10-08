@@ -1,4 +1,5 @@
 import { isStepCount, jsonSchema, streamText, tool, type ToolSet } from "ai";
+import { actionInputSchema, type PageAction } from "../../shared/actions.ts";
 import type { AiStep, Message } from "../../shared/protocol.ts";
 import { INLINE_SKILLS_MAX_CHARS, parseReply, searchQuery, streamVisible, systemPrompt, toChatMessages, type ReplyOutcome } from "./agent.ts";
 import { intentSkill, type AgentConfig, type ToolUser } from "./config.ts";
@@ -33,6 +34,11 @@ export interface RunInput {
   user?: ToolUser | null;
   /** AI-20: the intent the host app opened the chat with (its skill and built-in rules join the prompt). */
   intent?: string | null;
+  /**
+   * AI-21: the actions on the customer's page right now (already sanitized). Each becomes a tool
+   * without `execute`, so the model calling one ends the turn: the page runs it, not the Worker.
+   */
+  pageActions?: PageAction[];
 }
 
 export interface RunResult {
@@ -40,6 +46,8 @@ export interface RunResult {
   outcome: ReplyOutcome;
   hits: SearchHit[];
   actions: ToolAction[];
+  /** AI-21: the page action the model chose (the first, if it tried several) with the inputs it gave. */
+  pageAction: { action: PageAction; input: Record<string, unknown> } | null;
   usage: { inputTokens: number; outputTokens: number };
 }
 
@@ -86,6 +94,14 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     });
   }
 
+  // AI-21: page actions are tools without execute. The SDK stops the loop when one is called;
+  // the DO hands the call to the widget, which runs it on the page.
+  const pageActions = input.pageActions ?? [];
+  const pageActionByTool = new Map(pageActions.map((a) => [a.tool, a]));
+  for (const action of pageActions) {
+    tools[action.tool] = tool({ description: action.description, inputSchema: jsonSchema<Record<string, unknown>>(actionInputSchema(action)) });
+  }
+
   const system = systemPrompt({
     workspaceName: input.workspaceName,
     persona: config.persona,
@@ -98,6 +114,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     today: today(input.timezone),
     ...(input.user ? { customer: input.user } : {}),
     ...(input.intent ? { intent: { name: input.intent, skill: intentSkill(config, input.intent) } } : {}),
+    pageActions,
   });
 
   const result = streamText({
@@ -113,9 +130,23 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   let raw = "";
   let shown = "";
   let stepHasText = false;
+  let pageAction: RunResult["pageAction"] = null;
   for await (const part of result.fullStream) {
     if (part.type === "start-step") {
       stepHasText = false;
+    } else if (part.type === "tool-call" && pageActionByTool.has(part.toolName)) {
+      // One action per reply: the first call counts, the rest are ignored (the turn ends anyway).
+      if (!pageAction) {
+        let args: unknown = part.input;
+        if (typeof args === "string") {
+          try {
+            args = JSON.parse(args);
+          } catch {
+            args = {};
+          }
+        }
+        pageAction = { action: pageActionByTool.get(part.toolName)!, input: typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {} };
+      }
     } else if (part.type === "text-delta") {
       if (!stepHasText && raw.trim()) raw = `${raw.trimEnd()}\n\n`;
       stepHasText = true;
@@ -130,11 +161,22 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     }
   }
   const usage = await result.totalUsage;
+  let outcome = parseReply(raw);
+  if (pageAction) {
+    // A reply that only calls the action has no text; that's an answer (the action card), not a handoff.
+    if (outcome.kind === "handoff") {
+      if (raw.trim()) pageAction = null; // an explicit HANDOFF line wins over the call
+      else outcome = { kind: "answer", text: "", escalate: null, followUps: [] };
+    } else {
+      outcome = { ...outcome, followUps: [] }; // the card is the follow-up
+    }
+  }
   return {
     raw,
-    outcome: parseReply(raw),
+    outcome,
     hits,
     actions,
+    pageAction,
     usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 },
   };
 }

@@ -1,0 +1,146 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { actionInputSchema, actionSummary, checkInput, describeActionForModel, describePageAction, MAX_PAGE_ACTIONS, sanitizeActions, toolSlug, type MessageAction } from "./actions.ts";
+
+const addToCart = {
+  id: "add_to_cart#p1",
+  name: "add_to_cart",
+  description: "Add Blue Runner to the cart",
+  inputSchema: {
+    type: "object",
+    properties: {
+      size: { type: "string", enum: ["M", "L"] },
+      quantity: { type: "integer", minimum: 1, maximum: 5, description: "How many" },
+      gift: { type: "boolean" },
+    },
+    required: ["size", "nope"],
+  },
+  annotations: { consequentialHint: true },
+  context: { price: 89, currency: "USD" },
+};
+
+test("sanitizeActions: keeps the WebMCP shape, normalises params, defaults the risk to confirm", () => {
+  const [a] = sanitizeActions([addToCart]);
+  assert.ok(a);
+  assert.equal(a.id, "add_to_cart#p1");
+  assert.equal(a.tool, "pa_add_to_cart");
+  assert.equal(a.risk, "confirm");
+  assert.deepEqual(Object.keys(a.params), ["size", "quantity", "gift"]);
+  assert.deepEqual(a.params.size, { type: "string", enum: ["M", "L"] });
+  assert.deepEqual(a.params.quantity, { type: "integer", description: "How many", minimum: 1, maximum: 5 });
+  assert.deepEqual(a.required, ["size"], "required names that aren't params are dropped");
+  assert.deepEqual(a.context, { price: 89, currency: "USD" });
+});
+
+test("sanitizeActions: risk from the annotations or an explicit risk", () => {
+  const list = sanitizeActions([
+    { name: "a", description: "d", annotations: { readOnlyHint: true } },
+    { name: "b", description: "d", risk: "auto", annotations: { consequentialHint: true } },
+    { name: "c", description: "d", risk: "human" },
+    { name: "d", description: "d" },
+  ]);
+  assert.deepEqual(
+    list.map((a) => a.risk),
+    ["auto", "auto", "human", "confirm"],
+  );
+});
+
+test("sanitizeActions: junk in, nothing out", () => {
+  assert.deepEqual(sanitizeActions(undefined), []);
+  assert.deepEqual(sanitizeActions("x"), []);
+  assert.deepEqual(sanitizeActions([null, 1, {}, { name: "x" }, { description: "no name" }]), []);
+});
+
+test("sanitizeActions: one-line text, caps, control characters out", () => {
+  const [a] = sanitizeActions([
+    {
+      name: "x",
+      description: `Line one\nline two\u0000 ${"y".repeat(400)}`,
+      inputSchema: { properties: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`p${i}`, { type: "string" }])) },
+      context: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`k${i}`, "v".repeat(200)])),
+    },
+  ]);
+  assert.ok(a);
+  assert.equal(a.description.length, 200);
+  assert.ok(a.description.startsWith("Line one line two "));
+  assert.equal(Object.keys(a.params).length, 12);
+  assert.equal(Object.keys(a.context).length, 8);
+  assert.equal(a.context.k0, "v".repeat(80));
+});
+
+test("sanitizeActions: a later duplicate id replaces the earlier one; the list is capped", () => {
+  const list = sanitizeActions([
+    { id: "same", name: "first", description: "old" },
+    { id: "same", name: "first", description: "new" },
+  ]);
+  assert.equal(list.length, 1);
+  assert.equal(list[0]!.description, "new");
+  const many = sanitizeActions(Array.from({ length: 40 }, (_, i) => ({ id: `a${i}`, name: "add", description: "d" })));
+  assert.equal(many.length, MAX_PAGE_ACTIONS);
+});
+
+test("tool names: a safe slug per registered name, suffixed when instances share a name", () => {
+  assert.equal(toolSlug("Add to cart!"), "pa_add_to_cart");
+  assert.equal(toolSlug("***"), "pa_action");
+  const list = sanitizeActions([
+    { id: "add#1", name: "add_to_cart", description: "A" },
+    { id: "add#2", name: "add_to_cart", description: "B" },
+    { id: "add#3", name: "add_to_cart", description: "C" },
+  ]);
+  assert.deepEqual(
+    list.map((a) => a.tool),
+    ["pa_add_to_cart", "pa_add_to_cart_2", "pa_add_to_cart_3"],
+  );
+});
+
+test("actionInputSchema: every param optional for the model, required ones marked in the description", () => {
+  const [a] = sanitizeActions([addToCart]);
+  const schema = actionInputSchema(a!) as { properties: Record<string, { description?: string }>; required: string[] };
+  assert.deepEqual(schema.required, []);
+  assert.match(schema.properties.size!.description!, /required; leave out/);
+  assert.equal(schema.properties.gift!.description, undefined);
+});
+
+test("checkInput: coerces, validates, finds what's missing", () => {
+  const [a] = sanitizeActions([addToCart]);
+  const ok = checkInput(a!, { size: "m", quantity: "2", gift: "false", extra: 1 });
+  assert.deepEqual(ok.input, { size: "M", quantity: 2, gift: false });
+  assert.deepEqual(ok.missing, []);
+  assert.deepEqual(ok.errors, {});
+
+  const bad = checkInput(a!, { size: "XL", quantity: 9 });
+  assert.deepEqual(bad.input, {});
+  assert.deepEqual(bad.missing, ["size"]);
+  assert.equal(bad.errors.size, "must be one of M, L");
+  assert.equal(bad.errors.quantity, "must be at most 5");
+
+  assert.deepEqual(checkInput(a!, undefined).missing, ["size"]);
+  assert.equal(checkInput(a!, { quantity: 2.5 }).errors.quantity, "must be a whole number");
+});
+
+test("describePageAction and actionSummary read as one line each", () => {
+  const [a] = sanitizeActions([addToCart]);
+  assert.equal(describePageAction(a!), "pa_add_to_cart: Add Blue Runner to the cart (price: 89, currency: USD) [inputs: size, quantity, gift]");
+  assert.equal(actionSummary({ description: "Add Blue Runner to the cart", input: { size: "M", quantity: 2 } }), "Add Blue Runner to the cart · size: M · quantity: 2");
+  assert.equal(actionSummary({ description: "Book a demo", input: {} }), "Book a demo");
+});
+
+test("describeActionForModel: what the model learns from a past card", () => {
+  const base: MessageAction = {
+    runId: "run_1",
+    id: "add_to_cart#p1",
+    name: "add_to_cart",
+    description: "Add Blue Runner to the cart",
+    risk: "confirm",
+    params: {},
+    required: [],
+    input: { size: "M" },
+    missing: [],
+    status: "pending",
+    result: null,
+    canUndo: false,
+  };
+  assert.equal(describeActionForModel(base), '[You proposed the page action "add_to_cart" with {"size":"M"}; the customer hasn\'t confirmed it yet.]');
+  assert.equal(describeActionForModel({ ...base, status: "ok", result: "Added 1 × M" }), '[The page action "add_to_cart" with {"size":"M"} ran: Added 1 × M.]');
+  assert.equal(describeActionForModel({ ...base, status: "gone", input: {} }), '[The page action "add_to_cart" was no longer available (the customer left the page), so it didn\'t run.]');
+});

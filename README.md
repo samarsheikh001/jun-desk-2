@@ -57,6 +57,7 @@ Copy the snippet from **Settings → Install the chat widget**, ideally into `<h
 | `data-color="#0f766e"` | Overrides the brand colour from Settings |
 | `JunDesk.open()`, `.close()`, `.toggle()` | Control the chat from your own buttons |
 | `JunDesk.reportError({ message, code? })` | Tells support what failed, in your app's words (see below) |
+| `JunDesk.registerAction({ … })` | Tells the AI what can be done on this page, so it can do it for the visitor (see "Page actions") |
 
 Colour, logo, greeting, button side and business hours are set in **Settings** and apply within a minute without touching the snippet. List your domains under **Allowed websites** so nobody can reuse your (public) widget key on their own site.
 
@@ -70,6 +71,22 @@ Colour, logo, greeting, button side and business hours are set in **Settings** a
 // The loader is async, so it may not be there yet.
 window.JunDesk?.reportError({ message: "Row 42: missing email", code: "import.row_invalid" });
 ```
+
+**Page actions:** your page tells the AI what can be done right here, and the AI can only pick from that list. Register actions in the [WebMCP](https://developer.chrome.com/docs/ai/webmcp/imperative-api) shape (`name`, `description`, `inputSchema`, `execute`, `annotations`) plus a few extras: `pages` (offer it only on `/pricing` or `/plans/*`), `key` (one instance per product card), `element` (highlighted while it runs), `context` (small facts for the AI, like the price), `available` (a check such as "in stock"), `undo` (gives the chat an Undo button) and `risk` (`"confirm"`, the default, shows a summary and a Confirm button; `"auto"` runs at once; `"human"` sends the request to your team). When a visitor asks for one, the chat asks for anything the AI couldn't fill in (a short list becomes buttons, a date a date picker), confirms, runs your function in their browser with their own login, and shows Done. The AI never calls anything that isn't on the page, and your functions never leave the page: only the descriptions do. The loader also implements `document.modelContext` where the browser lacks it, so plain WebMCP registrations (and `<form toolname>` forms, where Chrome supports them) work too, and tools you register for Chrome's agent work with Jun Desk with no extra code.
+
+```js
+const remove = JunDesk.registerAction({
+  name: "add_to_cart",
+  description: `Add ${product.name} to the cart`,
+  inputSchema: { type: "object", properties: { size: { enum: product.sizes }, quantity: { type: "integer", minimum: 1, maximum: 5 } }, required: ["size"] },
+  key: product.id, element: cardEl, context: { price: product.price }, available: () => product.stock > 0,
+  execute: async ({ size, quantity = 1 }) => { const line = await cart.add(product.id, size, quantity); return { summary: `Added ${quantity} × ${size}`, lineId: line.id }; },
+  undo: (result) => cart.remove(result.lineId),
+});
+// In React: useEffect(() => window.JunDesk?.registerAction({ … }), [product.id]) registers while the card is on screen.
+```
+
+Agents see every run in the conversation's AI actions; `evals/*.yaml` cases take an `actions:` list and can `expect: { action: { name, input } }`, so `jun eval` covers what the AI chooses.
 
 **Signed-in customers:** create an identity secret in Settings → Install. Your backend signs a short-lived HS256 JWT with `sub` (the user's id) and `exp`, plus `email`, `name` and `attributes` if you like (`{ plan: "pro", seats: 12 }`). Agents then see a verified customer, chats follow them across devices, and the AI's tools can look up their own account with `{user.id}`. Without a valid token, visitors stay anonymous.
 

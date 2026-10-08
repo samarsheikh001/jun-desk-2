@@ -7,7 +7,7 @@
  * the visitor sends a message. data-capture="off" disables capture. Shows the visitor on the
  * desk's live visitor list (data-consent="required"
  * waits for JunDesk.consent(true) and stores nothing before it).
- * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt) / .logout() / .consent(bool)
+ * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt) / .logout() / .consent(bool) / .registerAction(tool)
  *      / .reportError({ message, code? }). With the island launcher, "/" on the page opens it.
  * identify() takes a JWT your backend signs with the desk's identity secret (data-user-token works too).
  * reportError() tells support what failed in your app's own words ("Row 42: missing email"); masked
@@ -323,6 +323,24 @@
   function load() {
     if (!frame.src) frame.src = origin + "/widget?key=" + encodeURIComponent(key) + (consented ? "" : "&persist=0");
   }
+  // AI-21 page actions (D-40): WebMCP tools the page registers, offered to the AI. The code lives in
+  // widget-actions.js, loaded on first use; until then registrations queue here. Without native
+  // WebMCP, a small shim takes document.modelContext.registerTool calls so early page code works.
+  var actionQueue = [], actionsLoading;
+  function loadActions() {
+    if (actionsLoading) return;
+    actionsLoading = 1;
+    var s = document.createElement("script");
+    s.src = origin + "/widget-actions.js";
+    s.async = true;
+    document.head.appendChild(s);
+  }
+  if (document.modelContext) loadActions();
+  else document.modelContext = {
+    jun: 1, q: [],
+    registerTool: function (t, o) { this.q.push([t, o]); loadActions(); },
+    getTools: function () { loadActions(); return new Promise(function (r) { (function w() { document.modelContext.jun ? setTimeout(w, 50) : r(document.modelContext.getTools()); })(); }); },
+  };
   var pendingOpener, onExit;
   function setOpen(next) {
     open = next;
@@ -366,7 +384,13 @@
       setOpen(false);
       done();
     }
-    if (type == "jun:context-request") post({ type: "jun:context", id: e.data.id, context: snapshot() });
+    if (type == "jun:context-request") {
+      // The debug snapshot, and (AI-21) what this page offers the AI right now.
+      var a = window.JunDesk._a, id = e.data.id;
+      var reply = function (actions) { post({ type: "jun:context", id: id, context: snapshot(), actions: actions }); };
+      if (a) a.list(reply); else reply();
+    }
+    if ((type == "jun:run" || type == "jun:undo") && window.JunDesk._a) window.JunDesk._a.handle(e.data, post);
     if (type == "jun:unread") {
       var n = Number(e.data.count) || 0;
       badge.textContent = n > 9 ? "9+" : n;
@@ -414,6 +438,15 @@
       post({ type: "jun:consent", persist: consented });
       if (consented) connect();
       else disconnect();
+    },
+    // AI-21: a WebMCP tool ({ name, description, inputSchema, execute, annotations }) plus extras
+    // (pages, key, element, context, available, undo, risk); see widget-actions.js. Returns a remover.
+    _q: actionQueue,
+    registerAction: function (t) {
+      var r = { t: t, off: null, dead: false };
+      if (window.JunDesk._a) r.off = window.JunDesk._a.register(t);
+      else { actionQueue.push(r); loadActions(); }
+      return function () { r.dead = true; if (r.off) r.off(); };
     },
   };
   connect();

@@ -570,3 +570,37 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
   .w-answer .w-steps-shimmer { background: none; color: var(--a-ink-2); }
   .w-answer .w-step-spin { border-color: var(--a-ink-3); border-style: dotted; }
 }
+
+/* ---------- AI-21 page actions (D-40): the card under an answer that proposed one ---------- */
+.w-act { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5; animation: w-fade 300ms ease-out both; }
+.w-act p { margin: 0; }
+.w-act-title, .w-act-head { font-weight: 600; }
+.w-act-head { color: var(--muted); font-size: 12px; font-weight: 500; margin-bottom: 4px !important; }
+.w-act-summary { color: var(--text-soft); }
+.w-act-form { display: grid; gap: 8px; margin-top: 6px; }
+.w-act-field { display: grid; gap: 4px; }
+.w-act-label { color: var(--muted); font-size: 12px; text-transform: capitalize; }
+.w-act-field input, .w-act-field select { width: 100%; min-height: 34px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-xs); background: var(--surface); color: var(--text); font: inherit; }
+.w-act-field input:focus-visible, .w-act-field select:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.w-act-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.w-act-chip { padding: 5px 11px; border: 1px solid var(--border); border-radius: var(--radius-xs); background: var(--surface); color: var(--text); font: inherit; font-size: 12.5px; line-height: 1.5; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.w-act-chip:hover { background: var(--hover); }
+.w-act-chip.on { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+.w-act-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.w-act-btn { min-height: 32px; padding: 0 14px; border: 0; border-radius: var(--radius-sm); background: var(--accent); color: var(--accent-text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.w-act-btn:hover { background: var(--accent-hover); }
+.w-act-btn:disabled { opacity: 0.5; cursor: default; }
+.w-act-ghost { min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.w-act-ghost:hover { background: var(--hover); color: var(--text); }
+.w-act-ghost:disabled { opacity: 0.6; cursor: default; }
+.w-act-status { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--text-soft); }
+.w-act-status svg { width: 15px; height: 15px; flex: none; color: var(--accent); }
+.w-act-state { font-weight: 600; color: var(--text); }
+.w-act-result { min-width: 0; overflow-wrap: anywhere; }
+.w-act-result::before { content: "·"; margin-right: 7px; color: var(--muted); }
+.w-act-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--muted); }
+.w-act-error .w-act-dot { background: var(--error); }
+.w-act-spin { width: 13px; height: 13px; flex: none; box-sizing: border-box; border: 1.5px solid var(--border); border-top-color: var(--text-soft); border-radius: 50%; animation: w-spin 700ms linear infinite; }
+.w-act-error { color: var(--error); font-size: 12.5px; }
+.w-act-ok .w-act-title { color: var(--muted); }
+.i-body .w-act { background: var(--surface); }

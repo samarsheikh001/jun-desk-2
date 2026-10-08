@@ -1,3 +1,4 @@
+import { checkInput, sanitizeActions, type MessageAction, type PageAction } from "../../shared/actions.ts";
 import type { Message } from "../../shared/protocol.ts";
 import { describeEvents, type DebugContext } from "../../shared/debug.ts";
 import { loadMessages } from "../lib/conversations.ts";
@@ -20,6 +21,8 @@ export interface ReplyView {
   outcome: EvalOutcome;
   reply: string;
   tools: string[];
+  /** AI-21: the page action the reply proposed, with the inputs the model filled. */
+  action?: { name: string; input: Record<string, unknown> };
 }
 
 export type EvalEvent =
@@ -44,12 +47,19 @@ export interface EvalContext {
 }
 
 function view(result: RunResult): ReplyView {
-  const outcome: EvalOutcome = result.outcome.kind === "handoff" ? "handoff" : result.outcome.escalate ? "escalate" : "answer";
+  const outcome: EvalOutcome = result.outcome.kind === "handoff" ? "handoff" : result.pageAction ? "action" : result.outcome.escalate ? "escalate" : "answer";
+  const action = result.pageAction ? { name: result.pageAction.action.name, input: checkInput(result.pageAction.action, result.pageAction.input).input } : undefined;
   const reply =
     result.outcome.kind === "handoff"
       ? `(hands off: ${result.outcome.reason})`
-      : resolveCitations(result.outcome.text, result.hits).text + (result.outcome.escalate ? `\n(escalates: ${result.outcome.escalate})` : "");
-  return { outcome, reply, tools: result.actions.map((a) => a.tool) };
+      : [
+          resolveCitations(result.outcome.text, result.hits).text,
+          action && `(proposes ${action.name}${Object.keys(action.input).length ? ` with ${JSON.stringify(action.input)}` : ""})`,
+          result.outcome.escalate && `(escalates: ${result.outcome.escalate})`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+  return { outcome, reply, tools: result.actions.map((a) => a.tool), ...(action ? { action } : {}) };
 }
 
 function message(seq: number, body: string, authorType: Message["authorType"] = "visitor"): Message {
@@ -57,28 +67,53 @@ function message(seq: number, body: string, authorType: Message["authorType"] = 
 }
 
 /** One reply, with the same shortcut the live desk takes when the customer asks for a person. */
-function answer(ctx: EvalContext, config: AgentConfig, history: Message[], technical: string[] = [], intent: string | null = null): Promise<RunResult> {
+function answer(ctx: EvalContext, config: AgentConfig, history: Message[], technical: string[] = [], intent: string | null = null, pageActions: PageAction[] = []): Promise<RunResult> {
   if (asksForHuman(history.at(-1)?.body ?? "")) {
     return Promise.resolve({
       raw: "",
       outcome: { kind: "handoff", reason: "The customer asked for a person." },
       hits: [],
       actions: [],
+      pageAction: null,
       usage: { inputTokens: 0, outputTokens: 0 },
     });
   }
-  return runAgent({ env: ctx.env, workspaceId: ctx.workspaceId, workspaceName: ctx.workspaceName, model: ctx.model, config, history, technical, mockTools: ctx.mockTools, temperature: 0, intent });
+  return runAgent({ env: ctx.env, workspaceId: ctx.workspaceId, workspaceName: ctx.workspaceName, model: ctx.model, config, history, technical, mockTools: ctx.mockTools, temperature: 0, intent, pageActions });
 }
 
 /** Runs several turns of a test case; replies come from the config under test. */
 async function runCase(ctx: EvalContext, c: EvalCase): Promise<RunResult> {
   const history: Message[] = [];
+  // AI-21: the case's page actions go through the same sanitizer as the loader's list.
+  const pageActions = sanitizeActions((c.actions ?? []).map((a) => ({ ...a, id: a.key ? `${a.name}#${a.key}` : a.name })));
+  const mocks = new Map((c.actions ?? []).map((a) => [a.name, a.mock]));
   let result: RunResult | null = null;
   for (const [i, body] of c.messages.entries()) {
     history.push(message(i * 2 + 1, body));
-    result = await answer(ctx, ctx.candidate, history, [], c.intent ?? null);
+    result = await answer(ctx, ctx.candidate, history, [], c.intent ?? null, pageActions);
     if (result.outcome.kind === "handoff") break;
-    history.push(message(i * 2 + 2, result.outcome.text, "ai"));
+    const reply = message(i * 2 + 2, result.outcome.text, "ai");
+    if (result.pageAction) {
+      // As if the customer confirmed and the page ran it: the next turn sees the result.
+      const { action, input: raw } = result.pageAction;
+      const { input, missing } = checkInput(action, raw);
+      const card: MessageAction = {
+        runId: `run_eval_${i}`,
+        id: action.id,
+        name: action.name,
+        description: action.description,
+        risk: action.risk === "auto" ? "auto" : "confirm",
+        params: action.params,
+        required: action.required,
+        input,
+        missing,
+        status: "ok",
+        result: mocks.get(action.name) ?? "done",
+        canUndo: false,
+      };
+      reply.meta = { action: card };
+    }
+    history.push(reply);
   }
   return result!;
 }
@@ -100,6 +135,17 @@ async function checkCase(ctx: EvalContext, c: EvalCase): Promise<EvalEvent> {
   const failures: string[] = [];
   if (c.expect.outcome && result.outcome !== c.expect.outcome) failures.push(`expected outcome ${c.expect.outcome}, got ${result.outcome}`);
   for (const t of c.expect.tools ?? []) if (!result.tools.includes(t)) failures.push(`expected a call to ${t}${result.tools.length ? ` (called: ${result.tools.join(", ")})` : " (no tools called)"}`);
+  if (c.expect.action) {
+    const want = c.expect.action;
+    if (!result.action) failures.push(`expected the page action ${want.name} to be proposed (none was)`);
+    else if (result.action.name !== want.name) failures.push(`expected the page action ${want.name}, got ${result.action.name}`);
+    else {
+      for (const [k, v] of Object.entries(want.input ?? {})) {
+        const got = result.action.input[k];
+        if (JSON.stringify(got) !== JSON.stringify(v)) failures.push(`expected ${want.name}.${k} = ${JSON.stringify(v)}, got ${got === undefined ? "nothing" : JSON.stringify(got)}`);
+      }
+    }
+  }
   if (c.expect.criteria) {
     const verdict = await judge(ctx, `Customer:\n${c.messages.join("\n")}\n\nSupport reply:\n${result.reply}\n\nDoes the reply meet this requirement: "${c.expect.criteria}"?`);
     if (!verdict.yes) failures.push(`criteria not met: ${c.expect.criteria} (${verdict.why})`);

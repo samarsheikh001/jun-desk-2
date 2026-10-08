@@ -20,7 +20,8 @@ import { AiUnavailableError, completeText, createModel, loadAiSettings, type Age
 import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
 import type { ToolAction } from "./ai/tools.ts";
-import { describeEvents, isIssue, sanitizeContext, type DebugContext } from "../shared/debug.ts";
+import { ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_RESULT, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
+import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { findMentions } from "../shared/inbox.ts";
@@ -45,6 +46,8 @@ export interface SendInput {
   attachments?: Attachment[] | undefined;
   /** Visitor's debug snapshot from the loader; sanitized before storing. */
   context?: unknown;
+  /** AI-21: the page actions on the visitor's page right now; sanitized, kept for the AI's next turn. */
+  actions?: unknown;
   /** An agent's internal note (I-05). Ignored for visitors. */
   internal?: boolean | undefined;
 }
@@ -65,6 +68,11 @@ export const FORWARD_HEADERS = {
   workspaceId: "x-jun-workspace-id",
   participant: "x-jun-participant",
 } as const;
+
+/** AI-21: the latest page-action list from the visitor's loader, in this object's storage (never D1). */
+const PAGE_ACTIONS_KEY = "pageActions";
+/** The body of an AI message that only proposed an action (the model wrote no sentence). */
+const ACTION_ONLY_BODY = "I can do that right here:";
 
 interface NewMessage {
   authorType: AuthorType;
@@ -177,6 +185,15 @@ export class Conversation extends DurableObject<Env> {
       await this.#markRead(ref, participant, Number(event.seq));
     } else if (event.type === "handoff" && participant.role === "visitor") {
       await this.#handoff(ref, "The customer asked for a person.", HANDOFF_MESSAGES.default);
+    } else if (event.type === "action_input" && participant.role === "visitor") {
+      // AI-21: the visitor filled in what the model left out; check it and update the card.
+      await this.#updateAction(ref, String(event.runId), (action) => {
+        if (action.status !== "pending") return null;
+        const { input, missing } = checkInput(action, { ...action.input, ...(typeof event.input === "object" && event.input !== null ? event.input : {}) });
+        return { ...action, input, missing };
+      });
+    } else if (event.type === "action_result" && participant.role === "visitor") {
+      await this.#actionResult(ref, event);
     }
   }
 
@@ -262,6 +279,8 @@ export class Conversation extends DurableObject<Env> {
     if (participant.role === "agent" && mentions.length) await this.#notifyMentions(ref, participant, message);
 
     if (participant.role === "visitor" && input.context !== undefined) await this.#storeContext(ref, message.seq, input.context);
+    // AI-21: the page's actions travel with each message; the AI turn (an alarm) reads the latest list.
+    if (participant.role === "visitor" && input.actions !== undefined) await this.ctx.storage.put(PAGE_ACTIONS_KEY, sanitizeActions(input.actions));
     // I-14: the visitor wrote in a chat a teammate has: tell them (not on retries).
     if (participant.role === "visitor" && created) this.ctx.waitUntil(this.#notifyAssignee(ref));
 
@@ -529,12 +548,14 @@ export class Conversation extends DurableObject<Env> {
         throw error;
       }
 
-      const [workspace, technical, user, intent] = await Promise.all([
+      const [workspace, technical, user, intent, pageActions] = await Promise.all([
         this.env.DB.prepare("SELECT name FROM workspaces WHERE id = ?").bind(ref.workspaceId).first<{ name: string }>(),
         this.#technicalContext(ref),
         this.#verifiedCustomer(ref),
         // AI-20: the intent the host app opened the chat with.
         this.env.DB.prepare("SELECT intent FROM conversations WHERE id = ?").bind(ref.conversationId).first<{ intent: string | null }>(),
+        // AI-21: what the visitor's page offers right now (from their latest message).
+        this.ctx.storage.get<PageAction[]>(PAGE_ACTIONS_KEY),
       ]);
 
       // Stream what the visitor may see: nothing that could be a HANDOFF line, never an ESCALATE line.
@@ -553,6 +574,7 @@ export class Conversation extends DurableObject<Env> {
         ...(technical.timezone ? { timezone: technical.timezone } : {}),
         user,
         intent: intent?.intent ?? null,
+        pageActions: pageActions ?? [],
         // Citations stream already resolved (numbered by first use, with their sources).
         onVisible: (visible, hits) => {
           const { text, sources } = streamCitations(visible, hits);
@@ -588,7 +610,14 @@ export class Conversation extends DurableObject<Env> {
         await this.#handoff(ref, outcome.reason, HANDOFF_MESSAGES.default, settings, history, technical.lines);
         return false;
       }
-      const { text: body, sources } = resolveCitations(outcome.text, hits);
+      // AI-21: a `human` action is a request for the team, not something the page should do.
+      if (result.pageAction?.action.risk === "human") {
+        await this.#handoff(ref, `The customer wants to: ${result.pageAction.action.description}`, HANDOFF_MESSAGES.default, settings, history, technical.lines);
+        return false;
+      }
+      const action = result.pageAction ? this.#proposeAction(result.pageAction.action, result.pageAction.input) : null;
+      const { text, sources } = resolveCitations(outcome.text, hits);
+      const body = text || (action ? ACTION_ONLY_BODY : text);
       const answer = await this.#insert(ref, {
         authorType: "ai",
         authorId: null,
@@ -599,6 +628,7 @@ export class Conversation extends DurableObject<Env> {
           ...(sources.length ? { sources } : {}),
           ...(outcome.followUps.length ? { followUps: outcome.followUps } : {}),
           ...(config.version !== null ? { configVersion: config.version } : {}),
+          ...(action ? { action } : {}),
         },
       });
       this.#streaming = undefined;
@@ -738,6 +768,75 @@ export class Conversation extends DurableObject<Env> {
       this.#broadcast({ type: "ai_action", tool: action.tool, status: action.status }, { agentsOnly: true });
     } catch (error) {
       console.error("recording AI action failed:", error);
+    }
+  }
+
+  // ---------- AI-21 page actions ----------
+
+  /** The card for an action the model chose: its inputs checked, the rest asked for by the widget. */
+  #proposeAction(action: PageAction, rawInput: Record<string, unknown>): MessageAction {
+    const { input, missing } = checkInput(action, rawInput);
+    return {
+      runId: newId("run"),
+      id: action.id,
+      name: action.name,
+      description: action.description,
+      risk: action.risk === "auto" ? "auto" : "confirm",
+      params: action.params,
+      required: action.required,
+      input,
+      missing,
+      status: "pending",
+      result: null,
+      canUndo: false,
+    };
+  }
+
+  /**
+   * Changes a proposed action's card (the AI message's `meta.action`) and sends the message again
+   * to everyone: the thread merges by seq, so the card updates in place. `patch` returns null to
+   * leave it alone (wrong state, unknown run). Returns the new card.
+   */
+  async #updateAction(ref: ConversationRef, runId: string, patch: (action: MessageAction) => MessageAction | null): Promise<MessageAction | null> {
+    if (!/^run_[\w-]{1,64}$/.test(runId)) return null;
+    const row = await this.env.DB.prepare(`${MESSAGE_SELECT} WHERE m.conversation_id = ? AND m.author_type = 'ai' AND m.meta LIKE ? ORDER BY m.seq DESC LIMIT 1`)
+      .bind(ref.conversationId, `%"runId":"${runId}"%`)
+      .first<MessageRow>();
+    if (!row) return null;
+    const message = toMessage(row);
+    const current = message.meta.action;
+    if (!current || current.runId !== runId) return null;
+    const next = patch(current);
+    if (!next) return null;
+    const meta: MessageMeta = { ...message.meta, action: next };
+    await this.env.DB.prepare("UPDATE messages SET meta = ? WHERE id = ?").bind(JSON.stringify(meta), message.id).run();
+    this.#broadcast({ type: "message", message: { ...message, meta } });
+    return next;
+  }
+
+  /** The page ran the action (or couldn't): close the card, keep the audit row, tell the agents. */
+  async #actionResult(ref: ConversationRef, event: { runId: string; status: string; result?: unknown; canUndo?: unknown }): Promise<void> {
+    const status = event.status as MessageAction["status"];
+    if (!ACTION_RESULT_STATUSES.includes(status)) return;
+    const result = typeof event.result === "string" && event.result.trim() ? redact(event.result, MAX_ACTION_RESULT) : null;
+    const updated = await this.#updateAction(ref, String(event.runId), (action) => {
+      // pending → any result; ok → undone. Nothing else moves.
+      if (action.status === "pending" && status !== "undone") return { ...action, status, result, canUndo: status === "ok" && event.canUndo === true };
+      if (action.status === "ok" && status === "undone" && action.canUndo) return { ...action, status, canUndo: false };
+      return null;
+    });
+    if (!updated) return;
+    if (status === "ok" || status === "error" || status === "undone") {
+      const row = await this.env.DB.prepare("SELECT seq FROM messages WHERE conversation_id = ? AND author_type = 'visitor' ORDER BY seq DESC LIMIT 1").bind(ref.conversationId).first<{ seq: number }>();
+      const config = await loadAgentConfig(this.env, ref.workspaceId);
+      await this.#recordAction(ref, row?.seq ?? 0, config.version, {
+        tool: `${status === "undone" ? "undo:" : "page:"}${updated.name}`,
+        input: updated.input,
+        output: status === "undone" ? "undone by the customer" : (result ?? (status === "ok" ? "done" : "failed")),
+        status: status === "error" ? "error" : "ok",
+        httpStatus: null,
+        durationMs: 0,
+      });
     }
   }
 

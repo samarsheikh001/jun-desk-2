@@ -15,13 +15,16 @@ function minifyLoader(): Plugin {
     name: "jun:minify-loader",
     apply: "build",
     writeBundle(options) {
-      const file = join(options.dir ?? "", "widget.js");
-      if (!existsSync(file)) return;
-      const source = readFileSync(file, "utf8");
-      if (!source.startsWith("/*!")) return; // already minified
-      const result = minifySync("widget.js", source, { compress: true, mangle: true });
-      if (result.errors.length) throw new Error(`widget.js minify failed: ${result.errors.map((e) => e.message).join("; ")}`);
-      writeFileSync(file, `/*! Jun Desk widget loader | MIT License | source: public/widget.js */\n${result.code}`);
+      // The AI-21 page-actions chunk (widget-actions.js) is minified the same way.
+      for (const name of ["widget.js", "widget-actions.js"]) {
+        const file = join(options.dir ?? "", name);
+        if (!existsSync(file)) continue;
+        const source = readFileSync(file, "utf8");
+        if (!source.startsWith("/*!")) continue; // already minified
+        const result = minifySync(name, source, { compress: true, mangle: true });
+        if (result.errors.length) throw new Error(`${name} minify failed: ${result.errors.map((e) => e.message).join("; ")}`);
+        writeFileSync(file, `/*! Jun Desk ${name === "widget.js" ? "widget loader" : "page actions"} | MIT License | source: public/${name} */\n${result.code}`);
+      }
     },
   };
 }

@@ -4,8 +4,9 @@ import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
 import { Composer } from "../components/Composer.tsx";
-import { MessageList } from "../components/MessageList.tsx";
+import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
+import { ActionCard } from "./action.tsx";
 import { AiAnswer } from "./answer.tsx";
 import { BarHead, Chips, Glass, Typewriter, useBarFrame } from "./bar.tsx";
 import { Badge, MiniCard, useCardFrame } from "./card.tsx";
@@ -126,21 +127,22 @@ const postToHost = (message: unknown) => window.parent !== window && window.pare
 
 /**
  * Asks the loader on the host page for its debug snapshot (recent errors, failed requests,
- * page trail; already masked). Resolves to undefined if there's no loader or it's slow.
+ * page trail; already masked) and (AI-21) the page's actions. Both undefined if there's no
+ * loader or it's slow.
  */
-function hostContext(): Promise<unknown> {
-  if (window.parent === window) return Promise.resolve(undefined);
+function hostContext(): Promise<{ context?: unknown; actions?: unknown }> {
+  if (window.parent === window) return Promise.resolve({});
   const id = crypto.randomUUID();
   return new Promise((resolve) => {
-    const done = (value: unknown) => {
+    const done = (value: { context?: unknown; actions?: unknown }) => {
       window.removeEventListener("message", onMessage);
       clearTimeout(timer);
       resolve(value);
     };
     const onMessage = (e: MessageEvent) => {
-      if (e.source === window.parent && e.data?.type === "jun:context" && e.data.id === id) done(e.data.context);
+      if (e.source === window.parent && e.data?.type === "jun:context" && e.data.id === id) done({ context: e.data.context, actions: e.data.actions });
     };
-    const timer = setTimeout(() => done(undefined), 500);
+    const timer = setTimeout(() => done({}), 500);
     window.addEventListener("message", onMessage);
     postToHost({ type: "jun:context-request", id });
   });
@@ -641,10 +643,10 @@ function WidgetThread({
 
   const send = async (body: string, attachments: Attachment[]) => {
     setError(null);
-    const context = await hostContext();
+    const { context, actions } = await hostContext();
     if (conversationId) {
       thread.setTyping(false);
-      thread.send(body, attachments, undefined, context);
+      thread.send(body, attachments, undefined, context, false, actions);
       return;
     }
     // First message: create the visitor (if needed) and the conversation in one go.
@@ -657,6 +659,7 @@ function WidgetThread({
           body,
           attachments,
           context,
+          ...(actions !== undefined ? { actions } : {}),
           ...(opener?.inviteId ? { inviteId: opener.inviteId } : {}),
           ...(intent ? { intent: intent.spec.name } : {}),
           ...(sessionId ? { sessionId } : {}),
@@ -670,6 +673,44 @@ function WidgetThread({
       setStarting(null);
       setError((e as Error).message);
     }
+  };
+
+  // AI-21: the AI's answers may propose a page action; its card runs it on the host page through
+  // the loader (jun:run / jun:undo) and the loader reports back (jun:action).
+  const [undoErrors, setUndoErrors] = useState<Record<string, string>>({});
+  const actionResult = useRef(thread.actionResult);
+  actionResult.current = thread.actionResult;
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      const data = e.data as { type?: string; runId?: string; status?: string; result?: string; canUndo?: boolean } | undefined;
+      if (e.source !== window.parent || data?.type !== "jun:action" || typeof data.runId !== "string") return;
+      const runId = data.runId;
+      if (data.status === "undo_failed") setUndoErrors((s) => ({ ...s, [runId]: data.result || "Couldn't undo that." }));
+      else if (data.status === "ok" || data.status === "error" || data.status === "gone" || data.status === "undone") actionResult.current(runId, data.status, data.result, data.canUndo);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+  // Follow-ups only while the AI is still the one answering.
+  const renderAnswer = (answer: AiAnswerView) => {
+    const action = answer.action;
+    return (
+      <>
+        <AiAnswer answer={answer} {...(handling === "ai" ? { onFollowUp: (q: string) => void send(q, []) } : {})} />
+        {action && (
+          <ActionCard
+            action={action}
+            latest={answer.latest}
+            createdAt={answer.createdAt ?? 0}
+            onInput={(input) => thread.actionInput(action.runId, input)}
+            onRun={(input) => postToHost({ type: "jun:run", runId: action.runId, id: action.id, input })}
+            onCancel={() => thread.actionResult(action.runId, "cancelled")}
+            onUndo={() => postToHost({ type: "jun:undo", runId: action.runId })}
+            {...(undoErrors[action.runId] ? { undoError: undoErrors[action.runId] } : {})}
+          />
+        )}
+      </>
+    );
   };
 
   // A tapped suggestion is sent once, as if typed (the ref survives StrictMode's double effect).
@@ -795,8 +836,7 @@ function WidgetThread({
           aiSteps={thread.aiSteps}
           onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
           onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
-          // Follow-ups only while the AI is still the one answering.
-          renderAi={(answer) => <AiAnswer answer={answer} {...(handling === "ai" ? { onFollowUp: (q: string) => void send(q, []) } : {})} />}
+          renderAi={renderAnswer}
         />
   );
   const extras = (
@@ -882,7 +922,7 @@ function WidgetThread({
                   aiSteps={thread.aiSteps}
                   onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
                   onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
-                  renderAi={(answer) => <AiAnswer answer={answer} {...(handling === "ai" ? { onFollowUp: (q: string) => void send(q, []) } : {})} />}
+                  renderAi={renderAnswer}
                 />
               )}
               {error && <p className="i-error" role="alert">{error}</p>}
