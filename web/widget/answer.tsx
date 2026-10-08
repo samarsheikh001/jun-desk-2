@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
-import { actionStatusText, visibleResult, type MessageAction } from "../../shared/actions.ts";
+import { ACTION_ONLY_BODY, actionStatusText, visibleResult, type MessageAction } from "../../shared/actions.ts";
 import type { AiStep, Source } from "../../shared/protocol.ts";
 import type { AiAnswerView } from "../components/MessageList.tsx";
 import { ActionCard } from "./action.tsx";
@@ -197,8 +197,10 @@ export interface ActionControls {
 }
 
 export function AiAnswer({ answer, onFollowUp, controls }: { answer: AiAnswerView; onFollowUp?: (question: string) => void; controls?: ActionControls }) {
-  const { body, sources, followUps, streaming, latest, steps: toolSteps } = answer;
+  const { sources, followUps, streaming, latest, steps: toolSteps } = answer;
   const action = answer.action;
+  // An action-only reply has a placeholder body for the inbox; here the step line or the card says it.
+  const body = action && answer.body === ACTION_ONLY_BODY ? "" : answer.body;
   // AI-21: a page action is a step line like a YAML tool once it runs; the card only while it waits on the visitor.
   const [undoing, setUndoing] = useState(false);
   useEffect(() => {
@@ -224,7 +226,7 @@ export function AiAnswer({ answer, onFollowUp, controls }: { answer: AiAnswerVie
   return (
     <div className="w-answer">
       {steps.length > 0 && <Steps steps={steps} working={working} />}
-      {(body || !steps.length) && <div className="bubble">
+      {(body || (!steps.length && !action)) && <div className="bubble">
         {tokens.slice(0, shown).map((t, i) => {
           const anim = live ? " w-anim" : "";
           if (t.kind === "word") return <span key={i} className={`w-word${anim}`}>{t.text}</span>;

@@ -156,6 +156,7 @@ test("describePageAction and actionSummary read as one line each", () => {
   assert.equal(describePageAction(a!), "pa_add_to_cart: Add Blue Runner to the cart (price: 89, currency: USD) [inputs: size, quantity, gift]");
   assert.equal(actionSummary({ description: "Add Blue Runner to the cart", input: { size: "M", quantity: 2 } }), "Add Blue Runner to the cart · size: M · quantity: 2");
   assert.equal(actionSummary({ description: "Book a demo", input: {} }), "Book a demo");
+  assert.equal(actionSummary({ description: "Set the pickup from a placeId", input: { placeId: "ChIJuU9qyPgb2jERidqJVhPuyUw", note: "front door" } }), "Set the pickup from a placeId · note: front door");
 });
 
 test("describeActionForModel: what the model learns from a past card", () => {

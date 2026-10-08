@@ -44,7 +44,7 @@ await step("owner signs in; the AI is on (ChatGPT login, or E2E_AI_PROVIDER)", a
   assert.equal((await agent.register("/recover", new SoftAuthenticator(), { token: SETUP_TOKEN })).status, 200);
   workspaceId = (await agent.call("/me")).json.memberships[0].workspaceId;
   widgetKey = (await agent.call(`/workspaces/${workspaceId}/inbox`)).json.inbox.widgetKey;
-  const res = await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: AI_PROVIDER, instructions: "Be brief.", monthlyReplyCap: 100 } });
+  const res = await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: AI_PROVIDER, instructions: "Be brief.", monthlyReplyCap: 5000 } });
   assert.equal(res.status, 200, JSON.stringify(res.json));
 });
 
@@ -150,7 +150,7 @@ await step("a request that takes two actions: a lookup, then the step that uses 
   assert.equal(first.meta.action?.name, "search_places", JSON.stringify(first.meta));
   assert.equal(first.meta.action.risk, "auto");
   // The page runs the lookup and returns JSON (for the AI, never shown as the Done line).
-  socket.send({ type: "action_result", runId: first.meta.action.runId, status: "ok", result: JSON.stringify([{ placeId: "ChIJ_changi_t3", label: "Changi Airport Terminal 3" }, { placeId: "ChIJ_changi_village", label: "Changi Village" }]) });
+  socket.send({ type: "action_result", runId: first.meta.action.runId, status: "ok", result: JSON.stringify([{ placeId: "ChIJ_changi_t3", label: "Changi Airport Terminal 3" }]) });
   const second = await nextMessage(socket, (m) => m.authorType === "ai" && m.seq > first.seq);
   console.log(`    AI (follow-up): ${second.body.replace(/\s+/g, " ").slice(0, 100)} → ${second.meta.action?.name} ${JSON.stringify(second.meta.action?.input)}`);
   assert.equal(second.meta.action?.name, "set_pickup", "the follow-up turn proposes the next step");

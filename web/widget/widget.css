@@ -544,7 +544,9 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 @media (prefers-reduced-motion: reduce) { .w-answer *, .w-answer .w-src-panel { animation: none !important; transition: none !important; } }
 /* AI tool steps (answer.tsx Steps): the admin's `status:` labels while tools run, above the answer.
    Open with a shimmering label while working, then one quiet line that opens the list. */
-.w-answer .w-steps { display: flex; flex-direction: column; margin-bottom: 6px; }
+/* The answer is a grid item sized by its content: cap it so a long step label ellipsizes instead of widening the row. */
+.w-answer { max-width: 100%; min-width: 0; }
+.w-answer .w-steps { display: flex; flex-direction: column; max-width: 100%; min-width: 0; margin-bottom: 6px; }
 .w-answer .w-steps-head { display: flex; align-items: center; gap: 7px; width: fit-content; max-width: 100%; margin: 0 -6px; padding: 3px 6px; border: 0; border-radius: 7px; background: transparent; color: var(--a-ink-3); font-size: 12.5px; font-weight: 500; line-height: 1.5; text-align: left; transition: background 100ms; }
 .w-answer .w-steps-head:hover { background: var(--a-hover); }
 .w-answer .w-steps-head svg.w-steps-spark { width: 14px; height: 14px; color: var(--a-ink-3); transition: color 200ms; }
@@ -562,7 +564,10 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .w-answer .w-steps-list { position: relative; display: flex; flex-direction: column; gap: 2px; margin: 2px 0 0 6px; padding: 2px 0 2px 14px; list-style: none; }
 .w-answer .w-steps-list::before { content: ""; position: absolute; left: 0; top: 0; bottom: 6px; width: 1px; background: var(--a-line); }
 .w-answer .w-step { display: flex; align-items: center; gap: 8px; min-height: 24px; min-width: 0; color: var(--a-ink); font-size: 12.5px; font-weight: 500; line-height: 1.4; animation: w-rise 320ms cubic-bezier(0.23, 1, 0.32, 1) both; }
-.w-answer .w-step-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Opened, a step may wrap (page actions describe themselves in a sentence); the folded line stays one line. */
+.w-answer .w-step-label { min-width: 0; overflow-wrap: anywhere; }
+.w-answer .w-step { align-items: flex-start; flex-wrap: wrap; }
+.w-answer .w-step > svg, .w-answer .w-step > .w-step-spin, .w-answer .w-step > .w-step-dot { margin-top: 3px; }
 .w-answer .w-steps-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; max-width: 100%; }
 .w-answer .w-steps-row .w-steps-head { flex-shrink: 1; min-width: 0; }
 .w-answer .w-steps-row .w-step-detail { flex: 1 1 140px; }

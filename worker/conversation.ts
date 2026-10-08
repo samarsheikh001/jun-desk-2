@@ -20,7 +20,7 @@ import { AiUnavailableError, completeText, createModel, loadAiSettings, type Age
 import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
 import type { ToolAction } from "./ai/tools.ts";
-import { ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_CHAIN, MAX_ACTION_RESULT, rankActions, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
+import { ACTION_ONLY_BODY, ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_CHAIN, MAX_ACTION_RESULT, rankActions, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
 import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
@@ -71,8 +71,6 @@ export const FORWARD_HEADERS = {
 
 /** AI-21: the latest page-action list from the visitor's loader, in this object's storage (never D1). */
 const PAGE_ACTIONS_KEY = "pageActions";
-/** The body of an AI message that only proposed an action (the model wrote no sentence). */
-const ACTION_ONLY_BODY = "I can do that right here:";
 
 interface NewMessage {
   authorType: AuthorType;

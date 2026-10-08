@@ -60,6 +60,9 @@ export interface MessageAction {
   continued?: boolean;
 }
 
+/** The body of an AI message that only proposed an action (the model wrote no sentence); the widget hides it. */
+export const ACTION_ONLY_BODY = "I can do that right here:";
+
 /** AI messages in a row after the visitor's last message (a chain of actions), at most. */
 export const MAX_ACTION_CHAIN = 8;
 
@@ -301,9 +304,17 @@ export function checkInput(action: Pick<PageAction, "params" | "required">, raw:
   return { input, missing, errors };
 }
 
-/** One line for the confirm step and the inbox: the action and the inputs it will run with. */
+/** An opaque id (a placeId, a token): no spaces, long, nothing a person reads. */
+const OPAQUE = /^[A-Za-z0-9_-]{16,}$/;
+
+/**
+ * One line for the confirm step and the inbox: the action and the inputs it will run with.
+ * Opaque ids are left out (the description says what they stand for).
+ */
 export function actionSummary(action: Pick<MessageAction, "description" | "input">): string {
-  const inputs = Object.entries(action.input).map(([k, v]) => `${k}: ${String(v)}`);
+  const inputs = Object.entries(action.input)
+    .filter(([, v]) => !(typeof v === "string" && OPAQUE.test(v)))
+    .map(([k, v]) => `${k}: ${String(v)}`);
   return inputs.length ? `${action.description} · ${inputs.join(" · ")}` : action.description;
 }
 
