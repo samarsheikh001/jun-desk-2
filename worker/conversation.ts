@@ -20,7 +20,7 @@ import { AiUnavailableError, completeText, createModel, loadAiSettings, type Age
 import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
 import type { ToolAction } from "./ai/tools.ts";
-import { ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_RESULT, rankActions, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
+import { ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_CHAIN, MAX_ACTION_RESULT, rankActions, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
 import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
@@ -513,18 +513,31 @@ export class Conversation extends DurableObject<Env> {
     ]);
     if (handling !== "ai") return false;
     const last = history.at(-1);
-    if (!last || last.authorType !== "visitor") return false;
+    if (!last) return false;
+    // AI-21: after a page action ran (or failed), the AI gets one follow-up turn: the next step of
+    // a longer request, or a short confirmation. Never after a cancel, undo or a vanished action.
+    const followUp = last.authorType === "ai" && last.meta.action && (last.meta.action.status === "ok" || last.meta.action.status === "error") && !last.meta.action.continued ? last.meta.action : null;
+    if (last.authorType !== "visitor" && !followUp) return false;
+    // The visitor message this turn answers, and how many AI messages already follow it.
+    let visitorAt = history.length - 1;
+    while (visitorAt >= 0 && history[visitorAt]!.authorType !== "visitor") visitorAt--;
+    const visitor = history[visitorAt];
+    if (!visitor) return false;
+    const chain = history.length - 1 - visitorAt;
+    if (followUp && chain >= MAX_ACTION_CHAIN) return false;
+    const turnId = chain === 0 ? `ai:${visitor.seq}` : `ai:${visitor.seq}.${chain}`;
 
     if (!settings.enabled) {
       // Reports don't count this one as the AI handing off (A-01).
       await this.#handoff(ref, AI_OFF_HANDOFF_REASON, HANDOFF_MESSAGES.default);
       return false;
     }
-    if (asksForHuman(last.body)) {
+    if (!followUp && asksForHuman(last.body)) {
       await this.#handoff(ref, "The customer asked for a person.", HANDOFF_MESSAGES.default);
       return false;
     }
-    if (history.filter((m) => m.authorType === "ai").length >= config.maxReplies) {
+    // Follow-up turns after actions (ai:<seq>.<n>) don't count: the cap is on answers to the visitor.
+    if (history.filter((m) => m.authorType === "ai" && !/\.\d+$/.test(m.clientMsgId)).length >= config.maxReplies) {
       await this.#handoff(ref, `The AI has answered ${config.maxReplies} times without resolving it.`, HANDOFF_MESSAGES.default);
       return false;
     }
@@ -533,6 +546,9 @@ export class Conversation extends DurableObject<Env> {
       await this.#handoff(ref, `Monthly AI reply cap (${settings.monthlyReplyCap}) reached.`, HANDOFF_MESSAGES.limit);
       return false;
     }
+
+    // Mark the follow-up as taken before the model runs, so a retried alarm can't run it twice.
+    if (followUp) await this.#updateAction(ref, followUp.runId, (a) => ({ ...a, continued: true }));
 
     this.#thinking = true;
     this.#broadcast({ type: "ai_status", state: "thinking" });
@@ -574,8 +590,9 @@ export class Conversation extends DurableObject<Env> {
         ...(technical.timezone ? { timezone: technical.timezone } : {}),
         user,
         intent: intent?.intent ?? null,
-        pageActions: rankActions(pageActions ?? [], last.body),
+        pageActions: rankActions(pageActions ?? [], visitor.body),
         pagePath: technical.pagePath,
+        followUp: followUp ? { name: followUp.name, status: followUp.status as "ok" | "error", result: followUp.result } : null,
         // Citations stream already resolved (numbered by first use, with their sources).
         onVisible: (visible, hits) => {
           const { text, sources } = streamCitations(visible, hits);
@@ -589,10 +606,10 @@ export class Conversation extends DurableObject<Env> {
           cited = sources.length;
           this.#streaming = { streamId, text, sources };
         },
-        onAction: (action) => actions.push(this.#recordAction(ref, last.seq, config.version, action)),
+        onAction: (action) => actions.push(this.#recordAction(ref, visitor.seq, config.version, action)),
         // Visitors and agents: only the admin's label and an opaque id (ai_action stays agents-only).
         onStep: (step) => {
-          const turn = `ai:${last.seq}`;
+          const turn = turnId;
           if (this.#steps?.turn !== turn) this.#steps = { turn, steps: [] };
           const steps = this.#steps.steps;
           const at = steps.findIndex((s) => s.id === step.id);
@@ -616,6 +633,9 @@ export class Conversation extends DurableObject<Env> {
         await this.#handoff(ref, `The customer wants to: ${result.pageAction.action.description}`, HANDOFF_MESSAGES.default, settings, history, technical.lines);
         return false;
       }
+      // Loop breaker: a follow-up that proposes the action that just ran, with the same inputs, is done.
+      const repeat = Boolean(followUp && result.pageAction && result.pageAction.action.id === followUp.id && JSON.stringify(checkInput(result.pageAction.action, result.pageAction.input).input) === JSON.stringify(followUp.input));
+      if (repeat) return false; // its text would say "I'll do X now" about something already done; the card shows Done
       const action = result.pageAction ? this.#proposeAction(result.pageAction.action, result.pageAction.input) : null;
       const { text, sources } = resolveCitations(outcome.text, hits);
       const body = text || (action ? ACTION_ONLY_BODY : text);
@@ -624,7 +644,7 @@ export class Conversation extends DurableObject<Env> {
         authorId: null,
         authorName: null,
         body,
-        clientMsgId: `ai:${last.seq}`, // one answer per visitor message, even if this turn is retried
+        clientMsgId: turnId, // one answer per visitor message (or per action follow-up), even if this turn is retried
         meta: {
           ...(sources.length ? { sources } : {}),
           ...(outcome.followUps.length ? { followUps: outcome.followUps } : {}),
@@ -834,6 +854,7 @@ export class Conversation extends DurableObject<Env> {
       return null;
     });
     if (!updated) return;
+    if (status === "ok" || status === "error") await this.ctx.storage.setAlarm(Date.now());
     if (status === "ok" || status === "error" || status === "undone") {
       const row = await this.env.DB.prepare("SELECT seq FROM messages WHERE conversation_id = ? AND author_type = 'visitor' ORDER BY seq DESC LIMIT 1").bind(ref.conversationId).first<{ seq: number }>();
       const config = await loadAgentConfig(this.env, ref.workspaceId);

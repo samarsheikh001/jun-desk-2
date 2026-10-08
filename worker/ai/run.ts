@@ -41,6 +41,8 @@ export interface RunInput {
   pageActions?: PageAction[];
   /** AI-21: the path of the page the customer is on; tools with `pages:` are offered only where they match. */
   pagePath?: string | null;
+  /** AI-21: this turn follows a page action that just ran (or failed), with no new visitor message. */
+  followUp?: { name: string; status: "ok" | "error"; result: string | null } | null;
 }
 
 export interface RunResult {
@@ -119,6 +121,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     ...(input.user ? { customer: input.user } : {}),
     ...(input.intent ? { intent: { name: input.intent, skill: intentSkill(config, input.intent) } } : {}),
     pageActions,
+    ...(input.followUp ? { followUp: input.followUp } : {}),
   });
 
   const result = streamText({

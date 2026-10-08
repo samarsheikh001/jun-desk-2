@@ -56,6 +56,18 @@ export interface MessageAction {
   /** What the page returned (Done line), or the error. */
   result: string | null;
   canUndo: boolean;
+  /** The AI already had its follow-up turn after this action's result (one per run). */
+  continued?: boolean;
+}
+
+/** AI messages in a row after the visitor's last message (a chain of actions), at most. */
+export const MAX_ACTION_CHAIN = 8;
+
+/** A lookup's result (JSON) is for the AI; the card shows only plain text. */
+export function visibleResult(result: string | null): string | null {
+  if (!result) return null;
+  const t = result.trim();
+  return /^[[{]/.test(t) ? null : t;
 }
 
 /** Offered to the model per reply (after `rankActions`). */
@@ -64,7 +76,8 @@ export const MAX_PAGE_ACTIONS = 30;
 export const MAX_PAGE_ACTIONS_INTAKE = 60;
 export const MAX_ACTION_DESCRIPTION = 200;
 export const MAX_ACTION_PARAMS = 12;
-export const MAX_ACTION_RESULT = 500;
+/** Lookups return JSON for the AI's next turn; keep enough of it to be useful. */
+export const MAX_ACTION_RESULT = 2000;
 const MAX_ENUM = 24;
 const MAX_CONTEXT_ENTRIES = 8;
 const MAX_CONTEXT_VALUE = 80;

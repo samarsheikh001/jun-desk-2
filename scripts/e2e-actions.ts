@@ -123,14 +123,46 @@ await step("the next turn knows what the action did", async () => {
   assert.equal(reply.meta.action.risk, "auto");
   socket.send({ type: "action_result", runId: reply.meta.action.runId, status: "ok", result: "usage-2026-10.csv (18 rows)" });
   await nextMessage(socket, (m) => m.meta.action?.runId === reply.meta.action.runId && m.meta.action.status === "ok", 10_000);
+  // The AI gets a follow-up turn with the result: here nothing more is needed, so a short confirmation.
+  const followUp = await nextMessage(socket, (m) => m.authorType === "ai" && m.seq > reply.seq);
+  console.log(`    AI (follow-up): ${followUp.body.replace(/\s+/g, " ").slice(0, 120)}`);
+  assert.equal(followUp.clientMsgId, `ai:${reply.seq - 1}.1`, "the follow-up is keyed to the visitor message it continues");
+  assert.equal(followUp.meta.action, undefined, "nothing more to do: no new action");
   const res = await visitor.call(`/widget/${widgetKey}/conversations/${conversationId}/messages`, {
     body: { clientMsgId: crypto.randomUUID(), body: "How many rows did that export have?", actions: pageActions },
     headers: { "X-Visitor-Token": token },
   });
   assert.equal(res.status, 200, JSON.stringify(res.json));
-  const answer = await nextMessage(socket, (m) => m.authorType === "ai" && m.seq > reply.seq);
+  const answer = await nextMessage(socket, (m) => m.authorType === "ai" && m.seq > followUp.seq);
   console.log(`    AI: ${answer.body.replace(/\s+/g, " ").slice(0, 120)}`);
   assert.match(answer.body, /18/);
+  socket.close();
+});
+
+await step("a request that takes two actions: a lookup, then the step that uses its result", async () => {
+  const booking = [
+    { id: "search_places", name: "search_places", description: "Finds places matching a query; returns placeIds for set_pickup", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] }, annotations: { readOnlyHint: true } },
+    { id: "set_pickup", name: "set_pickup", description: "Sets the pickup location from a placeId returned by search_places", inputSchema: { type: "object", properties: { placeId: { type: "string" } }, required: ["placeId"] } },
+  ];
+  const { socket, conversationId } = await startChat("Set my pickup to Changi Airport.", booking);
+  const first = await nextMessage(socket, (m) => m.authorType === "ai" || m.authorType === "system");
+  console.log(`    AI: ${first.body.replace(/\s+/g, " ").slice(0, 100)} → ${first.meta.action?.name} ${JSON.stringify(first.meta.action?.input)}`);
+  assert.equal(first.meta.action?.name, "search_places", JSON.stringify(first.meta));
+  assert.equal(first.meta.action.risk, "auto");
+  // The page runs the lookup and returns JSON (for the AI, never shown as the Done line).
+  socket.send({ type: "action_result", runId: first.meta.action.runId, status: "ok", result: JSON.stringify([{ placeId: "ChIJ_changi_t3", label: "Changi Airport Terminal 3" }, { placeId: "ChIJ_changi_village", label: "Changi Village" }]) });
+  const second = await nextMessage(socket, (m) => m.authorType === "ai" && m.seq > first.seq);
+  console.log(`    AI (follow-up): ${second.body.replace(/\s+/g, " ").slice(0, 100)} → ${second.meta.action?.name} ${JSON.stringify(second.meta.action?.input)}`);
+  assert.equal(second.meta.action?.name, "set_pickup", "the follow-up turn proposes the next step");
+  assert.equal(second.meta.action.input.placeId, "ChIJ_changi_t3", "with the id from the lookup");
+  assert.equal(second.meta.action.risk, "confirm");
+  socket.send({ type: "action_result", runId: second.meta.action.runId, status: "ok", result: "Pickup set to Changi Airport Terminal 3." });
+  const third = await nextMessage(socket, (m) => m.authorType === "ai" && m.seq > second.seq);
+  console.log(`    AI (done): ${third.body.replace(/\s+/g, " ").slice(0, 100)}`);
+  assert.equal(third.meta.action, undefined, "done: no further action");
+  const { messages } = (await agent.call(`/conversations/${conversationId}`)).json;
+  const direct = messages.filter((m: { authorType: string; clientMsgId: string }) => m.authorType === "ai" && !/\.\d+$/.test(m.clientMsgId)).length;
+  assert.equal(direct, 1, "the chain counts as one answer toward the reply cap");
   socket.close();
 });
 

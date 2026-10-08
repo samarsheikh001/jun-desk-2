@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { actionStatusText, actionSummary, checkInput, type ActionParam, type MessageAction } from "../../shared/actions.ts";
+import { actionStatusText, actionSummary, checkInput, visibleResult, type ActionParam, type MessageAction } from "../../shared/actions.ts";
 
 // AI-21: the card under an AI answer that proposed a page action (D-40). It asks for whatever the
 // model left out (fields drawn from the action's params: a short list becomes buttons, a date a
@@ -172,7 +172,7 @@ export function ActionCard({
         <div className={`w-act-status ${action.status}`} role="status">
           {ok ? <Check /> : <span className="w-act-dot" aria-hidden="true" />}
           <span className="w-act-state">{actionStatusText(action.status)}</span>
-          {action.result && (ok || action.status === "error") && <span className="w-act-result">{action.result}</span>}
+          {(ok || action.status === "error") && <span className="w-act-result">{visibleResult(action.result) ?? action.description}</span>}
         </div>
         {ok && action.canUndo && (
           <div className="w-act-row">

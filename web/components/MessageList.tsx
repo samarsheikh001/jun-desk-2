@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { AiStep, Attachment, Message, Source } from "../../shared/protocol.ts";
-import { actionStatusText, actionSummary, type MessageAction } from "../../shared/actions.ts";
+import { actionStatusText, actionSummary, visibleResult, type MessageAction } from "../../shared/actions.ts";
 import { mentionParts } from "../../shared/inbox.ts";
 import { formatSize, formatTime, isImage, type PendingMessage } from "../lib/thread.ts";
 
@@ -182,7 +182,7 @@ export function MessageList({
         {m.authorType === "ai" && m.meta.action && (
           <div className="ai-page-action small muted" title={`Page action ${m.meta.action.name} · run ${m.meta.action.runId}`}>
             Page action: {actionSummary(m.meta.action)} · {actionStatusText(m.meta.action.status)}
-            {m.meta.action.result && m.meta.action.status !== "pending" ? ` · ${m.meta.action.result}` : ""}
+            {m.meta.action.status !== "pending" && visibleResult(m.meta.action.result) ? ` · ${visibleResult(m.meta.action.result)}` : ""}
           </div>
         )}
         {m.seq === lastSeenSeq && <div className="seen muted small">Seen</div>}
