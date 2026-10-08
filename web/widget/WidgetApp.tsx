@@ -408,6 +408,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
             logoUrl: config.logoUrl,
             suggestions: config.suggestions,
             placeholder: config.placeholder,
+            neon: config.neon,
             unread: Boolean(summary && unread(summary)),
             setOpen: setBarOpen,
           }}
@@ -589,7 +590,7 @@ function WidgetThread({
   /** W-04 bar launcher: the chat panel's header, the suggested questions, and opening or folding it. */
   bar?: { head: ReactNode; suggestions: string[]; side: "left" | "right"; setOpen: (open: boolean) => void };
   /** W-04 island (D-39): what its states show, and opening or closing it. */
-  island?: { name: string; logoUrl: string | null; suggestions: string[]; placeholder: string; unread: boolean; setOpen: (open: boolean) => void };
+  island?: { name: string; logoUrl: string | null; suggestions: string[]; placeholder: string; neon: boolean; unread: boolean; setOpen: (open: boolean) => void };
   /**
    * The chat window (D-34): the greeting a new chat starts with, the suggested questions (until
    * dismissed), and the action row's "Contact the team" (W-07's handoff) and "Start a new chat".
@@ -848,7 +849,7 @@ function WidgetThread({
     const live = Boolean(thread.aiStream?.text);
     const shown: IslandState = state === "answer" && thinking && !loading ? "thinking" : state;
     return (
-      <Island state={shown} live={live} onOpen={() => island.setOpen(true)}>
+      <Island state={shown} live={live} neon={island.neon} onOpen={() => island.setOpen(true)}>
         {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} onOpen={() => island.setOpen(true)} />}
         {shown === "nudge" && opener && <NudgeLine logoUrl={island.logoUrl} text={opener.text} from={opener.from ?? null} onAsk={() => island.setOpen(true)} onDismiss={dismissNudge} />}
         {shown === "open" && (

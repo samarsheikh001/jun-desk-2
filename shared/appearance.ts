@@ -40,6 +40,8 @@ export interface WidgetLook {
   launcher: LauncherStyle;
   placeholder: string;
   suggestions: string[];
+  /** Island launcher (D-39): the turning multi-colour border. On unless turned off. */
+  neon: boolean;
 }
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -80,6 +82,7 @@ export function widgetLook(s: Record<string, unknown>, workspaceName: string, lo
     suggestions: Array.isArray(s.suggestions)
       ? s.suggestions.filter((q): q is string => typeof q === "string" && q.trim() !== "").map((q) => clean(q).slice(0, SUGGESTION_LIMIT)).slice(0, SUGGESTIONS_MAX)
       : [],
+    neon: s.neon !== false,
   };
 }
 
@@ -103,6 +106,10 @@ export function applyAppearance(settings: Record<string, unknown>, body: Record<
   if (body.launcher !== undefined) {
     if (!LAUNCHERS.includes(body.launcher as LauncherStyle)) throw new Error("Launcher must be button, card, bar or island.");
     settings.launcher = body.launcher;
+  }
+  if (body.neon !== undefined) {
+    if (typeof body.neon !== "boolean") throw new Error("Neon border must be on or off.");
+    settings.neon = body.neon;
   }
   if (body.radius !== undefined) {
     if (typeof body.radius !== "number" || !Number.isInteger(body.radius) || body.radius < 0 || body.radius > RADIUS_MAX) {

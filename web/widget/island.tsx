@@ -50,7 +50,7 @@ function useIslandFrame(box: { w: number; h: number }, live: boolean): void {
  * the shell then springs to that exact size (measure, then move). A key per state swaps the content
  * with a short fade and un-blur.
  */
-export function Island({ state, live, onOpen, children }: { state: IslandState; live: boolean; onOpen: () => void; children: ReactNode }) {
+export function Island({ state, live, neon, onOpen, children }: { state: IslandState; live: boolean; neon: boolean; onOpen: () => void; children: ReactNode }) {
   const content = useRef<HTMLDivElement>(null);
   // "/" opens the resting island from inside the frame too (after Escape the focus is still here;
   // the loader handles the key on the host page).
@@ -90,8 +90,8 @@ export function Island({ state, live, onOpen, children }: { state: IslandState; 
     <div className="i-root">
       {/* The box carries the size and its spring; the neon ring and glow sit on it, outside the clipped shell. */}
       <div className={`i-box i-s-${state}${live ? " i-live" : ""}`} style={{ width: w, height: h }}>
-        <div className="i-glow" aria-hidden="true" />
-        <div className="i-ring" aria-hidden="true" />
+        {neon && <div className="i-glow" aria-hidden="true" />}
+        {neon && <div className="i-ring" aria-hidden="true" />}
         <div className="i-shell" role="region" aria-label="Chat">
           <div key={state} className="i-view" ref={content} style={{ width: w, ...(state === "panel" ? { height: panelHeight } : {}) }}>
             {children}
