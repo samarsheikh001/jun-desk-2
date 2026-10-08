@@ -363,11 +363,10 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-box.i-live { transition-duration: 0.25s; transition-timing-function: ease-out; }
 .i-s-open, .i-s-answer, .i-s-panel { border-radius: var(--radius); }
 .i-shell { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.1); }
-/* Neon border: a conic gradient turning slowly, drawn as a 1.5px ring (masked to the edge) with a blurred copy behind for the glow. */
+/* Neon glow from beneath: a conic gradient, blurred wide and set low, so the light seems to come from under the
+   island (no hard ring); its colours drift as the gradient turns. */
 @property --i-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-.i-ring, .i-glow { --i-neon: conic-gradient(from var(--i-angle), #ff5ec8, #8b5cff, #35c8ff, #3dffa8, #ffd54a, #ff7a5c, #ff5ec8); position: absolute; border-radius: inherit; background: var(--i-neon); animation: i-turn 6s linear infinite; pointer-events: none; }
-.i-ring { inset: -1.5px; padding: 1.5px; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; z-index: 1; }
-.i-glow { inset: -2px; filter: blur(14px); opacity: 0.55; }
+.i-glow { position: absolute; inset: 40% -6px -8px; border-radius: inherit; background: conic-gradient(from var(--i-angle), #ff5ec8, #8b5cff, #35c8ff, #3dffa8, #ffd54a, #ff7a5c, #ff5ec8); filter: blur(22px) saturate(1.3); opacity: 0.8; animation: i-turn 7s linear infinite; pointer-events: none; }
 @keyframes i-turn { to { --i-angle: 360deg; } }
 /* Content sits on the bottom edge (the box stays put while the shell grows) and arrives from a blur after the old content has gone. */
 .i-view { position: absolute; left: 0; bottom: 0; animation: i-in 0.3s 0.14s both; }
@@ -481,7 +480,7 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 @media (prefers-reduced-motion: reduce) {
   .i-box { transition: none; }
   .i-view { animation: i-fade 0.15s both; }
-  .i-chip, .i-mark.pulse, .i-ring, .i-glow { animation: none; }
+  .i-chip, .i-mark.pulse, .i-glow { animation: none; }
   .i-status-text { animation: none; background: none; color: var(--muted); }
 }
 @keyframes i-fade { from { opacity: 0; } to { opacity: 1; } }
