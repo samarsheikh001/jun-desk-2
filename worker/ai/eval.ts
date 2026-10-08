@@ -101,6 +101,7 @@ async function runCase(ctx: EvalContext, c: EvalCase): Promise<RunResult> {
         runId: `run_eval_${i}`,
         id: action.id,
         name: action.name,
+        tool: action.tool,
         description: action.description,
         risk: action.risk === "auto" ? "auto" : "confirm",
         params: action.params,

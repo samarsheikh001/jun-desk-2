@@ -1,5 +1,5 @@
-import type { ChatMessage } from "@jun/llm";
-import { describeActionForModel, describePageAction, type PageAction } from "../../shared/actions.ts";
+import type { ModelMessage } from "ai";
+import { ACTION_ONLY_BODY, actionCallId, actionStatusText, actionToolResult, describePageAction, toolSlug, visibleResult, type PageAction } from "../../shared/actions.ts";
 import type { Message, Source } from "../../shared/protocol.ts";
 import type { Skill, ToolUser } from "./config.ts";
 import type { SearchHit } from "./query.ts";
@@ -51,10 +51,10 @@ export interface PromptOptions {
 
 /** AI-21: what the follow-up turn after an action is for. */
 export function followUpRules(f: NonNullable<PromptOptions["followUp"]>): string {
-  const outcome = f.status === "ok" ? "has just run" : "just failed";
+  const outcome = f.status === "ok" ? "has just run (its result is the last tool result)" : "just failed (the error is the last tool result)";
   return `
 
-This reply follows the page action "${f.name}", which ${outcome}${f.result ? ` with this result: ${f.result}` : ""}. The customer hasn't written anything new. If their request still needs another step, propose that next action now (never "${f.name}" again with the same inputs). If it failed, say so plainly and suggest what to try. If nothing more is needed, confirm what was done in one short sentence, with no question and no follow-up questions.`;
+This reply follows the page action "${f.name}", which ${outcome}. The customer hasn't written anything new. If their request still needs another step, propose that next action now (never "${f.name}" again with the same inputs). If it failed, say so plainly and suggest what to try. If nothing more is needed, confirm what was done in one short sentence, with no question and no follow-up questions.`;
 }
 
 /** AI-21 rules for page actions (D-40): only what the page offers, only when asked, one per reply. */
@@ -229,16 +229,43 @@ export function streamCitations(visible: string, hits: SearchHit[]): { text: str
   return resolveCitations(visible.replace(/[【［[][^\]】］\s]{0,16}$/, ""), hits);
 }
 
-/** Recent public conversation as model input (agents' messages count as the assistant side). */
-export function toChatMessages(history: Message[], maxMessages = 16): ChatMessage[] {
-  return history
+/**
+ * Recent public conversation as model input (agents' messages count as the assistant side).
+ * AI-21: an AI message that proposed a page action replays as the tool call it made plus a tool
+ * result with what became of it, the same shape the SDK gives server tools, so the model reads
+ * outcomes as observations rather than as its own words.
+ */
+export function toChatMessages(history: Message[], maxMessages = 16): ModelMessage[] {
+  const out: ModelMessage[] = [];
+  for (const m of history
     .filter((m) => !m.internal && (m.authorType === "visitor" || m.authorType === "ai" || m.authorType === "agent") && (m.body.trim() || m.meta.action))
-    .slice(-maxMessages)
-    .map((m) => ({
-      role: m.authorType === "visitor" ? "user" : "assistant",
-      // AI-21: an AI message that proposed a page action also tells the model what became of it.
-      content: m.authorType === "ai" && m.meta.action ? `${m.body}\n${describeActionForModel(m.meta.action)}`.trim() : m.body,
-    }));
+    .slice(-maxMessages)) {
+    const action = m.authorType === "ai" ? m.meta.action : undefined;
+    if (!action) {
+      out.push({ role: m.authorType === "visitor" ? "user" : "assistant", content: m.body });
+      continue;
+    }
+    const toolName = action.tool ?? toolSlug(action.name);
+    const toolCallId = actionCallId(action.runId);
+    const text = m.body === ACTION_ONLY_BODY ? "" : m.body;
+    out.push({
+      role: "assistant",
+      content: [...(text ? [{ type: "text" as const, text }] : []), { type: "tool-call" as const, toolCallId, toolName, input: action.input }],
+    });
+    out.push({ role: "tool", content: [{ type: "tool-result", toolCallId, toolName, output: { type: "text", value: actionToolResult(action) } }] });
+  }
+  // Providers (Mistral on Workers AI) require an assistant turn between a tool result and the next
+  // user message. When the AI said nothing after an action (no follow-up, or it was cancelled or
+  // undone), that turn is what the visitor saw on the card: the result, or the status.
+  for (let i = 0; i < out.length - 1; i++) {
+    if (out[i]!.role === "tool" && out[i + 1]!.role === "user") {
+      const part = (out[i]!.content as { toolCallId: string }[])[0]!;
+      const action = history.find((m) => m.meta.action && actionCallId(m.meta.action.runId) === part.toolCallId)?.meta.action;
+      const shown = action ? (action.status === "pending" ? actionStatusText("pending") : (visibleResult(action.result) ?? actionStatusText(action.status))) : "Done.";
+      out.splice(i + 1, 0, { role: "assistant", content: shown });
+    }
+  }
+  return out;
 }
 
 /** Search query: the latest visitor message, plus the previous one when the latest is short ("and for teams?"). */

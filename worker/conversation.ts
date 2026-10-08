@@ -636,6 +636,12 @@ export class Conversation extends DurableObject<Env> {
       if (repeat) return false; // its text would say "I'll do X now" about something already done; the card shows Done
       const action = result.pageAction ? this.#proposeAction(result.pageAction.action, result.pageAction.input) : null;
       const { text, sources } = resolveCitations(outcome.text, hits);
+      if (!text && !action) {
+        // Nothing to say: fine after an action (the card shows what happened); otherwise the team takes it.
+        if (followUp) return false;
+        await this.#handoff(ref, "The AI gave an empty reply.", HANDOFF_MESSAGES.error, settings, history, technical.lines);
+        return false;
+      }
       const body = text || (action ? ACTION_ONLY_BODY : text);
       const answer = await this.#insert(ref, {
         authorType: "ai",
@@ -806,6 +812,7 @@ export class Conversation extends DurableObject<Env> {
       runId: newId("run"),
       id: action.id,
       name: action.name,
+      tool: action.tool,
       description: action.description,
       risk: action.risk === "auto" ? "auto" : "confirm",
       params: action.params,

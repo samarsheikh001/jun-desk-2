@@ -45,6 +45,8 @@ export interface MessageAction {
   runId: string;
   id: string;
   name: string;
+  /** The tool name the model called (pa_<name>, suffixed for instances); the history replays the call under it. */
+  tool?: string;
   description: string;
   risk: "auto" | "confirm";
   params: Record<string, ActionParam>;
@@ -318,22 +320,36 @@ export function actionSummary(action: Pick<MessageAction, "description" | "input
   return inputs.length ? `${action.description} · ${inputs.join(" · ")}` : action.description;
 }
 
-/** What the model sees of a past action in the conversation history (appended to its own message). */
-export function describeActionForModel(action: MessageAction): string {
-  const input = Object.keys(action.input).length ? ` with ${JSON.stringify(action.input)}` : "";
+/**
+ * The tool call id used when a past action is replayed to the model. Some providers (Workers AI's
+ * Mistral) accept only 9 alphanumeric characters, so it's a stable hash of the run id, not the id.
+ */
+export function actionCallId(runId: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < runId.length; i++) h = Math.imul(h ^ runId.charCodeAt(i), 16777619) >>> 0;
+  let g = (h * 2654435761) >>> 0;
+  return (h.toString(36) + g.toString(36)).replace(/[^a-z0-9]/g, "").padEnd(9, "0").slice(0, 9);
+}
+
+/**
+ * The tool result the model sees for a past action: in the history a page action is replayed as
+ * the tool call it was, followed by this as its result, exactly like a server tool. Never prose
+ * inside the assistant's own message, which the model would learn to imitate.
+ */
+export function actionToolResult(action: MessageAction): string {
   switch (action.status) {
     case "pending":
-      return `[You proposed the page action "${action.name}"${input}; the customer hasn't confirmed it yet.]`;
+      return "Waiting for the customer to confirm it in the chat.";
     case "ok":
-      return `[The page action "${action.name}"${input} ran${action.result ? `: ${action.result}` : ""}.]`;
+      return action.result || "Done.";
     case "error":
-      return `[The page action "${action.name}"${input} failed${action.result ? `: ${action.result}` : ""}.]`;
+      return `Failed: ${action.result || "the page reported an error"}`;
     case "cancelled":
-      return `[The customer cancelled the page action "${action.name}".]`;
+      return "The customer cancelled it; it did not run.";
     case "gone":
-      return `[The page action "${action.name}" was no longer available (the customer left the page), so it didn't run.]`;
+      return "No longer available (the customer left the page); it did not run.";
     case "undone":
-      return `[The customer undid the page action "${action.name}".]`;
+      return `Ran${action.result ? ` (${action.result})` : ""}, then the customer undid it.`;
   }
 }
 

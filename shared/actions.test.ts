@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { actionInputSchema, actionSummary, checkInput, describeActionForModel, describePageAction, matchesPage, MAX_PAGE_ACTIONS, MAX_PAGE_ACTIONS_INTAKE, rankActions, sanitizeActions, toolSlug, type MessageAction } from "./actions.ts";
+import { actionCallId, actionInputSchema, actionSummary, actionToolResult, checkInput, describePageAction, matchesPage, MAX_PAGE_ACTIONS, MAX_PAGE_ACTIONS_INTAKE, rankActions, sanitizeActions, toolSlug, type MessageAction } from "./actions.ts";
 
 const addToCart = {
   id: "add_to_cart#p1",
@@ -159,7 +159,15 @@ test("describePageAction and actionSummary read as one line each", () => {
   assert.equal(actionSummary({ description: "Set the pickup from a placeId", input: { placeId: "ChIJuU9qyPgb2jERidqJVhPuyUw", note: "front door" } }), "Set the pickup from a placeId · note: front door");
 });
 
-test("describeActionForModel: what the model learns from a past card", () => {
+test("actionCallId: 9 alphanumeric characters, stable, distinct per run", () => {
+  const a = actionCallId("run_TI5a-aft-bvHx_hp");
+  assert.match(a, /^[a-z0-9]{9}$/);
+  assert.equal(a, actionCallId("run_TI5a-aft-bvHx_hp"));
+  assert.notEqual(a, actionCallId("run_TI5a-aft-bvHx_hq"));
+  assert.match(actionCallId("x"), /^[a-z0-9]{9}$/);
+});
+
+test("actionToolResult: what the model gets as the tool result of a past card", () => {
   const base: MessageAction = {
     runId: "run_1",
     id: "add_to_cart#p1",
@@ -174,7 +182,10 @@ test("describeActionForModel: what the model learns from a past card", () => {
     result: null,
     canUndo: false,
   };
-  assert.equal(describeActionForModel(base), '[You proposed the page action "add_to_cart" with {"size":"M"}; the customer hasn\'t confirmed it yet.]');
-  assert.equal(describeActionForModel({ ...base, status: "ok", result: "Added 1 × M" }), '[The page action "add_to_cart" with {"size":"M"} ran: Added 1 × M.]');
-  assert.equal(describeActionForModel({ ...base, status: "gone", input: {} }), '[The page action "add_to_cart" was no longer available (the customer left the page), so it didn\'t run.]');
+  assert.equal(actionToolResult(base), "Waiting for the customer to confirm it in the chat.");
+  assert.equal(actionToolResult({ ...base, status: "ok", result: "Added 1 × M" }), "Added 1 × M");
+  assert.equal(actionToolResult({ ...base, status: "ok" }), "Done.");
+  assert.equal(actionToolResult({ ...base, status: "error", result: "Out of stock" }), "Failed: Out of stock");
+  assert.equal(actionToolResult({ ...base, status: "gone" }), "No longer available (the customer left the page); it did not run.");
+  assert.equal(actionToolResult({ ...base, status: "undone", result: "Added 1 × M" }), "Ran (Added 1 × M), then the customer undid it.");
 });

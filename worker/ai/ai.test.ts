@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Message } from "../../shared/protocol.ts";
+import { actionCallId } from "../../shared/actions.ts";
 import { asksForHuman, resolveCitations, searchQuery, systemPrompt, toChatMessages } from "./agent.ts";
 import { blocksFromText, chunkBlocks, decodeEntities } from "./chunk.ts";
 import { ftsQuery } from "./query.ts";
@@ -71,6 +72,26 @@ test("model input excludes internal notes and system messages", () => {
     msg("agent", "Hello! I'm Ada."),
   ]);
   assert.deepEqual(input, [{ role: "user", content: "hi" }, { role: "assistant", content: "Hello! I'm Ada." }]);
+});
+
+test("model input replays a page action as a tool call and its result", () => {
+  const action = { runId: "run_1", id: "add_to_cart", name: "add_to_cart", tool: "pa_add_to_cart", description: "Add it to the cart", risk: "confirm" as const, params: {}, required: [], input: { size: "M" }, missing: [], status: "ok" as const, result: "Added 1 × M", canUndo: true };
+  const input = toChatMessages([msg("visitor", "add it in M"), msg("ai", "Adding it now.", { meta: { action } }), msg("visitor", "thanks")]);
+  assert.deepEqual(input, [
+    { role: "user", content: "add it in M" },
+    { role: "assistant", content: [{ type: "text", text: "Adding it now." }, { type: "tool-call", toolCallId: actionCallId("run_1"), toolName: "pa_add_to_cart", input: { size: "M" } }] },
+    { role: "tool", content: [{ type: "tool-result", toolCallId: actionCallId("run_1"), toolName: "pa_add_to_cart", output: { type: "text", value: "Added 1 × M" } }] },
+    { role: "assistant", content: "Added 1 × M" }, // no follow-up reply was stored: the card's line stands in
+    { role: "user", content: "thanks" },
+  ]);
+  // The visitor wrote again before the AI said anything after the action: the card's line fills the assistant turn.
+  const gap = toChatMessages([msg("ai", "Adding it now.", { meta: { action } }), msg("visitor", "thanks")]);
+  assert.deepEqual(gap[2], { role: "assistant", content: "Added 1 × M" });
+  const cancelled = toChatMessages([msg("ai", "Adding it now.", { meta: { action: { ...action, status: "cancelled" as const, result: null } } }), msg("visitor", "no")]);
+  assert.deepEqual(cancelled[2], { role: "assistant", content: "Cancelled" });
+  // An action-only reply has a placeholder body: the model sees just the call.
+  const only = toChatMessages([msg("ai", "I can do that right here:", { meta: { action } })]);
+  assert.deepEqual((only[0] as { content: unknown[] }).content.length, 1);
 });
 
 test("system prompt numbers sources and keeps the handoff rule", () => {
