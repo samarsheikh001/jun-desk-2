@@ -8,7 +8,7 @@
  * desk's live visitor list (data-consent="required"
  * waits for JunDesk.consent(true) and stores nothing before it).
  * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt) / .logout() / .consent(bool)
- *      / .reportError({ message, code? })
+ *      / .reportError({ message, code? }). With the island launcher, "/" on the page opens it.
  * identify() takes a JWT your backend signs with the desk's identity secret (data-user-token works too).
  * reportError() tells support what failed in your app's own words ("Row 42: missing email"); masked
  * like everything else and kept in memory with the errors above.
@@ -239,10 +239,10 @@
   var nudged, nudgeTimer, nudgeEvent, openers; // push() and the ticker decide when (P-01)
   // The card's opener (what the chat starts with if they click it): { text, inviteId?, from?, page? }.
   var cardOpener;
-  // The card launcher's frame shows the offer in its own card instead.
+  // The card and island launchers' frame shows the offer itself instead.
   function showCard(o) {
     nudged = 1;
-    if (wrap.classList.contains("card")) return post({ type: "jun:proactive", opener: pendingOpener = o, sessionId: sid });
+    if (/card|island/.test(wrap.className)) return post({ type: "jun:proactive", opener: pendingOpener = o, sessionId: sid });
     cardOpener = o;
     card.querySelector("p").textContent = o.text;
     card.querySelector(".from").textContent = o.from || "";
@@ -281,8 +281,8 @@
     // Left side (W-04); the full-screen frame on phones wins over it (same specificity, later).
     ".left>*{right:auto;left:22px}" +
     "@media(max-width:768px){.frame{inset:0;width:100%;height:100dvh;border-radius:0}}" +
-    // W-04 "bar" (D-32) and "card" (D-34) launchers: no button; the frame draws them and says where it goes (jun:css).
-    ".bar .btn,.card .btn{display:none}.bar .frame{display:block;box-shadow:none}" +
+    // W-04 "bar" (D-32), "card" (D-34) and "island" (D-39) launchers: no button; the frame draws them and says where it goes (jun:css).
+    ".bar .btn,.card .btn,.island .btn{display:none}.bar .frame,.island .frame{display:block;box-shadow:none;background:none}" +
     ".nudge p{margin:0 24px 14px 0}.from{font-size:12px;color:#737373}.go{width:100%;padding:8px 6px;border-radius:calc(var(--r,16px)*.625);background:var(--c);color:var(--t);font:12px Arial,sans-serif}" +
     ".x{position:absolute;top:12px;right:12px;width:30px;height:30px;background:none;font-size:23px;font-weight:300;color:#737373}" +
     "</style><div class=\"w\">" +
@@ -335,6 +335,11 @@
   }
 
   button.addEventListener("click", function () { setOpen(!open); });
+  // Island (D-39): "/" opens it, unless the visitor is typing somewhere on the page.
+  document.addEventListener("keydown", function (e) {
+    var t = e.target;
+    if (e.key == "/" && !open && !e.ctrlKey && !e.metaKey && wrap.classList.contains("island") && !(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))) { e.preventDefault(); setOpen(true); }
+  });
   card.querySelector(".x").addEventListener("click", hideNudge);
   card.querySelector(".go").addEventListener("click", function () {
     pendingOpener = cardOpener;

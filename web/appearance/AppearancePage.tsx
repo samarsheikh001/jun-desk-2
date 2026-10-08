@@ -188,11 +188,22 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
                 <NativeSelectOption value="left">Left</NativeSelectOption>
               </NativeSelect>
             </Field>
-            <Field label="Closed state" hint={look.launcher === "bar" ? "An \"Ask anything…\" bar instead of a button, showing your suggested questions. The chat opens above it on dark glass. Theme and rounding don't apply to it." : "The greeting card shows your greeting above the button until the visitor dismisses it or opens the chat (once per visit)."} htmlFor="appear-launcher">
+            <Field
+              label="Closed state"
+              hint={
+                look.launcher === "bar"
+                  ? "An \"Ask anything…\" bar instead of a button, showing your suggested questions. The chat opens above it on dark glass. Theme and rounding don't apply to it."
+                  : look.launcher === "island"
+                    ? "A small pill at the bottom centre that changes shape with each moment: it opens into a question box, shrinks to a status line while the assistant works, grows around the answer, and offers help as one line. Dark glass tinted with your brand colour; theme, side and rounding don't apply to it. \"/\" opens it."
+                    : "The greeting card shows your greeting above the button until the visitor dismisses it or opens the chat (once per visit)."
+              }
+              htmlFor="appear-launcher"
+            >
               <NativeSelect id="appear-launcher" value={look.launcher} disabled={off} onChange={(e) => { edit({ launcher: e.target.value as LauncherStyle }); setOpen(false); }}>
                 <NativeSelectOption value="button">Chat button only</NativeSelectOption>
                 <NativeSelectOption value="card">Greeting card</NativeSelectOption>
                 <NativeSelectOption value="bar">Ask bar</NativeSelectOption>
+                <NativeSelectOption value="island">Island</NativeSelectOption>
               </NativeSelect>
             </Field>
           </section>
@@ -289,7 +300,6 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
 
   useEffect(() => post({ type: "jun:preview", look }), [look, post]);
   useEffect(() => post({ type: open ? "jun:open" : "jun:close" }), [open, post]);
-  const bar = look.launcher === "bar";
   const button = look.launcher === "button";
   // Changing the launcher, or closing a chat opened from the button: drop the size the frame gave
   // itself (the frame sends its own again). The bar and the card keep theirs when they close: they

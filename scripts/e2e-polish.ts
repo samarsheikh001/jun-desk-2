@@ -102,6 +102,9 @@ await step("W-04: appearance is validated, served cross-origin to the loader, an
   // D-32: the "Ask anything…" bar launcher.
   assert.equal((await agent.call(inbox, { method: "PATCH", body: { launcher: "bar" } })).status, 200);
   assert.equal(((await (await fetch(`${BASE}/api/widget/${widgetKey}/config`)).json()) as Record<string, unknown>).launcher, "bar");
+  // D-39: the morphing island.
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { launcher: "island" } })).status, 200);
+  assert.equal(((await (await fetch(`${BASE}/api/widget/${widgetKey}/config`)).json()) as Record<string, unknown>).launcher, "island");
   assert.equal((await agent.call(inbox, { method: "PATCH", body: { launcher: "banner" } })).status, 400);
 
   // A 1×1 PNG.

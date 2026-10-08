@@ -9,6 +9,7 @@ import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/threa
 import { AiAnswer } from "./answer.tsx";
 import { BarHead, Chips, Glass, Typewriter, useBarFrame } from "./bar.tsx";
 import { Badge, MiniCard, useCardFrame } from "./card.tsx";
+import { Island, IslandChips, IslandHead, NudgeLine, RestPill, StatusLine, type IslandState } from "./island.tsx";
 
 // The chat UI inside the widget iframe. The visitor's token is created only when they
 // first send something, so just opening the chat stores nothing in their browser.
@@ -155,6 +156,8 @@ interface WidgetConfig extends WidgetLook {
 
 /** In a frame on a host page (the loader's, or the Appearance preview), as the "Ask anything…" bar. */
 const asBar = (look: WidgetLook) => look.launcher === "bar" && window.parent !== window;
+/** In a frame, as the morphing island (D-39). */
+const asIsland = (look: WidgetLook) => look.launcher === "island" && window.parent !== window;
 
 /** W-04: brand colour (with readable text on it), light/dark/auto and corner rounding on the frame. */
 function applyLook(look: WidgetLook): void {
@@ -163,10 +166,12 @@ function applyLook(look: WidgetLook): void {
     root.style.setProperty("--accent", look.color);
     root.style.setProperty("--accent-text", textOn(look.color));
   }
-  // The bar has one look (a white bar, the chat on dark glass). Its page stays light: a frame
-  // whose colour scheme differs from the host page's gets an opaque backdrop.
+  // The bar and the island have one look each (the bar white with the chat on dark glass, the
+  // island dark glass tinted with the brand colour). Their page stays light: a frame whose colour
+  // scheme differs from the host page's gets an opaque backdrop.
   root.classList.toggle("bar", asBar(look));
-  if (look.theme === "auto" || asBar(look)) delete root.dataset.theme;
+  root.classList.toggle("island", asIsland(look));
+  if (look.theme === "auto" || asBar(look) || asIsland(look)) delete root.dataset.theme;
   else root.dataset.theme = look.theme;
   for (const [name, value] of Object.entries(radiusVars(look.radius))) root.style.setProperty(name, value);
 }
@@ -329,7 +334,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
 
   // W-04 card launcher (D-34): the frame draws the closed card itself, and sizes itself to it.
   const cardLauncher = Boolean(config && config.launcher === "card" && window.parent !== window);
-  const framed = Boolean(config && !asBar(config) && window.parent !== window);
+  const framed = Boolean(config && !asBar(config) && !asIsland(config) && window.parent !== window);
   useCardFrame(cardLauncher, config?.position ?? "right", open && framed, grown && framed, closedRef, miniHidden);
   useLayoutEffect(() => {
     document.documentElement.classList.toggle("mini", cardLauncher && !open);
@@ -380,14 +385,35 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     endIntent: () => setView((v) => (v.kind === "thread" && v.intent ? { kind: "thread", id: v.id, ...(v.mount ? { mount: v.mount } : {}) } : v)),
   };
 
-  // W-04 bar launcher (D-32): one conversation at a time, opened from the bar.
-  if (asBar(config)) {
+  // W-04 bar launcher (D-32) and island (D-39): one conversation at a time, opened from the control itself.
+  if (asBar(config) || asIsland(config)) {
     const id = view.kind === "thread" ? view.id : null;
     const setBarOpen = (next: boolean) => {
       setOpen(next);
       postToHost({ type: next ? "jun:open" : "jun:close" });
     };
     const away = config.hours && !config.hours.open ? `back ${config.hours.back ?? "soon"}` : null;
+    if (asIsland(config)) {
+      const summary = conversations.find((c) => c.id === id) ?? null;
+      return (
+        <WidgetThread
+          key={threadKey}
+          {...threadProps}
+          conversationId={id}
+          summary={summary}
+          opener={view.kind === "thread" ? view.opener : undefined}
+          intent={view.kind === "thread" ? view.intent : undefined}
+          island={{
+            name: config.workspaceName,
+            logoUrl: config.logoUrl,
+            suggestions: config.suggestions,
+            placeholder: config.placeholder,
+            unread: Boolean(summary && unread(summary)),
+            setOpen: setBarOpen,
+          }}
+        />
+      );
+    }
     return (
       <WidgetThread
         key={threadKey}
@@ -541,6 +567,7 @@ function WidgetThread({
   endIntent,
   intent,
   bar,
+  island,
 }: {
   api: WidgetApi;
   conversationId: string | null;
@@ -561,6 +588,8 @@ function WidgetThread({
   intent?: ChatIntent | undefined;
   /** W-04 bar launcher: the chat panel's header, the suggested questions, and opening or folding it. */
   bar?: { head: ReactNode; suggestions: string[]; side: "left" | "right"; setOpen: (open: boolean) => void };
+  /** W-04 island (D-39): what its states show, and opening or closing it. */
+  island?: { name: string; logoUrl: string | null; suggestions: string[]; placeholder: string; unread: boolean; setOpen: (open: boolean) => void };
   /**
    * The chat window (D-34): the greeting a new chat starts with, the suggested questions (until
    * dismissed), and the action row's "Contact the team" (W-07's handoff) and "Start a new chat".
@@ -657,12 +686,15 @@ function WidgetThread({
   const bottom = useRef<HTMLDivElement>(null);
   const pill = useRef<HTMLDivElement>(null);
   useBarFrame(Boolean(bar), bar?.side ?? "right", open, panel, bottom);
-  const setBarOpen = bar?.setOpen;
-  // The box takes focus when the bar opens (and again once a new chat's thread swaps in).
+  const setBarOpen = bar?.setOpen ?? island?.setOpen;
+  const islandState = useIslandState({ island: Boolean(island), open, hasChat, conversationId, opener, intent, handling });
+  // The box takes focus when the bar or island opens (and again once a new chat's thread, or
+  // another island state, swaps the box in).
   useEffect(() => {
-    if (setBarOpen && open) pill.current?.querySelector("textarea")?.focus();
-  }, [setBarOpen, open]);
-  // Esc folds the chat back into the bar; so does a click on the page while nothing's been asked.
+    if (setBarOpen && open) document.querySelector<HTMLTextAreaElement>(".b-pill textarea, .i-view textarea")?.focus();
+  }, [setBarOpen, open, islandState.state]);
+  // Esc folds the chat back into the bar or island; so does a click on the page while nothing's been asked.
+  const sticky = bar ? panel : hasChat;
   useEffect(() => {
     if (!setBarOpen || !open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -670,7 +702,7 @@ function WidgetThread({
     };
     // Not when a file picker or the screen-capture prompt took the focus.
     const onBlur = () => {
-      if (!panel && !document.activeElement?.closest(".composer-plus")) setBarOpen(false);
+      if (!sticky && !document.activeElement?.closest(".composer-plus")) setBarOpen(false);
     };
     document.addEventListener("keydown", onKey);
     window.addEventListener("blur", onBlur);
@@ -678,7 +710,7 @@ function WidgetThread({
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("blur", onBlur);
     };
-  }, [setBarOpen, open, panel]);
+  }, [setBarOpen, open, sticky]);
 
   // "Contact the team": hand an AI conversation to the team, or start one asking for them.
   const sentHuman = useRef(false);
@@ -769,7 +801,7 @@ function WidgetThread({
   const extras = (
     <>
       {/* W-07: a person is always one click away while the AI is answering. */}
-      {bar && conversationId && handling === "ai" && (
+      {(bar || island) && conversationId && handling === "ai" && (
         <div className="w-human">
           <button className="link small" onClick={() => thread.requestHuman()}>Talk to a person</button>
         </div>
@@ -788,6 +820,87 @@ function WidgetThread({
       <Composer pill placeholder={placeholder} upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
     </div>
   );
+
+  if (island) {
+    const { state, showAll, setShowAll, dismissNudge } = islandState;
+    const close = () => island.setOpen(false);
+    // What the assistant is doing right now: a running tool step's label, else "Thinking…".
+    const lastVisitorSeq = [...thread.messages].reverse().find((m) => m.authorType === "visitor")?.seq;
+    const turnSteps = (lastVisitorSeq !== undefined ? thread.aiSteps[`ai:${lastVisitorSeq}`] : undefined) ?? thread.aiSteps["ai:stream"] ?? [];
+    const running = [...turnSteps].reverse().find((s) => s.state === "running");
+    // Only for a question just asked: an old chat whose last word was the visitor's (the AI never
+    // answered) shows as it is, not as a status line forever.
+    const justAsked = Boolean(starting) || thread.pending.length > 0 || (lastMessage?.authorType === "visitor" && Date.now() - lastMessage.createdAt < 60_000);
+    const thinking = !thread.aiStream?.text && (thread.aiThinking || (awaitingAi && justAsked));
+    const teammate = handling === "human" ? ([...thread.messages].reverse().find((m) => m.authorType === "agent")?.authorName ?? null) : null;
+    // The latest exchange: the visitor's last message and everything after it.
+    const from = thread.messages.findLastIndex((m) => m.authorType === "visitor");
+    const recent = from >= 0 ? thread.messages.slice(from) : thread.messages.slice(-3);
+    const head = (
+      <IslandHead
+        name={teammate ?? island.name}
+        logoUrl={teammate ? null : island.logoUrl}
+        exit={exitLabel ? { label: exitLabel, run: exit } : null}
+        toggle={handling === "human" || !conversationId ? null : { label: showAll ? "Latest only" : "Show conversation", run: () => setShowAll(!showAll) }}
+        onClose={close}
+      />
+    );
+    const live = Boolean(thread.aiStream?.text);
+    const shown: IslandState = state === "answer" && thinking && !loading ? "thinking" : state;
+    return (
+      <Island state={shown} live={live}>
+        {shown === "rest" && <RestPill suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} onOpen={() => island.setOpen(true)} />}
+        {shown === "nudge" && opener && <NudgeLine text={opener.text} from={opener.from ?? null} onAsk={() => island.setOpen(true)} onDismiss={dismissNudge} />}
+        {shown === "open" && (
+          <div className="i-open">
+            {island.suggestions.length > 0 && <IslandChips questions={island.suggestions} onPick={(q) => void send(q, [])} />}
+            {composer}
+            {error && <p className="i-error" role="alert">{error}</p>}
+          </div>
+        )}
+        {shown === "thinking" && <StatusLine label={running?.label ?? "Thinking…"} />}
+        {shown === "answer" && (
+          <div className="i-answer">
+            {head}
+            <div className="i-body" role="log">
+              {!conversationId && openerMessage}
+              {loading ? <ThreadSkeleton /> : (
+                <MessageList
+                  messages={recent}
+                  pending={starting && !conversationId ? [{ clientMsgId: "starting", body: starting, attachments: [] }] : thread.pending}
+                  mine={(m) => m.authorType === "visitor"}
+                  authorLabel={(m) => (m.authorType === "visitor" ? "You" : m.authorType === "ai" ? "AI assistant" : m.authorName ?? "Support")}
+                  otherReadSeq={0}
+                  typing={thread.typing}
+                  aiStream={thread.aiStream}
+                  aiThinking={thread.aiThinking || awaitingAi}
+                  aiSteps={thread.aiSteps}
+                  onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
+                  onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
+                  renderAi={(answer) => <AiAnswer answer={answer} {...(handling === "ai" ? { onFollowUp: (q: string) => void send(q, []) } : {})} />}
+                />
+              )}
+              {error && <p className="i-error" role="alert">{error}</p>}
+              {extras}
+            </div>
+            {composer}
+          </div>
+        )}
+        {shown === "panel" && (
+          <div className="i-panel">
+            {head}
+            <div className="i-body i-log" role="log">
+              {openerMessage}
+              {messages}
+              {error && <p className="i-error" role="alert">{error}</p>}
+              {extras}
+            </div>
+            {composer}
+          </div>
+        )}
+      </Island>
+    );
+  }
 
   if (bar) {
     return (
@@ -888,6 +1001,37 @@ function ThreadSkeleton() {
     </div>
   );
 }
+
+/**
+ * D-39: which shape the island takes. Closed, it rests, or offers help for a few seconds when a
+ * nudge or an agent's invite arrives (the offer still opens the chat later, as the card's does).
+ * Open with nothing asked yet it's the question box; with a chat it shows the latest exchange, or
+ * the whole conversation once a teammate has it or the visitor asked for it.
+ */
+function useIslandState({ island, open, hasChat, conversationId, opener, intent, handling }: {
+  island: boolean;
+  open: boolean;
+  hasChat: boolean;
+  conversationId: string | null;
+  opener: Opener | undefined;
+  intent: ChatIntent | undefined;
+  handling: ConversationSummary["handling"] | null;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const [nudgeShown, setNudgeShown] = useState(false);
+  const nudgeText = island && !conversationId && !intent && opener ? opener.text : null;
+  useEffect(() => {
+    if (!nudgeText) return;
+    setNudgeShown(true);
+    const timer = setTimeout(() => setNudgeShown(false), NUDGE_MS);
+    return () => clearTimeout(timer);
+  }, [nudgeText]);
+  const state: IslandState = !open ? (nudgeText && nudgeShown ? "nudge" : "rest") : !hasChat ? "open" : handling === "human" || showAll ? "panel" : "answer";
+  return { state, showAll, setShowAll, dismissNudge: () => setNudgeShown(false) };
+}
+
+/** How long the island's one-line offer of help stays before it rests again. */
+const NUDGE_MS = 8_000;
 
 /** What "Contact the team" says when it starts a conversation. */
 const TEAM_REQUEST = "I'd like to talk to someone on your team.";

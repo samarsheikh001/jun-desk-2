@@ -1068,7 +1068,7 @@ form.kb-test-form { display: flex; gap: 8px; margin: 0; }
 .appear-stage.left > * { right: auto; left: 22px; }
 .appear-frame { width: min(380px, max(300px, 32vw), calc(100% - 44px)); height: min(540px, calc(100% - 44px)); max-height: calc(100% - 44px); border: 0; border-radius: var(--r); background: #fff; box-shadow: 0 8px 40px rgba(0, 0, 0, 0.16); }
 .appear-stage.dark .appear-frame { background: #171717; color: #f5f5f5; }
-.appear-stage.bar .appear-frame { box-shadow: none; }
+.appear-stage.bar .appear-frame, .appear-stage.island .appear-frame { box-shadow: none; background: none; }
 .appear-launcher { width: 52px; height: 52px; border: 0; border-radius: var(--r); display: grid; place-items: center; background: var(--c); color: var(--t); box-shadow: none; cursor: pointer; }
 .hours-grid { display: grid; gap: 6px; }
 .hours-row input[type="time"] { width: 120px; }
