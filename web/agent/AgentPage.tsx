@@ -6,8 +6,11 @@ import { PageTabs } from "../components/PageTabs.tsx";
 import { AiPanel } from "./AiPanel.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
+import { Label } from "@/components/ui/label.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog.tsx";
+import { PlusIcon, TrashIcon } from "../components/icons.tsx";
 
 // Support agent as code (AI-18): the dashboard edits the same files as `jun pull` / `jun push`.
 
@@ -34,20 +37,41 @@ interface AgentState {
   versions: Version[];
 }
 
-const NEW_FILES = {
-  skill: (name: string) => ({
-    path: `skills/${name}/SKILL.md`,
-    text: `---\nname: ${name}\ndescription: When this procedure applies, e.g. "The customer asks to change their plan."\n---\n1. First step.\n2. Second step.\n3. When to hand off to a person.\n`,
-  }),
-  tool: (name: string) => ({
-    path: `tools/${name}.yaml`,
-    text: `description: What this returns and when the AI should use it.\nstatus: Looking that up   # what the customer sees while it runs, e.g. "Checking your order"\nmethod: GET\nurl: https://api.example.com/things/{id}\nheaders:\n  Authorization: Bearer {secrets.API_KEY}   # Worker secret JUN_SECRET_API_KEY\ninput:\n  id:\n    type: string\n    description: What the AI should pass\n`,
-  }),
-  eval: (name: string) => ({
-    path: `evals/${name}.yaml`,
-    text: `- name: example\n  message: A customer message\n  expect:\n    outcome: answer        # answer | handoff | escalate\n    criteria: What a good reply does\n`,
-  }),
+type Kind = "skill" | "tool" | "eval";
+
+// What each kind of file is, where it lives, and the starter it's created with (same shapes as `jun init`).
+const KINDS: Record<Kind, { group: string; one: string; what: string; placeholder: string; path: (name: string) => string; starter: (name: string) => string }> = {
+  skill: {
+    group: "Procedures",
+    one: "procedure",
+    what: "Step-by-step instructions the AI follows in one situation, like changing a plan or cancelling an account.",
+    placeholder: "change-plan",
+    path: (name) => `skills/${name}/SKILL.md`,
+    starter: (name) => `---\nname: ${name}\ndescription: When this procedure applies, e.g. "The customer asks to change their plan."\n---\n1. First step.\n2. Second step.\n3. When to hand off to a person.\n`,
+  },
+  tool: {
+    group: "Tools",
+    one: "tool",
+    what: "An HTTP endpoint the AI can call to look something up or take an action, like fetching an order.",
+    placeholder: "lookup_order",
+    path: (name) => `tools/${name}.yaml`,
+    starter: () => `description: What this returns and when the AI should use it.\nstatus: Looking that up   # what the customer sees while it runs, e.g. "Checking your order"\nmethod: GET\nurl: https://api.example.com/things/{id}\nheaders:\n  Authorization: Bearer {secrets.API_KEY}   # Worker secret JUN_SECRET_API_KEY\ninput:\n  id:\n    type: string\n    description: What the AI should pass\n`,
+  },
+  eval: {
+    group: "Evals",
+    one: "eval file",
+    what: "Test cases: a customer message and what a good reply does. Run them with `jun eval` before a change goes live.",
+    placeholder: "billing",
+    path: (name) => `evals/${name}.yaml`,
+    starter: () => `- name: example\n  message: A customer message\n  expect:\n    outcome: answer        # answer | handoff | escalate\n    criteria: What a good reply does\n`,
+  },
 };
+
+/** The file name a typed name becomes: lower-case, dashes (procedures, evals) or underscores (tools). */
+function slug(kind: Kind, raw: string): string {
+  const name = raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, kind === "tool" ? "_" : "-").replace(/^[-_]+|[-_]+$/g, "");
+  return kind === "tool" ? name.replace(/^[^a-z]+/, "") : name;
+}
 
 const ago = (ms: number) => {
   const minutes = Math.round((Date.now() - ms) / 60_000);
@@ -60,6 +84,8 @@ function groupOf(path: string): string {
   if (path.startsWith("evals/")) return "Evals";
   return "Agent";
 }
+
+const kindOf = (path: string): Kind => (path.startsWith("tools/") ? "tool" : path.startsWith("evals/") ? "eval" : "skill");
 
 const label = (path: string) => (path.startsWith("skills/") ? path.split("/")[1]! : path.startsWith("tools/") || path.startsWith("evals/") ? path.split("/")[1]! : path);
 
@@ -90,7 +116,8 @@ function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: bool
   const [selected, setSelected] = useState("AGENTS.md");
   const [issues, setIssues] = useState<Issue[]>([]);
   const [message, setMessage] = useState("");
-  const [adding, setAdding] = useState<keyof typeof NEW_FILES | null>(null);
+  const [adding, setAdding] = useState<Kind | null>(null);
+  const [lastRemoved, setLastRemoved] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [conflict, setConflict] = useState<string | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
@@ -102,6 +129,7 @@ function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: bool
     setDraft(next.files);
     setIssues(next.issues);
     setConflict(null);
+    setLastRemoved(null);
     setSelected((s) => (s in next.files ? s : "AGENTS.md"));
   }, [base]);
   useEffect(() => {
@@ -128,9 +156,13 @@ function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: bool
 
   if (!state) return <div className="content muted">Loading…</div>;
 
-  const paths = Object.keys(draft).sort((a, b) => (a === "AGENTS.md" ? -1 : b === "AGENTS.md" ? 1 : a.localeCompare(b)));
+  const removed = Object.keys(state.files).filter((p) => !(p in draft));
+  const paths = [...Object.keys(draft), ...removed].sort((a, b) => (a === "AGENTS.md" ? -1 : b === "AGENTS.md" ? 1 : a.localeCompare(b)));
   const groups = ["Agent", "Procedures", "Tools", "Evals"].map((g) => ({ name: g, paths: paths.filter((p) => groupOf(p) === g) }));
   const issuesFor = (path: string) => issues.filter((i) => i.path === path);
+  const status = (p: string): "new" | "edited" | "removed" | null =>
+    !(p in draft) ? "removed" : !(p in state.files) ? "new" : draft[p] !== state.files[p] ? "edited" : null;
+  const pending = { added: paths.filter((p) => status(p) === "new").length, edited: paths.filter((p) => status(p) === "edited").length, removed: removed.length };
 
   const save = (force = false) =>
     run(async () => {
@@ -153,14 +185,33 @@ function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: bool
       }
     });
 
+  const newPath = adding ? KINDS[adding].path(slug(adding, newName) || "…") : "";
+  const newExists = adding !== null && slug(adding, newName) !== "" && newPath in draft;
   const addFile = () => {
-    const name = newName.trim().toLowerCase().replace(/[^a-z0-9]+/g, adding === "tool" ? "_" : "-").replace(/^[-_]+|[-_]+$/g, "");
-    if (!adding || !name) return;
-    const file = NEW_FILES[adding](adding === "tool" ? name.replace(/^[^a-z]+/, "") || "lookup" : name);
-    if (!(file.path in draft)) setDraft({ ...draft, [file.path]: file.text });
-    setSelected(file.path);
+    if (!adding) return;
+    const name = slug(adding, newName);
+    if (!name || newExists) return;
+    const path = KINDS[adding].path(name);
+    setDraft({ ...draft, [path]: KINDS[adding].starter(name) });
+    setSelected(path);
     setAdding(null);
     setNewName("");
+  };
+
+  // Removing only drops the file from the draft: nothing changes for visitors until "Save and go live", and Undo brings it back.
+  const removeFile = (path: string) => {
+    const next = { ...draft };
+    delete next[path];
+    setDraft(next);
+    setLastRemoved(path in state.files ? path : null);
+    if (selected === path) setSelected("AGENTS.md");
+  };
+  const undoRemove = (path: string) => {
+    const original = state.files[path];
+    if (original === undefined) return;
+    setDraft({ ...draft, [path]: original });
+    setSelected(path);
+    if (lastRemoved === path) setLastRemoved(null);
   };
 
   const restore = (version: number) =>
@@ -188,35 +239,42 @@ function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: bool
   return (
     <div className="agent-page">
       <ScrollArea render={<aside />} className="agent-files" contentClassName="agent-pane">
-        {groups.map((g) => (
-          <div key={g.name} className="agent-group">
-            <div className="agent-group-head">
-              <span className="muted small strong">{g.name}</span>
-              {canEdit && g.name !== "Agent" && (
-                <Button variant="outline" size="sm" title={`New ${g.name === "Procedures" ? "procedure" : g.name === "Tools" ? "tool" : "eval file"}`} onClick={() => { setAdding(g.name === "Procedures" ? "skill" : g.name === "Tools" ? "tool" : "eval"); setNewName(""); }}>
-                  +
-                </Button>
+        {groups.map((g) => {
+          const kind = (Object.keys(KINDS) as Kind[]).find((k) => KINDS[k].group === g.name);
+          return (
+            <div key={g.name} className="agent-group">
+              <div className="agent-group-head">
+                <span className="muted small strong">{g.name}</span>
+                {canEdit && kind && (
+                  <Button variant="ghost" size="sm" className="agent-add-btn" title={`New ${KINDS[kind].one}`} onClick={() => { setAdding(kind); setNewName(""); }}>
+                    <PlusIcon /> Add
+                  </Button>
+                )}
+              </div>
+              {g.paths.map((p) => {
+                const st = status(p);
+                if (st === "removed") {
+                  return (
+                    <div key={p} className="agent-file-removed" title="Removed when you save. Undo to keep it.">
+                      <span className="agent-file-name">{label(p)}</span>
+                      {canEdit && <Button variant="outline" size="sm" type="button" onClick={() => undoRemove(p)}>Undo</Button>}
+                    </div>
+                  );
+                }
+                return (
+                  <Button key={p} variant="ghost" size="sm" className={`agent-file ${p === selected ? "active" : ""}`} onClick={() => setSelected(p)}>
+                    <span className="agent-file-name">{label(p)}</span>
+                    {issuesFor(p).length > 0 && <span className="issue-count" title="Has errors">●</span>}
+                    {st && <span className="tag">{st}</span>}
+                  </Button>
+                );
+              })}
+              {g.paths.length === 0 && kind && (
+                <div className="muted small agent-empty">No {g.name.toLowerCase()} yet. {KINDS[kind].what}</div>
               )}
             </div>
-            {g.paths.map((p) => (
-              <Button key={p} variant="ghost" size="sm" className={`agent-file ${p === selected ? "active" : ""}`} onClick={() => setSelected(p)}>
-                <span>{label(p)}</span>
-                {issuesFor(p).length > 0 && <span className="issue-count">●</span>}
-                {draft[p] !== state.files[p] && <span className="muted small">edited</span>}
-              </Button>
-            ))}
-            {g.paths.length === 0 && <div className="muted small agent-empty">None yet</div>}
-          </div>
-        ))}
-        {adding && (
-          <form className="agent-add" onSubmit={(e) => { e.preventDefault(); addFile(); }}>
-            <Input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={adding === "skill" ? "e.g. change-plan" : adding === "tool" ? "e.g. lookup_order" : "e.g. billing"} />
-            <div className="row">
-              <Button size="sm">Add</Button>
-              <Button variant="outline" size="sm" type="button" onClick={() => setAdding(null)}>Cancel</Button>
-            </div>
-          </form>
-        )}
+          );
+        })}
         <div className="agent-git small">
           <div className="strong">Keep it in git</div>
           <div className="muted">Create a token in <a href="/settings/developer#api-tokens" onClick={(e) => { e.preventDefault(); navigate("/settings/developer#api-tokens"); }}>Settings → Developer → API tokens</a>, then in your Jun Desk checkout:</div>
@@ -228,13 +286,22 @@ function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: bool
         <div className="agent-head">
           <code className="strong">{selected}</code>
           {canEdit && selected !== "AGENTS.md" && (
-            <Button variant="outline" size="sm" onClick={() => { const next = { ...draft }; delete next[selected]; setDraft(next); setSelected("AGENTS.md"); }}>Delete file</Button>
+            <Button variant="outline" size="sm" title={`Remove this ${KINDS[kindOf(selected)].one} (not live until you save)`} onClick={() => removeFile(selected)}>
+              <TrashIcon /> Remove
+            </Button>
           )}
           <span className="spacer" />
           <span className="muted small">
             {live ? `Live: version ${live.version} · ${live.source === "cli" ? "pushed" : "saved"} by ${live.createdBy ?? "someone"} ${ago(live.createdAt)}` : "Live: built-in default (not saved yet)"}
           </span>
         </div>
+        {lastRemoved && (
+          <p className="agent-notice small">
+            <span>Removed <code>{label(lastRemoved)}</code>. It stays live until you save.</span>
+            <span className="spacer" />
+            <Button variant="outline" size="sm" type="button" onClick={() => undoRemove(lastRemoved)}>Undo</Button>
+          </p>
+        )}
         <Textarea
           className="agent-text"
           spellCheck={selected.endsWith(".md")}
@@ -257,8 +324,17 @@ function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: bool
           <div className="agent-save">
             <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="What changed? (shown in history)" maxLength={500} />
             <Button disabled={busy || !dirty || issues.length > 0} onClick={() => save()}>Save and go live</Button>
-            {dirty && <Button variant="outline" disabled={busy} onClick={() => { setDraft(state.files); setIssues(state.issues); }}>Discard</Button>}
+            {dirty && <Button variant="outline" disabled={busy} onClick={() => { setDraft(state.files); setIssues(state.issues); setLastRemoved(null); }}>Discard changes</Button>}
             {saved !== null && <span className="muted small">Version {saved} is live ✓</span>}
+            {dirty && issues.length > 0 && <span className="error small">Fix the {issues.length === 1 ? "error" : `${issues.length} errors`} above to save.</span>}
+            {dirty && issues.length === 0 && (
+              <span className="muted small agent-pending">
+                Not live yet:
+                {pending.added > 0 && <span className="tag">{pending.added} new</span>}
+                {pending.edited > 0 && <span className="tag">{pending.edited} edited</span>}
+                {pending.removed > 0 && <span className="tag">{pending.removed} removed</span>}
+              </span>
+            )}
           </div>
         )}
         {conflict && (
@@ -296,6 +372,32 @@ function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: bool
           ))}
         </ul>
       </ScrollArea>
+
+      <Dialog open={adding !== null} onOpenChange={(o) => !o && setAdding(null)}>
+        <DialogContent>
+          {adding && (
+            <form className="agent-dialog-form" onSubmit={(e) => { e.preventDefault(); addFile(); }}>
+              <DialogHeader>
+                <DialogTitle>New {KINDS[adding].one}</DialogTitle>
+                <DialogDescription>{KINDS[adding].what}</DialogDescription>
+              </DialogHeader>
+              <div className="field">
+                <Label htmlFor="agent-new-name">Name</Label>
+                <Input id="agent-new-name" autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={`e.g. ${KINDS[adding].placeholder}`} maxLength={60} />
+                {newExists ? (
+                  <p className="error small hint">A {KINDS[adding].one} called <code>{slug(adding, newName)}</code> already exists.</p>
+                ) : (
+                  <p className="muted small hint">Creates <code>{newPath}</code> with a starter you can edit. Nothing goes live until you save.</p>
+                )}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setAdding(null)}>Cancel</Button>
+                <Button type="submit" disabled={!slug(adding, newName) || newExists}>Add {KINDS[adding].one}</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -34,6 +34,7 @@ import {
   Moon02Icon,
   MoreHorizontalIcon,
   Notification01Icon,
+  PlusSignIcon,
   RefreshIcon as HugeRefreshIcon,
   Search01Icon,
   Settings02Icon,
@@ -86,6 +87,7 @@ export const KeyIcon = make(Key01Icon);
 export const MoreIcon = make(MoreHorizontalIcon);
 export const NotificationIcon = make(Notification01Icon);
 export const MonitorIcon = make(ComputerIcon);
+export const PlusIcon = make(PlusSignIcon);
 export const MoonIcon = make(Moon02Icon);
 export const RefreshIcon = make(HugeRefreshIcon);
 export const SearchIcon = make(Search01Icon);
