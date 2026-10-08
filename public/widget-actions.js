@@ -42,7 +42,7 @@
       executeTool: function (t, input) {
         var x = typeof t == "string" ? tools.get(t) : t && tools.get(t.name) || t;
         if (!x || typeof x.execute != "function") return Promise.reject(bad("Unknown tool."));
-        return Promise.resolve().then(function () { return x.execute(input || {}, {}); });
+        return Promise.resolve().then(function () { return x.execute(input || {}, runOptions()); });
       },
       addEventListener: target.addEventListener.bind(target),
       removeEventListener: target.removeEventListener.bind(target),
@@ -52,6 +52,14 @@
     if (shim) shim.q.forEach(function (x) { try { document.modelContext.registerTool(x[0], x[1]); } catch (e) { console.warn("Jun Desk:", e.message); } });
   }
   var mc = document.modelContext;
+  // execute's second argument. Chrome's docs show `execute(input, { signal })` in code but call it "an
+  // AbortSignal named signal" in prose, and sites follow either: this is a real AbortSignal that also
+  // has a `.signal` property (itself), so both `fetch(url, { signal: opts })` and `opts.signal` work.
+  function runOptions() {
+    var s = new AbortController().signal;
+    try { Object.defineProperty(s, "signal", { value: s }); } catch (e) {}
+    return s;
+  }
 
   // ---------- Jun registry (extras live here; the standard part is mirrored into modelContext) ----------
   var registry = new Map(), mirrors = new Map(), results = new Map();
@@ -151,7 +159,7 @@
       if (!t) return post({ type: "jun:action", runId: runId, status: "gone" });
       var input = m.input && typeof m.input == "object" ? m.input : {};
       highlight(t);
-      Promise.resolve().then(function () { return ours ? t.execute(input, {}) : mc.executeTool(t, input); }).then(function (r) {
+      Promise.resolve().then(function () { return ours ? t.execute(input, runOptions()) : mc.executeTool(t, input); }).then(function (r) {
         results.set(runId, { tool: t, result: r });
         post({ type: "jun:action", runId: runId, status: "ok", result: text(r), canUndo: typeof t.undo == "function" });
       }, function (e) {
