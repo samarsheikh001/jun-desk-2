@@ -97,16 +97,16 @@ export function Island({ state, live, onOpen, children }: { state: IslandState; 
   );
 }
 
-/** The status light: the brand colour, pulsing while the assistant works. */
-export function Dot({ pulse = false }: { pulse?: boolean }) {
-  return <span className={`i-dot${pulse ? " pulse" : ""}`} aria-hidden="true" />;
+/** The mark: the workspace logo, or the Jun agent mark (as the chat header), pulsing while the assistant works. */
+export function Mark({ logoUrl, pulse = false }: { logoUrl: string | null; pulse?: boolean }) {
+  return <img className={`i-mark${pulse ? " pulse" : ""}`} src={logoUrl ?? "/jun-agent.svg"} alt="" />;
 }
 
-/** Resting: the light, a hint that types out the suggested questions (or a new reply), and the "/" key. */
-export function RestPill({ suggestions, placeholder, unread, onOpen }: { suggestions: string[]; placeholder: string; unread: string | null; onOpen: () => void }) {
+/** Resting: the mark, a hint that types out the suggested questions (or a new reply), and the "/" key. */
+export function RestPill({ logoUrl, suggestions, placeholder, unread, onOpen }: { logoUrl: string | null; suggestions: string[]; placeholder: string; unread: string | null; onOpen: () => void }) {
   return (
     <button type="button" className="i-rest" aria-label={unread ?? "Ask this page anything"} onClick={onOpen}>
-      <Dot pulse={Boolean(unread)} />
+      <Mark logoUrl={logoUrl} pulse={Boolean(unread)} />
       {unread ? <span className="i-rest-text">{unread}</span> : <Typewriter phrases={suggestions} fallback={placeholder} />}
       <kbd className="i-kbd" aria-hidden="true">/</kbd>
     </button>
@@ -114,10 +114,10 @@ export function RestPill({ suggestions, placeholder, unread, onOpen }: { suggest
 }
 
 /** Nudge: a one-line offer with an Ask button; ignored, it goes away on its own. */
-export function NudgeLine({ text, from, onAsk, onDismiss }: { text: string; from: string | null; onAsk: () => void; onDismiss: () => void }) {
+export function NudgeLine({ logoUrl, text, from, onAsk, onDismiss }: { logoUrl: string | null; text: string; from: string | null; onAsk: () => void; onDismiss: () => void }) {
   return (
     <div className="i-nudge" role="dialog" aria-label="Need help?">
-      <Dot />
+      <Mark logoUrl={logoUrl} />
       <span className="i-nudge-text">
         {from && <span className="i-nudge-from">{from} · </span>}
         {text}
@@ -129,10 +129,10 @@ export function NudgeLine({ text, from, onAsk, onDismiss }: { text: string; from
 }
 
 /** Thinking: one specific line, the running tool step's label when there is one. */
-export function StatusLine({ label }: { label: string }) {
+export function StatusLine({ logoUrl, label }: { logoUrl: string | null; label: string }) {
   return (
     <div className="i-status" role="status">
-      <Dot pulse />
+      <Mark logoUrl={logoUrl} pulse />
       <span className="i-status-text">{label}</span>
     </div>
   );
@@ -149,7 +149,7 @@ export function IslandHead({ name, logoUrl, exit, toggle, onClose }: {
 }) {
   return (
     <div className="i-head">
-      {logoUrl ? <img className="i-avatar" src={logoUrl} alt="" /> : <Dot />}
+      <Mark logoUrl={logoUrl} />
       <span className="i-name">{name}</span>
       {exit && <button type="button" className="i-exit" onClick={exit.run}>{exit.label}</button>}
       <span className="i-spacer" />

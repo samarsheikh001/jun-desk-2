@@ -364,14 +364,15 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 /* Content sits on the bottom edge (the box stays put while the shell grows) and arrives from a blur after the old content has gone. */
 .i-view { position: absolute; left: 0; bottom: 0; animation: i-in 0.3s 0.14s both; }
 @keyframes i-in { from { opacity: 0; filter: blur(6px); } to { opacity: 1; filter: none; } }
-.i-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--accent); }
-.i-dot.pulse { animation: i-pulse 1.4s ease-in-out infinite; }
-@keyframes i-pulse { 0%, 100% { opacity: 0.45; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }
+/* The mark (the chat header's logo at 22px), breathing while the assistant works. */
+.i-mark { width: 22px; height: 22px; flex: none; border-radius: var(--radius-xs); object-fit: contain; }
+.i-mark.pulse { animation: i-pulse 1.6s ease-in-out infinite; }
+@keyframes i-pulse { 0%, 100% { opacity: 0.55; transform: scale(0.94); } 50% { opacity: 1; transform: scale(1); } }
 .i-root button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .i-root :is(button, a, textarea, input):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* Resting: the light, the hint typing out the suggested questions (or a new reply), and the "/" key. */
-.i-rest { display: flex; align-items: center; gap: 12px; width: 100%; height: 54px; padding: 0 16px 0 20px; border: 0; background: transparent; color: var(--text); font-size: 14px; text-align: left; transition: background 0.15s; }
+.i-rest { display: flex; align-items: center; gap: 12px; width: 100%; height: 54px; padding: 0 16px 0 16px; border: 0; background: transparent; color: var(--text); font-size: 14px; text-align: left; transition: background 0.15s; }
 .i-rest:hover { background: var(--hover); }
 .i-rest:focus-visible { outline-offset: -4px; border-radius: 28px; }
 .i-rest .b-hint { position: static; flex: 1; min-width: 0; height: 20px; color: var(--muted); }
@@ -380,7 +381,7 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 @media (hover: none) { .i-kbd { display: none; } }
 
 /* Nudge: a one-line offer with Ask; × or 8 s puts it to rest. */
-.i-nudge { display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 9px 9px 9px 20px; }
+.i-nudge { display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 9px 9px 9px 16px; }
 .i-nudge-text { flex: 1; min-width: 0; color: var(--text-soft); font-size: 13.5px; line-height: 1.45; }
 .i-nudge-from { color: var(--muted); }
 .i-ask { height: 32px; padding: 0 14px; border: 0; border-radius: 16px; background: var(--accent); color: var(--accent-text); font-size: 13px; font-weight: 600; }
@@ -390,7 +391,7 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-x { width: 28px; padding: 0; font-size: 20px; font-weight: 300; line-height: 1; }
 
 /* Thinking: one specific line (a running tool step's label, else "Thinking…"). */
-.i-status { display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 20px; }
+.i-status { display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 20px 0 16px; }
 .i-status-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; background: linear-gradient(90deg, var(--muted) 35%, var(--text) 50%, var(--muted) 65%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: w-shimmer 1.6s linear infinite; }
 
 /* Open: the suggested questions over the box. */
@@ -401,8 +402,7 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-error { margin: 0; padding: 6px 12px 8px; color: var(--error); font-size: 13px; }
 
 /* The header of the answer and panel states. */
-.i-head { display: flex; align-items: center; gap: 10px; flex: none; height: 48px; padding: 0 10px 0 20px; }
-.i-avatar { width: 20px; height: 20px; flex: none; border-radius: var(--radius-xs); object-fit: contain; }
+.i-head { display: flex; align-items: center; gap: 10px; flex: none; height: 48px; padding: 0 10px 0 16px; }
 .i-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; font-weight: 600; }
 .i-spacer { flex: 1; }
 .i-exit { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-xs); background: var(--bg); color: var(--text); font-size: 12px; font-weight: 500; white-space: nowrap; }
@@ -473,7 +473,7 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 @media (prefers-reduced-motion: reduce) {
   .i-shell { transition: none; }
   .i-view { animation: i-fade 0.15s both; }
-  .i-chip, .i-dot.pulse { animation: none; }
+  .i-chip, .i-mark.pulse { animation: none; }
   .i-status-text { animation: none; background: none; color: var(--muted); }
 }
 @keyframes i-fade { from { opacity: 0; } to { opacity: 1; } }

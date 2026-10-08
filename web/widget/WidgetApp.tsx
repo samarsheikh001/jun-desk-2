@@ -839,7 +839,7 @@ function WidgetThread({
     const head = (
       <IslandHead
         name={teammate ?? island.name}
-        logoUrl={teammate ? null : island.logoUrl}
+        logoUrl={island.logoUrl}
         exit={exitLabel ? { label: exitLabel, run: exit } : null}
         toggle={handling === "human" || !conversationId ? null : { label: showAll ? "Latest only" : "Show conversation", run: () => setShowAll(!showAll) }}
         onClose={close}
@@ -849,8 +849,8 @@ function WidgetThread({
     const shown: IslandState = state === "answer" && thinking && !loading ? "thinking" : state;
     return (
       <Island state={shown} live={live} onOpen={() => island.setOpen(true)}>
-        {shown === "rest" && <RestPill suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} onOpen={() => island.setOpen(true)} />}
-        {shown === "nudge" && opener && <NudgeLine text={opener.text} from={opener.from ?? null} onAsk={() => island.setOpen(true)} onDismiss={dismissNudge} />}
+        {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} onOpen={() => island.setOpen(true)} />}
+        {shown === "nudge" && opener && <NudgeLine logoUrl={island.logoUrl} text={opener.text} from={opener.from ?? null} onAsk={() => island.setOpen(true)} onDismiss={dismissNudge} />}
         {shown === "open" && (
           <div className="i-open">
             {island.suggestions.length > 0 && <IslandChips questions={island.suggestions} onPick={(q) => void send(q, [])} />}
@@ -858,7 +858,7 @@ function WidgetThread({
             {error && <p className="i-error" role="alert">{error}</p>}
           </div>
         )}
-        {shown === "thinking" && <StatusLine label={running?.label ?? "Thinking…"} />}
+        {shown === "thinking" && <StatusLine logoUrl={island.logoUrl} label={running?.label ?? "Thinking…"} />}
         {shown === "answer" && (
           <div className="i-answer">
             {head}
