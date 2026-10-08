@@ -378,11 +378,12 @@
     // The bar frame sizes and clips itself (it knows what it shows); only our own frame gets here.
     if (type == "jun:css") frame.style.cssText = e.data.css;
     // AI-20: the intent's exit button ("Cancel anyway"): close, then hand back to the host app, once.
-    if (type == "jun:exit" && onExit) {
+    // After a reload the page's onExit is gone: the chat still closes (the exit itself was recorded by the frame).
+    if (type == "jun:exit") {
       var done = onExit;
       onExit = 0;
       setOpen(false);
-      done();
+      if (done) done();
     }
     if (type == "jun:context-request") {
       // The debug snapshot, and (AI-21) what this page offers the AI right now.

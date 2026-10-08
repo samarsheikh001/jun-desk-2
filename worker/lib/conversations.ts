@@ -61,10 +61,13 @@ export function toSummary(row: SummaryRow): ConversationSummary {
   };
 }
 
-/** What a visitor may see of their conversation: no tags (I-07), topic (A-02) or intent (AI-20). */
+/**
+ * What a visitor may see of their conversation: no tags (I-07), topic (A-02) or debug issue count.
+ * The intent (AI-20) stays: their own app opened the chat with it, and the widget needs it after a
+ * reload to keep the exit button on screen (D-37).
+ */
 export function forVisitor(summary: ConversationSummary): ConversationSummary {
-  // Tags, the topic, the intent and the debug issue count are for agents only.
-  return { ...summary, tags: [], topic: null, intent: null, debugIssueCount: 0 };
+  return { ...summary, tags: [], topic: null, debugIssueCount: 0 };
 }
 
 export async function loadSummary(db: D1Database, conversationId: string): Promise<ConversationSummary | null> {

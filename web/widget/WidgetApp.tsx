@@ -231,6 +231,19 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         // Go straight back into an ongoing conversation.
         const active = r.conversations.find((c) => c.status !== "resolved");
         setView((v) => (active && !(v.kind === "thread" && (v.id || v.opener || v.intent || v.first || v.human)) ? { kind: "thread", id: active.id } : v));
+        // AI-20 hard rule (D-37): an intent's exit button stays for the whole conversation, so after a
+        // reload the chat gets its intent back (the host's onExit can't come back: the button then
+        // records the exit and closes the chat).
+        if (active?.intent && !active.intent.exitedAt) {
+          const { name } = active.intent;
+          api.call<{ intent: IntentSpec | null }>(`/intents/${name}`).then(
+            (res) => {
+              const intent: ChatIntent = { spec: res.intent ?? { name, opening: null, replies: [], exit: null } };
+              setView((v) => (v.kind === "thread" && v.id === active.id && !v.intent ? { ...v, intent } : v));
+            },
+            () => {},
+          );
+        }
       },
       () => {},
     ).finally(() => live && setRestoring(false));
