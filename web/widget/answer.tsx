@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { actionStatusText, visibleResult, type MessageAction } from "../../shared/actions.ts";
 import type { AiStep, Source } from "../../shared/protocol.ts";
 import type { AiAnswerView } from "../components/MessageList.tsx";
+import { ActionCard } from "./action.tsx";
 
 // An AI answer in the widget: words resolve out of a blur as they stream, citations become
 // inline source chips, then copy, the cited sources and follow-up questions appear.
@@ -110,16 +112,31 @@ function CopyButton({ text }: { text: string }) {
 }
 
 /**
- * The AI's tool steps above its answer: open with a shimmering label while it works, then one
- * quiet line the visitor can open. Labels are the admin's `status:` text, nothing else.
+ * One line in the steps list. YAML tools give a label and a state; a page action (AI-21) adds
+ * what it returned, an error, or Undo.
  */
-function Steps({ steps, working }: { steps: AiStep[]; working: boolean }) {
+interface StepLine extends AiStep {
+  detail?: string;
+  error?: string;
+  undo?: { run: () => void; busy: boolean; error?: string };
+}
+
+/**
+ * The AI's tool steps above its answer: open with a shimmering label while it works, then one
+ * quiet line the visitor can open. Labels are the admin's `status:` text, or a page action's
+ * description, nothing else.
+ */
+function Steps({ steps, working }: { steps: StepLine[]; working: boolean }) {
   const [manual, setManual] = useState<boolean | null>(null);
   const expanded = manual ?? working;
   const running = [...steps].reverse().find((s) => s.state === "running");
   const label = working ? (running?.label ?? "Working on it") : steps.length === 1 ? steps[0]!.label : `Used ${steps.length} steps`;
+  // A page action's outcome stays on the folded line: what came of it, its error, and Undo.
+  const last = steps.at(-1);
+  const outcome = !working && last && (last.detail || last.error || last.undo) ? last : null;
   return (
     <div className={`w-steps${working ? " working" : ""}`}>
+      <div className="w-steps-row">
       <button type="button" className="w-steps-head" aria-expanded={expanded} onClick={() => setManual(!expanded)}>
         <svg className="w-steps-spark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
@@ -131,19 +148,34 @@ function Steps({ steps, working }: { steps: AiStep[]; working: boolean }) {
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
+      {outcome && !expanded && (
+        <>
+          {(outcome.detail || outcome.error) && <span className={`w-step-detail${outcome.error ? " error" : ""}`}>{outcome.error ?? outcome.detail}</span>}
+          {outcome.undo && <button type="button" className="w-step-undo" disabled={outcome.undo.busy} onClick={outcome.undo.run}>{outcome.undo.busy ? "Undoing…" : "Undo"}</button>}
+          {outcome.undo?.error && <span className="w-step-detail error">{outcome.undo.error}</span>}
+        </>
+      )}
+      </div>
       <div className={`w-steps-panel${expanded ? " open" : ""}`} inert={!expanded}>
         <div>
           <ol className="w-steps-list">
             {steps.map((s) => (
-              <li key={s.id} className="w-step">
+              <li key={s.id} className={`w-step${s.error ? " error" : ""}`}>
                 {s.state === "running" ? (
                   <span className="w-step-spin" role="img" aria-label="In progress" />
+                ) : s.error ? (
+                  <span className="w-step-dot" role="img" aria-label="Failed" />
                 ) : (
                   <svg className="w-step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Done">
                     <path d="M20 6L9 17l-5-5" />
                   </svg>
                 )}
                 <span className="w-step-label">{s.label}</span>
+                {(s.detail || s.error) && <span className="w-step-detail">{s.error ?? s.detail}</span>}
+                {s.undo && (
+                  <button type="button" className="w-step-undo" disabled={s.undo.busy} onClick={s.undo.run}>{s.undo.busy ? "Undoing…" : "Undo"}</button>
+                )}
+                {s.undo?.error && <span className="w-step-detail error">{s.undo.error}</span>}
               </li>
             ))}
           </ol>
@@ -153,10 +185,31 @@ function Steps({ steps, working }: { steps: AiStep[]; working: boolean }) {
   );
 }
 
-export function AiAnswer({ answer, onFollowUp }: { answer: AiAnswerView; onFollowUp?: (question: string) => void }) {
-  const { body, sources, followUps, streaming, latest, steps } = answer;
+/** AI-21: how the chat drives the page action an answer proposed. */
+export interface ActionControls {
+  /** The action is running on the page right now (after Confirm, or at once when `auto`). */
+  running: boolean;
+  onInput: (input: Record<string, unknown>) => void;
+  onRun: (input: Record<string, unknown>) => void;
+  onCancel: () => void;
+  onUndo: () => void;
+  undoError?: string;
+}
+
+export function AiAnswer({ answer, onFollowUp, controls }: { answer: AiAnswerView; onFollowUp?: (question: string) => void; controls?: ActionControls }) {
+  const { body, sources, followUps, streaming, latest, steps: toolSteps } = answer;
+  const action = answer.action;
+  // AI-21: a page action is a step line like a YAML tool once it runs; the card only while it waits on the visitor.
+  const [undoing, setUndoing] = useState(false);
+  useEffect(() => {
+    if (action?.status !== "ok" || controls?.undoError) setUndoing(false);
+  }, [action?.status, controls?.undoError]);
+  const actionRunning = Boolean(action && action.status === "pending" && controls?.running);
+  const actionStep: StepLine | null = action && (actionRunning || action.status !== "pending") ? actionLine(action, actionRunning, controls, undoing, () => { setUndoing(true); controls?.onUndo(); }) : null;
+  const steps: StepLine[] = actionStep ? [...toolSteps, actionStep] : toolSteps;
+  const waiting = Boolean(action && action.status === "pending" && !actionRunning && controls);
   // Open while tools run before (or between) the words; folded once the answer is being written.
-  const working = streaming && (!body || steps.some((s) => s.state === "running"));
+  const working = (streaming && (!body || steps.some((s) => s.state === "running"))) || actionRunning;
   const tokens = useMemo(() => tokenize(body), [body]);
   // Animate a reply that started streaming here; history shows as it is.
   const [live] = useState(streaming);
@@ -221,6 +274,10 @@ export function AiAnswer({ answer, onFollowUp }: { answer: AiAnswerView; onFollo
         </>
       )}
 
+      {waiting && action && controls && (
+        <ActionCard action={action} latest={latest} createdAt={answer.createdAt ?? 0} onInput={controls.onInput} onRun={controls.onRun} onCancel={controls.onCancel} />
+      )}
+
       {done && latest && onFollowUp && followUps.length > 0 && (
         <div className="w-follow" role="group" aria-label="Follow-up questions">
           <p className="w-follow-head">Follow-ups</p>
@@ -234,4 +291,16 @@ export function AiAnswer({ answer, onFollowUp }: { answer: AiAnswerView; onFollo
       )}
     </div>
   );
+}
+
+/** The step line for a page action: its description, then what came of it. */
+function actionLine(action: MessageAction, running: boolean, controls: ActionControls | undefined, undoing: boolean, undo: () => void): StepLine {
+  const line: StepLine = { id: action.runId, label: action.description, state: running ? "running" : "done" };
+  if (action.status === "error") line.error = action.result ?? "Didn't work";
+  else if (action.status === "ok") {
+    const detail = visibleResult(action.result);
+    if (detail) line.detail = detail;
+    if (action.canUndo && controls) line.undo = { run: undo, busy: undoing, ...(controls.undoError ? { error: controls.undoError } : {}) };
+  } else if (!running) line.detail = actionStatusText(action.status);
+  return line;
 }

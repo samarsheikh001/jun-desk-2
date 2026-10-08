@@ -563,6 +563,16 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .w-answer .w-steps-list::before { content: ""; position: absolute; left: 0; top: 0; bottom: 6px; width: 1px; background: var(--a-line); }
 .w-answer .w-step { display: flex; align-items: center; gap: 8px; min-height: 24px; min-width: 0; color: var(--a-ink); font-size: 12.5px; font-weight: 500; line-height: 1.4; animation: w-rise 320ms cubic-bezier(0.23, 1, 0.32, 1) both; }
 .w-answer .w-step-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-answer .w-steps-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; max-width: 100%; }
+.w-answer .w-steps-row .w-steps-head { flex-shrink: 1; min-width: 0; }
+.w-answer .w-steps-row .w-step-detail { flex: 1 1 140px; }
+.w-answer .w-step-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--a-ink-3); font-weight: 400; }
+.w-answer .w-step-detail::before { content: "·"; margin-right: 6px; }
+.w-answer .w-step-detail.error, .w-answer .w-step.error .w-step-detail { color: var(--error); }
+.w-answer .w-step-dot { width: 8px; height: 8px; margin: 0 2.5px; flex-shrink: 0; border-radius: 50%; background: var(--error); }
+.w-answer .w-step-undo { flex-shrink: 0; margin-left: 2px; padding: 1px 7px; border: 1px solid var(--a-line); border-radius: 6px; background: transparent; color: var(--a-ink-2); font: inherit; font-size: 11.5px; cursor: pointer; }
+.w-answer .w-step-undo:hover { background: var(--a-hover); color: var(--a-ink); }
+.w-answer .w-step-undo:disabled { opacity: 0.6; cursor: default; }
 .w-answer .w-step svg.w-step-check { width: 13px; height: 13px; color: var(--a-ink-3); }
 .w-answer .w-step-spin { width: 11px; height: 11px; flex-shrink: 0; box-sizing: border-box; border: 1.5px solid var(--a-line); border-top-color: var(--a-ink-2); border-radius: 50%; animation: w-spin 700ms linear infinite; }
 @keyframes w-spin { to { transform: rotate(360deg); } }
@@ -593,14 +603,5 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .w-act-ghost { min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; }
 .w-act-ghost:hover { background: var(--hover); color: var(--text); }
 .w-act-ghost:disabled { opacity: 0.6; cursor: default; }
-.w-act-status { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--text-soft); }
-.w-act-status svg { width: 15px; height: 15px; flex: none; color: var(--text); } /* not the brand colour: it can be near black on a dark theme */
-.w-act-state { font-weight: 600; color: var(--text); }
-.w-act-result { min-width: 0; overflow-wrap: anywhere; }
-.w-act-result::before { content: "·"; margin-right: 7px; color: var(--muted); }
-.w-act-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--muted); }
-.w-act-error .w-act-dot { background: var(--error); }
-.w-act-spin { width: 13px; height: 13px; flex: none; box-sizing: border-box; border: 1.5px solid var(--border); border-top-color: var(--text-soft); border-radius: 50%; animation: w-spin 700ms linear infinite; }
 .w-act-error { color: var(--error); font-size: 12.5px; }
-.w-act-ok .w-act-title { color: var(--muted); }
 .i-body .w-act { background: var(--surface); }

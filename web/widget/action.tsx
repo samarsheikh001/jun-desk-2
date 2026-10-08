@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { actionStatusText, actionSummary, checkInput, visibleResult, type ActionParam, type MessageAction } from "../../shared/actions.ts";
+import { actionSummary, checkInput, type ActionParam, type MessageAction } from "../../shared/actions.ts";
 
-// AI-21: the card under an AI answer that proposed a page action (D-40). It asks for whatever the
-// model left out (fields drawn from the action's params: a short list becomes buttons, a date a
-// date picker, an email an email field), shows what will happen with a Confirm button, then the
-// Done line with Undo. The action itself runs on the host page (widget-actions.js); this card only
-// talks to it through WidgetApp. Statuses other than pending come from the server (meta.action).
+// AI-21: the card under an AI answer that proposed a page action (D-40), shown only while the
+// action waits on the visitor: it asks for whatever the model left out (fields drawn from the
+// action's params: a short list becomes buttons, a date a date picker, an email an email field),
+// then shows what will happen with a Confirm button. Once it runs, the answer's steps list shows
+// it like a YAML tool (answer.tsx), with the result and Undo. The action itself runs on the host
+// page (widget-actions.js); this card only talks to it through WidgetApp.
 
 /** An `auto` action proposed longer ago than this isn't run by itself (a reload, not a live reply). */
 const AUTO_RUN_WITHIN_MS = 30_000;
@@ -13,10 +14,6 @@ const AUTO_RUN_WITHIN_MS = 30_000;
 const CHIP_LIMIT = 6;
 
 const label = (name: string) => name.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
-
-const Check = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>
-);
 
 function Field({ name, param, value, onChange }: { name: string; param: ActionParam; value: unknown; onChange: (v: unknown) => void }) {
   const id = `act-${name}`;
@@ -79,8 +76,6 @@ export function ActionCard({
   onInput,
   onRun,
   onCancel,
-  onUndo,
-  undoError,
 }: {
   action: MessageAction;
   /** The newest thing in the thread: only then does an `auto` action start by itself. */
@@ -91,13 +86,8 @@ export function ActionCard({
   /** Run it on the page with these inputs. */
   onRun: (input: Record<string, unknown>) => void;
   onCancel: () => void;
-  onUndo: () => void;
-  /** Undo failed on the page (local; the server never learns of it). */
-  undoError?: string;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
-  const [running, setRunning] = useState(false);
-  const [undoing, setUndoing] = useState(false);
   const ran = useRef(false);
   const pending = action.status === "pending";
   const needs = pending && action.missing.length > 0;
@@ -106,7 +96,6 @@ export function ActionCard({
   const run = () => {
     if (ran.current) return;
     ran.current = true;
-    setRunning(true);
     onRun(action.input);
   };
   // An action the owner marked safe runs as soon as the reply proposes it, once, and only live.
@@ -115,14 +104,6 @@ export function ActionCard({
     if (autoNow) run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoNow]);
-  useEffect(() => {
-    if (!pending) setRunning(false);
-    if (action.status !== "ok") setUndoing(false);
-  }, [pending, action.status]);
-  useEffect(() => {
-    if (undoError) setUndoing(false);
-  }, [undoError]);
-
   let body: ReactNode;
   if (needs) {
     const check = checkInput(action, { ...action.input, ...values });
@@ -148,13 +129,6 @@ export function ActionCard({
         </div>
       </form>
     );
-  } else if (pending && running) {
-    body = (
-      <div className="w-act-status" role="status">
-        <span className="w-act-spin" aria-hidden="true" />
-        <span>Working on it…</span>
-      </div>
-    );
   } else if (ready) {
     body = (
       <>
@@ -166,37 +140,12 @@ export function ActionCard({
       </>
     );
   } else {
-    const ok = action.status === "ok";
-    body = (
-      <>
-        <div className={`w-act-status ${action.status}`} role="status">
-          {ok ? <Check /> : <span className="w-act-dot" aria-hidden="true" />}
-          <span className="w-act-state">{actionStatusText(action.status)}</span>
-          {(ok || action.status === "error") && <span className="w-act-result">{visibleResult(action.result) ?? action.description}</span>}
-        </div>
-        {ok && action.canUndo && (
-          <div className="w-act-row">
-            <button
-              type="button"
-              className="w-act-ghost"
-              disabled={undoing}
-              onClick={() => {
-                setUndoing(true);
-                onUndo();
-              }}
-            >
-              {undoing ? "Undoing…" : "Undo"}
-            </button>
-            {undoError && <span className="w-act-error">{undoError}</span>}
-          </div>
-        )}
-      </>
-    );
+    return null; // ran, or ended: the answer's steps list tells the story
   }
 
   return (
-    <div className={`w-act w-act-${action.status}`} data-run={action.runId}>
-      {(needs || (pending && running)) && <p className="w-act-title">{action.description}</p>}
+    <div className="w-act" data-run={action.runId}>
+      {needs && <p className="w-act-title">{action.description}</p>}
       {body}
     </div>
   );

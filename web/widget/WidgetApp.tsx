@@ -6,7 +6,6 @@ import { radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts"
 import { Composer } from "../components/Composer.tsx";
 import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
-import { ActionCard } from "./action.tsx";
 import { AiAnswer } from "./answer.tsx";
 import { BarHead, Chips, Glass, Typewriter, useBarFrame } from "./bar.tsx";
 import { Badge, MiniCard, useCardFrame } from "./card.tsx";
@@ -691,6 +690,8 @@ function WidgetThread({
   // AI-21: the AI's answers may propose a page action; its card runs it on the host page through
   // the loader (jun:run / jun:undo) and the loader reports back (jun:action).
   const [undoErrors, setUndoErrors] = useState<Record<string, string>>({});
+  // Runs started here, until the page reports back (the card hides, the steps list shows a spinner).
+  const [running, setRunning] = useState<Record<string, true>>({});
   const actionResult = useRef(thread.actionResult);
   actionResult.current = thread.actionResult;
   useEffect(() => {
@@ -699,7 +700,13 @@ function WidgetThread({
       if (e.source !== window.parent || data?.type !== "jun:action" || typeof data.runId !== "string") return;
       const runId = data.runId;
       if (data.status === "undo_failed") setUndoErrors((s) => ({ ...s, [runId]: data.result || "Couldn't undo that." }));
-      else if (data.status === "ok" || data.status === "error" || data.status === "gone" || data.status === "undone") actionResult.current(runId, data.status, data.result, data.canUndo);
+      else if (data.status === "ok" || data.status === "error" || data.status === "gone" || data.status === "undone") {
+        setRunning((r) => {
+          const { [runId]: _done, ...rest } = r;
+          return rest;
+        });
+        actionResult.current(runId, data.status, data.result, data.canUndo);
+      }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -708,21 +715,25 @@ function WidgetThread({
   const renderAnswer = (answer: AiAnswerView) => {
     const action = answer.action;
     return (
-      <>
-        <AiAnswer answer={answer} {...(handling === "ai" ? { onFollowUp: (q: string) => void send(q, []) } : {})} />
-        {action && (
-          <ActionCard
-            action={action}
-            latest={answer.latest}
-            createdAt={answer.createdAt ?? 0}
-            onInput={(input) => thread.actionInput(action.runId, input)}
-            onRun={(input) => postToHost({ type: "jun:run", runId: action.runId, id: action.id, input })}
-            onCancel={() => thread.actionResult(action.runId, "cancelled")}
-            onUndo={() => postToHost({ type: "jun:undo", runId: action.runId })}
-            {...(undoErrors[action.runId] ? { undoError: undoErrors[action.runId] } : {})}
-          />
-        )}
-      </>
+      <AiAnswer
+        answer={answer}
+        {...(handling === "ai" ? { onFollowUp: (q: string) => void send(q, []) } : {})}
+        {...(action
+          ? {
+              controls: {
+                running: Boolean(running[action.runId]),
+                onInput: (input: Record<string, unknown>) => thread.actionInput(action.runId, input),
+                onRun: (input: Record<string, unknown>) => {
+                  setRunning((r) => ({ ...r, [action.runId]: true }));
+                  postToHost({ type: "jun:run", runId: action.runId, id: action.id, input });
+                },
+                onCancel: () => thread.actionResult(action.runId, "cancelled"),
+                onUndo: () => postToHost({ type: "jun:undo", runId: action.runId }),
+                ...(undoErrors[action.runId] ? { undoError: undoErrors[action.runId] } : {}),
+              },
+            }
+          : {})}
+      />
     );
   };
 
