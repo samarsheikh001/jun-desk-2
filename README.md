@@ -83,10 +83,11 @@ const remove = JunDesk.registerAction({
   execute: async ({ size, quantity = 1 }) => { const line = await cart.add(product.id, size, quantity); return { summary: `Added ${quantity} × ${size}`, lineId: line.id }; },
   undo: (result) => cart.remove(result.lineId),
 });
-// In React: useEffect(() => window.JunDesk?.registerAction({ … }), [product.id]) registers while the card is on screen.
 ```
 
-Agents see every run in the conversation's AI actions; `evals/*.yaml` cases take an `actions:` list and can `expect: { action: { name, input } }`, so `jun eval` covers what the AI chooses.
+In React, `useJunAction({ … }, [product.id])` from `@jun/widget-react` (in `packages/widget-react`, MIT) registers while the component is on screen and waits for the loader if it hasn't loaded yet. With many actions on a page, the ones the visitor's question names and the ones on screen are offered first (at most 30 per reply). Server tools can be scoped the same way with `pages:` in `tools/<name>.yaml`.
+
+Agents see every run in the conversation's AI actions; `evals/*.yaml` cases take an `actions:` list, a `page:` path, and can `expect: { action: { name, input } }`, so `jun eval` covers what the AI chooses.
 
 **Signed-in customers:** create an identity secret in Settings → Install. Your backend signs a short-lived HS256 JWT with `sub` (the user's id) and `exp`, plus `email`, `name` and `attributes` if you like (`{ plan: "pro", seats: 12 }`). Agents then see a verified customer, chats follow them across devices, and the AI's tools can look up their own account with `{user.id}`. Without a valid token, visitors stay anonymous.
 

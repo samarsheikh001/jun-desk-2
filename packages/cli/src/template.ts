@@ -110,6 +110,7 @@ input:
     description: The order number, like A-1042
 pick: [status, orderedOn, total]                 # only these fields reach the AI
 mock: { status: delivered, orderedOn: "2026-09-02", total: "$49.00" }   # used by jun eval --mock-tools
+# pages: ["/orders/*", "/account"]               # optional: offer it only on these pages (AI-21)
 `,
   "evals/basics.yaml": `- name: greeting
   message: hi there

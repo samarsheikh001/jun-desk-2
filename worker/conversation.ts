@@ -20,7 +20,7 @@ import { AiUnavailableError, completeText, createModel, loadAiSettings, type Age
 import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
 import type { ToolAction } from "./ai/tools.ts";
-import { ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_RESULT, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
+import { ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_RESULT, rankActions, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
 import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
@@ -574,7 +574,8 @@ export class Conversation extends DurableObject<Env> {
         ...(technical.timezone ? { timezone: technical.timezone } : {}),
         user,
         intent: intent?.intent ?? null,
-        pageActions: pageActions ?? [],
+        pageActions: rankActions(pageActions ?? [], last.body),
+        pagePath: technical.pagePath,
         // Citations stream already resolved (numbered by first use, with their sources).
         onVisible: (visible, hits) => {
           const { text, sources } = streamCitations(visible, hits);
@@ -666,15 +667,22 @@ export class Conversation extends DurableObject<Env> {
 
   /** Hands an AI conversation to the team: tells the visitor, and leaves agents a brief (AI-04). */
   /** The visitor's latest browser snapshot as prompt lines (P1). */
-  async #technicalContext(ref: ConversationRef): Promise<{ lines: string[]; timezone: string | null }> {
+  async #technicalContext(ref: ConversationRef): Promise<{ lines: string[]; timezone: string | null; pagePath: string | null }> {
     const row = await this.env.DB.prepare("SELECT context FROM debug_snapshots WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1")
       .bind(ref.conversationId)
       .first<{ context: string }>();
-    if (!row) return { lines: [], timezone: null };
+    if (!row) return { lines: [], timezone: null, pagePath: null };
     const context = JSON.parse(row.context) as DebugContext;
+    let pagePath: string | null = null;
+    try {
+      pagePath = new URL(context.page.url).pathname;
+    } catch {
+      // not a full URL (masked or odd): no page scoping this turn
+    }
     return {
       lines: [`Page: ${context.page.url}${context.page.title ? ` ("${context.page.title}")` : ""}`, ...describeEvents(context).slice(-25)],
       timezone: context.timezone || null,
+      pagePath,
     };
   }
 

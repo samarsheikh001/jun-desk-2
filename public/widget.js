@@ -450,6 +450,8 @@
       return function () { r.dead = true; if (r.off) r.off(); };
     },
   };
+  // For code that loaded before this script (e.g. the React hook): the API is there now.
+  try { window.dispatchEvent(new Event("jundesk:ready")); } catch (e) {}
   connect();
 
   // Loaded from <head> (recommended, for early error capture) there's no body yet.

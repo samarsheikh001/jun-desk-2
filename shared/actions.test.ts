@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { actionInputSchema, actionSummary, checkInput, describeActionForModel, describePageAction, MAX_PAGE_ACTIONS, sanitizeActions, toolSlug, type MessageAction } from "./actions.ts";
+import { actionInputSchema, actionSummary, checkInput, describeActionForModel, describePageAction, matchesPage, MAX_PAGE_ACTIONS, MAX_PAGE_ACTIONS_INTAKE, rankActions, sanitizeActions, toolSlug, type MessageAction } from "./actions.ts";
 
 const addToCart = {
   id: "add_to_cart#p1",
@@ -75,8 +75,41 @@ test("sanitizeActions: a later duplicate id replaces the earlier one; the list i
   ]);
   assert.equal(list.length, 1);
   assert.equal(list[0]!.description, "new");
-  const many = sanitizeActions(Array.from({ length: 40 }, (_, i) => ({ id: `a${i}`, name: "add", description: "d" })));
-  assert.equal(many.length, MAX_PAGE_ACTIONS);
+  const many = sanitizeActions(Array.from({ length: 80 }, (_, i) => ({ id: `a${i}`, name: "add", description: "d" })));
+  assert.equal(many.length, MAX_PAGE_ACTIONS_INTAKE);
+});
+
+test("rankActions: what the question names first, then what's on screen, then registration order; capped", () => {
+  const list = sanitizeActions([
+    { id: "a", name: "export_csv", description: "Download this month's usage as a CSV file" },
+    { id: "b", name: "upgrade_plan", description: "Change this account's plan", context: { currentPlan: "team" } },
+    { id: "c", name: "add_to_cart", description: "Add Blue Runner to the cart", visible: true },
+    { id: "d", name: "book_demo", description: "Book a demo with sales" },
+  ]);
+  assert.deepEqual(
+    rankActions(list, "please upgrade my plan").map((a) => a.id),
+    ["b", "c", "a", "d"],
+    "the one the question names first, then what's on screen",
+  );
+  assert.deepEqual(
+    rankActions(list, "hello").map((a) => a.id),
+    ["c", "a", "b", "d"],
+  );
+  const many = sanitizeActions(Array.from({ length: 50 }, (_, i) => ({ id: `a${i}`, name: `act${i}`, description: i === 49 ? "Rename the unicorn" : `Action number ${i}` })));
+  const ranked = rankActions(many, "rename my unicorn");
+  assert.equal(ranked.length, MAX_PAGE_ACTIONS);
+  assert.equal(ranked[0]!.id, "a49");
+});
+
+test("matchesPage: exact paths and * prefixes; no patterns means everywhere, no path means nowhere", () => {
+  assert.equal(matchesPage(undefined, "/x"), true);
+  assert.equal(matchesPage([], null), true);
+  assert.equal(matchesPage(["/pricing"], "/pricing"), true);
+  assert.equal(matchesPage(["/pricing"], "/pricing/pro"), false);
+  assert.equal(matchesPage(["/plans/*"], "/plans/pro"), true);
+  assert.equal(matchesPage(["/plans/*"], "/plans/"), true);
+  assert.equal(matchesPage(["/plans/*"], "/plan"), false);
+  assert.equal(matchesPage(["/pricing"], null), false);
 });
 
 test("tool names: a safe slug per registered name, suffixed when instances share a name", () => {

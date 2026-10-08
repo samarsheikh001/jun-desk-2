@@ -33,6 +33,8 @@ export interface PageAction {
   risk: ActionRisk;
   /** Small facts for the model (price, plan…), from the host's code. */
   context: Record<string, string | number | boolean>;
+  /** The loader saw the action's element in the viewport when the message was sent. */
+  visible: boolean;
 }
 
 export type ActionStatus = "pending" | "ok" | "error" | "cancelled" | "gone" | "undone";
@@ -56,7 +58,10 @@ export interface MessageAction {
   canUndo: boolean;
 }
 
+/** Offered to the model per reply (after `rankActions`). */
 export const MAX_PAGE_ACTIONS = 30;
+/** Accepted from the loader per message, before the question is known. */
+export const MAX_PAGE_ACTIONS_INTAKE = 60;
 export const MAX_ACTION_DESCRIPTION = 200;
 export const MAX_ACTION_PARAMS = 12;
 export const MAX_ACTION_RESULT = 500;
@@ -151,13 +156,13 @@ export function sanitizeActions(raw: unknown): PageAction[] {
       }
     }
     byId.delete(id);
-    byId.set(id, { id, name, description, params, required, risk: riskFrom(item), context });
+    byId.set(id, { id, name, description, params, required, risk: riskFrom(item), context, visible: item.visible === true });
   }
 
   const taken = new Set<string>();
   const out: PageAction[] = [];
   for (const action of byId.values()) {
-    if (out.length >= MAX_PAGE_ACTIONS) break;
+    if (out.length >= MAX_PAGE_ACTIONS_INTAKE) break;
     const base = toolSlug(action.name);
     let tool = base;
     for (let n = 2; taken.has(tool); n++) tool = `${base}_${n}`;
@@ -165,6 +170,42 @@ export function sanitizeActions(raw: unknown): PageAction[] {
     out.push({ ...action, tool });
   }
   return out;
+}
+
+/** Words of 3+ letters or digits, lowercased, deduped. */
+function words(text: string): Set<string> {
+  return new Set(text.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []);
+}
+
+/**
+ * The actions worth offering for this question, best first, at most MAX_PAGE_ACTIONS: every word the
+ * question shares with an action's name, description or context counts double, being on screen
+ * counts once, and registration order breaks ties (so the loader's order holds when nothing matches).
+ */
+export function rankActions(actions: PageAction[], question: string): PageAction[] {
+  const asked = words(question);
+  const score = (a: PageAction): number => {
+    let n = a.visible ? 1 : 0;
+    const own = words(`${a.name} ${a.description} ${Object.entries(a.context).map(([k, v]) => `${k} ${String(v)}`).join(" ")}`);
+    for (const w of own) if (asked.has(w)) n += 2;
+    return n;
+  };
+  return actions
+    .map((a, i) => ({ a, i, s: score(a) }))
+    .sort((x, y) => y.s - x.s || x.i - y.i)
+    .slice(0, MAX_PAGE_ACTIONS)
+    .map((x) => x.a);
+}
+
+/**
+ * Page patterns, as the loader and `tools/*.yaml` use them: an exact path, or a prefix ending in
+ * `*` ("/plans/*" matches "/plans/pro" and "/plans/"). No patterns means everywhere. Keep in step
+ * with `matches` in public/widget-actions.js.
+ */
+export function matchesPage(patterns: string[] | undefined, path: string | null | undefined): boolean {
+  if (!patterns || patterns.length === 0) return true;
+  if (!path) return false;
+  return patterns.some((p) => (p.endsWith("*") ? path.startsWith(p.slice(0, -1)) : path === p));
 }
 
 /**

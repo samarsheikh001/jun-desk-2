@@ -1,5 +1,5 @@
 import { isStepCount, jsonSchema, streamText, tool, type ToolSet } from "ai";
-import { actionInputSchema, type PageAction } from "../../shared/actions.ts";
+import { actionInputSchema, matchesPage, type PageAction } from "../../shared/actions.ts";
 import type { AiStep, Message } from "../../shared/protocol.ts";
 import { INLINE_SKILLS_MAX_CHARS, parseReply, searchQuery, streamVisible, systemPrompt, toChatMessages, type ReplyOutcome } from "./agent.ts";
 import { intentSkill, type AgentConfig, type ToolUser } from "./config.ts";
@@ -39,6 +39,8 @@ export interface RunInput {
    * without `execute`, so the model calling one ends the turn: the page runs it, not the Worker.
    */
   pageActions?: PageAction[];
+  /** AI-21: the path of the page the customer is on; tools with `pages:` are offered only where they match. */
+  pagePath?: string | null;
 }
 
 export interface RunResult {
@@ -68,7 +70,9 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     input.onAction?.(action);
   };
 
-  const tools: ToolSet = httpTools(config.tools, {
+  // Tools scoped to pages (AI-21) are offered only on a matching page; without a known page, only unscoped ones.
+  const toolSpecs = config.tools.filter((t) => !t.pages || matchesPage(t.pages, input.pagePath));
+  const tools: ToolSet = httpTools(toolSpecs, {
     secrets: secretsFromEnv(input.env),
     mock: Boolean(input.mockTools),
     onAction,
@@ -108,7 +112,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     handoffTopics: config.handoffTopics,
     skills: config.skills,
     skillCatalog,
-    tools: config.tools.map((t) => ({ name: t.name, description: t.description })),
+    tools: toolSpecs.map((t) => ({ name: t.name, description: t.description })),
     hits,
     technical: input.technical ?? [],
     today: today(input.timezone),

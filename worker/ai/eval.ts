@@ -1,4 +1,4 @@
-import { checkInput, sanitizeActions, type MessageAction, type PageAction } from "../../shared/actions.ts";
+import { checkInput, rankActions, sanitizeActions, type MessageAction, type PageAction } from "../../shared/actions.ts";
 import type { Message } from "../../shared/protocol.ts";
 import { describeEvents, type DebugContext } from "../../shared/debug.ts";
 import { loadMessages } from "../lib/conversations.ts";
@@ -67,7 +67,7 @@ function message(seq: number, body: string, authorType: Message["authorType"] = 
 }
 
 /** One reply, with the same shortcut the live desk takes when the customer asks for a person. */
-function answer(ctx: EvalContext, config: AgentConfig, history: Message[], technical: string[] = [], intent: string | null = null, pageActions: PageAction[] = []): Promise<RunResult> {
+function answer(ctx: EvalContext, config: AgentConfig, history: Message[], technical: string[] = [], intent: string | null = null, pageActions: PageAction[] = [], pagePath: string | null = null): Promise<RunResult> {
   if (asksForHuman(history.at(-1)?.body ?? "")) {
     return Promise.resolve({
       raw: "",
@@ -78,7 +78,7 @@ function answer(ctx: EvalContext, config: AgentConfig, history: Message[], techn
       usage: { inputTokens: 0, outputTokens: 0 },
     });
   }
-  return runAgent({ env: ctx.env, workspaceId: ctx.workspaceId, workspaceName: ctx.workspaceName, model: ctx.model, config, history, technical, mockTools: ctx.mockTools, temperature: 0, intent, pageActions });
+  return runAgent({ env: ctx.env, workspaceId: ctx.workspaceId, workspaceName: ctx.workspaceName, model: ctx.model, config, history, technical, mockTools: ctx.mockTools, temperature: 0, intent, pageActions, pagePath });
 }
 
 /** Runs several turns of a test case; replies come from the config under test. */
@@ -90,7 +90,7 @@ async function runCase(ctx: EvalContext, c: EvalCase): Promise<RunResult> {
   let result: RunResult | null = null;
   for (const [i, body] of c.messages.entries()) {
     history.push(message(i * 2 + 1, body));
-    result = await answer(ctx, ctx.candidate, history, [], c.intent ?? null, pageActions);
+    result = await answer(ctx, ctx.candidate, history, [], c.intent ?? null, rankActions(pageActions, body), c.page ?? null);
     if (result.outcome.kind === "handoff") break;
     const reply = message(i * 2 + 2, result.outcome.text, "ai");
     if (result.pageAction) {

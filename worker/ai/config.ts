@@ -43,6 +43,8 @@ export interface ToolSpec {
   mock?: unknown;
   /** What the visitor sees while the AI uses this tool ("Checking your order"); never the tool's name or data. */
   status?: string;
+  /** AI-21: offer this tool only on these page paths ("/orders/*"); none means everywhere. */
+  pages?: string[];
 }
 
 /** `action`: AI-21, the reply proposed a page action (the card), with or without text. */
@@ -68,6 +70,8 @@ export interface EvalCase {
   intent?: string;
   /** AI-21: the actions on the customer's page for every turn of the case. */
   actions?: EvalAction[];
+  /** AI-21: the page path the customer is on, for tools and actions with `pages`. */
+  page?: string;
   expect: { outcome?: EvalOutcome; tools?: string[]; criteria?: string; action?: { name: string; input?: Record<string, unknown> } };
 }
 
@@ -263,7 +267,9 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     return null;
   }
   const before = issues.length;
-  unknownKeys(path, data, ["description", "method", "url", "headers", "query", "body", "input", "pick", "mock", "status"], issues);
+  unknownKeys(path, data, ["description", "method", "url", "headers", "query", "body", "input", "pick", "mock", "status", "pages"], issues);
+  const pages = Array.isArray(data.pages) && data.pages.length > 0 && data.pages.every((p) => typeof p === "string" && p.startsWith("/")) ? (data.pages as string[]) : undefined;
+  if (data.pages !== undefined && !pages) issues.push({ path, message: 'pages must be a list of paths like "/pricing" or "/plans/*".' });
 
   const description = typeof data.description === "string" ? data.description.trim() : "";
   if (!description) issues.push({ path, message: "description is required: tell the AI what this returns and when to use it." });
@@ -346,6 +352,7 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     headers,
     query,
     ...(data.body !== undefined ? { body: data.body } : {}),
+    ...(pages ? { pages } : {}),
     input,
     ...(pick ? { pick } : {}),
     ...(data.mock !== undefined ? { mock: data.mock } : {}),
@@ -369,7 +376,11 @@ function parseEvals(path: string, text: string, issues: ConfigIssue[]): EvalCase
       issues.push({ path, message: `${where}: must be a map with name, message(s) and expect.` });
       return;
     }
-    unknownKeys(path, raw, ["name", "message", "messages", "intent", "actions", "expect"], issues, `${where}: `);
+    unknownKeys(path, raw, ["name", "message", "messages", "intent", "actions", "page", "expect"], issues, `${where}: `);
+    if (raw.page !== undefined && !(typeof raw.page === "string" && raw.page.startsWith("/"))) {
+      issues.push({ path, message: `${where}: page must be a path like /pricing.` });
+      return;
+    }
     const name = typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : where;
     const messages =
       typeof raw.message === "string" ? [raw.message]
@@ -434,7 +445,7 @@ function parseEvals(path: string, text: string, issues: ConfigIssue[]): EvalCase
         } else issues.push({ path, message: `${name}: expect.action must be an action name, or a map with name and input.` });
       }
     }
-    cases.push({ file: path, name, messages, ...(typeof raw.intent === "string" ? { intent: raw.intent } : {}), ...(actions.length ? { actions } : {}), expect });
+    cases.push({ file: path, name, messages, ...(typeof raw.intent === "string" ? { intent: raw.intent } : {}), ...(actions.length ? { actions } : {}), ...(typeof raw.page === "string" ? { page: raw.page } : {}), expect });
   });
   return cases;
 }

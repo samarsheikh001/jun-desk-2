@@ -21,7 +21,7 @@
 (function () {
   var J = window.JunDesk;
   if (!J || J._a) return;
-  var MAX = 30;
+  var MAX = 60; // the desk ranks these for the question and offers the AI at most 30
 
   // ---------- WebMCP imperative API, when the browser doesn't have it ----------
   // (widget.js leaves a shim that queued early registerTool calls; they're replayed below.)
@@ -86,14 +86,22 @@
     return [].concat(pages).some(function (pat) { return typeof pat == "string" && (pat.slice(-1) == "*" ? p.indexOf(pat.slice(0, -1)) == 0 : p == pat); });
   }
   function offered(t) { return matches(t.pages) && (typeof t.available != "function" || safe(t.available, false)); }
+  function inView(t) {
+    var el = t.element && (t.element.current || t.element);
+    if (!el || !el.getBoundingClientRect) return false;
+    var r = el.getBoundingClientRect();
+    return r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
+  }
   function describe(id, t) {
     var ctx = typeof t.context == "function" ? safe(t.context) : t.context;
-    return { id: id, name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations, risk: t.risk, context: ctx };
+    return { id: id, name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations, risk: t.risk, context: ctx, visible: safe(function () { return inView(t); }, false) };
   }
-  // The current list (ours first, then the page's own WebMCP tools), to `cb`; never the functions.
+  // The current list (ours first, what's on screen before the rest, then the page's own WebMCP
+  // tools), to `cb`; never the functions.
   function list(cb) {
     var out = [];
     registry.forEach(function (t, id) { if (offered(t)) out.push(describe(id, t)); });
+    out.sort(function (a, b) { return (b.visible ? 1 : 0) - (a.visible ? 1 : 0); });
     Promise.resolve(safe(function () { return mc.getTools(); }, [])).then(function (ts) {
       (ts || []).forEach(function (t) { if (t && !registry.has(t.name) && !mirrors.has(t.name)) out.push(describe(t.name, t)); });
     }, function () {}).then(function () { cb(out.slice(0, MAX)); });
