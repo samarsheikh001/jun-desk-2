@@ -847,7 +847,11 @@ function WidgetThread({
       />
     );
     const live = Boolean(thread.aiStream?.text);
-    const shown: IslandState = state === "answer" && thinking && !loading ? "thinking" : state;
+    // The status-line shape only before the first reply: once there is one, a follow-up keeps the
+    // answer shape (its question, the typing dots or tool steps, then the reply streaming in place),
+    // so the island doesn't collapse to a line and grow back, which reads as the widget blinking.
+    const answered = thread.messages.some((m) => (m.authorType === "ai" || m.authorType === "agent") && !m.internal);
+    const shown: IslandState = state === "answer" && thinking && !loading && !answered ? "thinking" : state;
     return (
       <Island state={shown} live={live} neon={island.neon} onOpen={() => island.setOpen(true)}>
         {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} onOpen={() => island.setOpen(true)} />}
