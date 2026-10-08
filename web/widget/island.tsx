@@ -88,9 +88,10 @@ export function Island({ state, live, onOpen, children }: { state: IslandState; 
   useIslandFrame({ w, h }, live);
   return (
     <div className="i-root">
-      {/* The box carries the size and its spring; the neon glow sits under it, outside the clipped shell. */}
+      {/* The box carries the size and its spring; the neon ring and glow sit on it, outside the clipped shell. */}
       <div className={`i-box i-s-${state}${live ? " i-live" : ""}`} style={{ width: w, height: h }}>
         <div className="i-glow" aria-hidden="true" />
+        <div className="i-ring" aria-hidden="true" />
         <div className="i-shell" role="region" aria-label="Chat">
           <div key={state} className="i-view" ref={content} style={{ width: w, ...(state === "panel" ? { height: panelHeight } : {}) }}>
             {children}
