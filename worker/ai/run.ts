@@ -161,6 +161,10 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     }
   }
   const usage = await result.totalUsage;
+  // Seen once on ChatGPT plan usage: the whole reply streamed twice back to back ("…okay?I'm about…").
+  // A reply that is exactly itself twice is never intended, so keep one copy.
+  const half = raw.length >> 1;
+  if (raw.length > 40 && raw.length % 2 === 0 && raw.slice(0, half) === raw.slice(half)) raw = raw.slice(0, half);
   let outcome = parseReply(raw);
   if (pageAction) {
     // A reply that only calls the action has no text; that's an answer (the action card), not a handoff.
