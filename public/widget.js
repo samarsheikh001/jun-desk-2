@@ -285,6 +285,8 @@
     "@media(max-width:768px){.frame{inset:0;width:100%;height:100dvh;border-radius:0}}" +
     // W-04 "bar" (D-32), "card" (D-34) and "island" (D-39) launchers: no button; the frame draws them and says where it goes (jun:css).
     ".bar .btn,.card .btn,.island .btn{display:none}.bar .frame,.island .frame{display:block;box-shadow:none;background:none}" +
+    // Unseen until the frame has sized itself: before that it's the default panel, painted dark by a dark-mode browser.
+    ".bar .frame:not(.sized),.island .frame:not(.sized){visibility:hidden}" +
     ".nudge p{margin:0 24px 14px 0}.from{font-size:12px;color:#737373}.go{width:100%;padding:8px 6px;border-radius:calc(var(--r,16px)*.625);background:var(--c);color:var(--t);font:12px Arial,sans-serif}" +
     ".x{position:absolute;top:12px;right:12px;width:30px;height:30px;background:none;font-size:23px;font-weight:300;color:#737373}" +
     "</style><div class=\"w\">" +
@@ -378,7 +380,7 @@
     if (type == "jun:proactive-shown") pendingOpener = null;
     if (type == "jun:open" || type == "jun:close") setOpen(type == "jun:open");
     // The bar frame sizes and clips itself (it knows what it shows); only our own frame gets here.
-    if (type == "jun:css") frame.style.cssText = e.data.css;
+    if (type == "jun:css") frame.style.cssText = e.data.css, frame.classList.add("sized");
     // AI-20: the intent's exit button ("Cancel anyway"): close, then hand back to the host app, once.
     // After a reload the page's onExit is gone: the chat still closes (the exit itself was recorded by the frame).
     if (type == "jun:exit") {
