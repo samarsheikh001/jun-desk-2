@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ACTION_ONLY_BODY, actionStatusText, visibleResult, type MessageAction } from "../../shared/actions.ts";
+import { ACTION_ONLY_BODY, actionChip, actionStatusText, actionSummary, actionTitle, visibleResult, type MessageAction } from "../../shared/actions.ts";
 import type { AiStep, Source } from "../../shared/protocol.ts";
 import type { AiAnswerView } from "../components/MessageList.tsx";
 import { ActionCard } from "./action.tsx";
@@ -112,74 +112,91 @@ function CopyButton({ text }: { text: string }) {
 }
 
 /**
- * One line in the steps list. YAML tools give a label and a state; a page action (AI-21) adds
- * what it returned, an error, or Undo.
+ * One row in the steps list. YAML tools give a label and a state; a page action (AI-21) adds a
+ * chip (what came of it, or its inputs), detail lines for the expanded row, an error, or Undo.
  */
 interface StepLine extends AiStep {
-  detail?: string;
+  chip?: string;
+  lines?: string[];
   error?: string;
   undo?: { run: () => void; busy: boolean; error?: string };
 }
 
+const chevron = <path d="M6 9l6 6 6-6" />;
+
 /**
- * The AI's tool steps above its answer (a page action's under it): one line, the running step's
- * label shimmering while it works, then a quiet summary the visitor can open. It never opens or
- * folds by itself, so the chat doesn't grow and snap back while tools run. Labels are the admin's
- * `status:` text, or a page action's description, nothing else.
+ * One tool call: its state icon (a chevron instead on hover, when there's more to show), a short
+ * title and a chip. Opening it shows what it did. An error opens it by itself.
+ */
+function StepRow({ step }: { step: StepLine }) {
+  const more = Boolean(step.lines?.length || step.error || step.undo?.error);
+  const [open, setOpen] = useState(Boolean(step.error));
+  useEffect(() => {
+    if (step.error) setOpen(true);
+  }, [step.error]);
+  const running = step.state === "running";
+  return (
+    <li className={`w-row${open ? " open" : ""}${step.error ? " error" : ""}`}>
+      <div className="w-row-line">
+        <button type="button" className="w-row-btn" aria-expanded={more ? open : undefined} disabled={!more} onClick={() => setOpen(!open)}>
+          <span className="w-row-icon">
+            {running ? (
+              <span className="w-step-spin" role="img" aria-label="In progress" />
+            ) : step.error ? (
+              <span className="w-step-dot" role="img" aria-label="Failed" />
+            ) : (
+              <svg className="w-row-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Done">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+            )}
+            {more && !running && (
+              <svg className="w-row-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{chevron}</svg>
+            )}
+          </span>
+          <span className={`w-row-label${running ? " w-steps-shimmer" : ""}`}>{step.label}</span>
+          {step.chip && <span className="w-row-chip">{step.chip}</span>}
+        </button>
+        {step.undo && (
+          <button type="button" className="w-step-undo" disabled={step.undo.busy} onClick={step.undo.run}>{step.undo.busy ? "Undoing…" : "Undo"}</button>
+        )}
+      </div>
+      {more && (
+        <div className={`w-row-detail${open ? " open" : ""}`} inert={!open}>
+          <div>
+            <div className="w-row-lines">
+              {step.lines?.map((line, i) => <span key={i}>{line}</span>)}
+              {step.error && <span className="error">{step.error}</span>}
+              {step.undo?.error && <span className="error">{step.undo.error}</span>}
+            </div>
+          </div>
+        </div>
+      )}
+    </li>
+  );
+}
+
+/**
+ * The AI's tool calls (above its answer; a page action's under it), one row each. Several fold
+ * under an "N steps" header, open until the visitor closes it. Nothing opens or folds by itself
+ * while tools run, so the reply only ever grows. Labels are the admin's `status:` text, or a page
+ * action's name; nothing else of a server tool reaches the visitor.
  */
 function Steps({ steps, working }: { steps: StepLine[]; working: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const running = [...steps].reverse().find((s) => s.state === "running");
-  const label = working ? (running?.label ?? "Working on it") : steps.length === 1 ? steps[0]!.label : `Used ${steps.length} steps`;
-  // A page action's outcome stays on the folded line: what came of it, its error, and Undo.
-  const last = steps.at(-1);
-  const outcome = !working && last && (last.detail || last.error || last.undo) ? last : null;
+  const [open, setOpen] = useState(true);
+  const rows = (
+    <ol className="w-rows">
+      {steps.map((s) => <StepRow key={s.id} step={s} />)}
+    </ol>
+  );
+  if (steps.length === 1) return <div className={`w-steps${working ? " working" : ""}`}>{rows}</div>;
   return (
     <div className={`w-steps${working ? " working" : ""}`}>
-      <div className="w-steps-row">
-      <button type="button" className="w-steps-head" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-        <svg className="w-steps-spark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
-        </svg>
-        <span role="status" className="w-steps-label">
-          <span key={working ? "working" : "done"} className={working ? "w-steps-shimmer" : "w-steps-done"}>{label}</span>
-        </span>
-        <svg className="w-steps-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+      <button type="button" className="w-steps-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <svg className="w-steps-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{chevron}</svg>
+        <span className="w-steps-count">{steps.length} steps</span>
       </button>
-      {outcome && !expanded && (
-        <>
-          {(outcome.detail || outcome.error) && <span className={`w-step-detail${outcome.error ? " error" : ""}`}>{outcome.error ?? outcome.detail}</span>}
-          {outcome.undo && <button type="button" className="w-step-undo" disabled={outcome.undo.busy} onClick={outcome.undo.run}>{outcome.undo.busy ? "Undoing…" : "Undo"}</button>}
-          {outcome.undo?.error && <span className="w-step-detail error">{outcome.undo.error}</span>}
-        </>
-      )}
-      </div>
-      <div className={`w-steps-panel${expanded ? " open" : ""}`} inert={!expanded}>
-        <div>
-          <ol className="w-steps-list">
-            {steps.map((s) => (
-              <li key={s.id} className={`w-step${s.error ? " error" : ""}`}>
-                {s.state === "running" ? (
-                  <span className="w-step-spin" role="img" aria-label="In progress" />
-                ) : s.error ? (
-                  <span className="w-step-dot" role="img" aria-label="Failed" />
-                ) : (
-                  <svg className="w-step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Done">
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                )}
-                <span className="w-step-label">{s.label}</span>
-                {(s.detail || s.error) && <span className="w-step-detail">{s.error ?? s.detail}</span>}
-                {s.undo && (
-                  <button type="button" className="w-step-undo" disabled={s.undo.busy} onClick={s.undo.run}>{s.undo.busy ? "Undoing…" : "Undo"}</button>
-                )}
-                {s.undo?.error && <span className="w-step-detail error">{s.undo.error}</span>}
-              </li>
-            ))}
-          </ol>
-        </div>
+      <div className={`w-steps-panel${open ? " open" : ""}`} inert={!open}>
+        <div>{rows}</div>
       </div>
     </div>
   );
@@ -299,14 +316,20 @@ export function AiAnswer({ answer, onFollowUp, controls }: { answer: AiAnswerVie
   );
 }
 
-/** The step line for a page action: its description, then what came of it. */
+/** The step row for a page action: a short title, a chip, and what it did when opened. */
 function actionLine(action: MessageAction, running: boolean, controls: ActionControls | undefined, undoing: boolean, undo: () => void): StepLine {
-  const line: StepLine = { id: action.runId, label: action.description, state: running ? "running" : "done" };
+  const line: StepLine = { id: action.runId, label: actionTitle(action.name), state: running ? "running" : "done" };
+  const chip = actionChip(action);
+  if (chip) line.chip = chip;
+  const lines = [action.description];
+  const inputs = actionSummary({ description: "", input: action.input }).replace(/^ · /, "");
+  if (inputs) lines.push(inputs);
   if (action.status === "error") line.error = action.result ?? "Didn't work";
   else if (action.status === "ok") {
-    const detail = visibleResult(action.result);
-    if (detail) line.detail = detail;
+    const result = visibleResult(action.result);
+    if (result && result !== chip) lines.push(result);
     if (action.canUndo && controls) line.undo = { run: undo, busy: undoing, ...(controls.undoError ? { error: controls.undoError } : {}) };
-  } else if (!running) line.detail = actionStatusText(action.status);
+  } else if (!running) lines.push(actionStatusText(action.status));
+  line.lines = lines;
   return line;
 }

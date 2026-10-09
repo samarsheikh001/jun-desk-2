@@ -320,6 +320,25 @@ export function actionSummary(action: Pick<MessageAction, "description" | "input
   return inputs.length ? `${action.description} · ${inputs.join(" · ")}` : action.description;
 }
 
+/** A step row's short title from the registered name: `search_places` → "Search places". */
+export function actionTitle(name: string): string {
+  const words = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\s-]+/g, " ").trim().toLowerCase();
+  return words ? (words[0]!.toUpperCase() + words.slice(1)).slice(0, 40) : "Page action";
+}
+
+/**
+ * A step row's chip: what came of it once it ran (if it's a sentence, not JSON), else the inputs
+ * a person can read ("Anchorvale Street"), else nothing. Opaque ids never show.
+ */
+export function actionChip(action: Pick<MessageAction, "input" | "status" | "result">): string | null {
+  const result = action.status === "ok" ? visibleResult(action.result) : null;
+  if (result) return result;
+  const values = Object.values(action.input)
+    .filter((v) => v !== null && v !== "" && !(typeof v === "string" && OPAQUE.test(v)))
+    .map((v) => String(v));
+  return values.length ? values.join(" · ") : null;
+}
+
 /**
  * The tool call id used when a past action is replayed to the model. Some providers (Workers AI's
  * Mistral) accept only 9 alphanumeric characters, so it's a stable hash of the run id, not the id.

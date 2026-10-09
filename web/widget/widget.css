@@ -542,53 +542,54 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .w-answer .w-follow-item svg { width: 11px; height: 11px; flex-shrink: 0; color: var(--a-ink-3); stroke-width: 2; }
 @keyframes w-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .w-answer *, .w-answer .w-src-panel { animation: none !important; transition: none !important; } }
-/* AI tool steps (answer.tsx Steps): the admin's `status:` labels while tools run, above the answer.
-   Open with a shimmering label while working, then one quiet line that opens the list. */
-/* The answer is a grid item sized by its content: cap it so a long step label ellipsizes instead of widening the row. */
+/* AI tool steps (answer.tsx Steps): one row per tool call (state icon, short title, a chip), several
+   under an "N steps" header. While tools run rows are only added; nothing opens or folds by itself. */
+/* The answer is a grid item sized by its content: cap it so a long chip ellipsizes instead of widening the row. */
 .w-answer { max-width: 100%; min-width: 0; }
 .w-answer .w-steps { display: flex; flex-direction: column; max-width: 100%; min-width: 0; margin-bottom: 6px; }
-.w-answer .w-steps-head { display: flex; align-items: center; gap: 7px; width: fit-content; max-width: 100%; margin: 0 -6px; padding: 3px 6px; border: 0; border-radius: 7px; background: transparent; color: var(--a-ink-3); font-size: 12.5px; font-weight: 500; line-height: 1.5; text-align: left; transition: background 100ms; }
+.w-answer .w-steps-head { display: flex; align-items: center; gap: 6px; width: fit-content; margin: 0 -6px; padding: 3px 6px; border: 0; border-radius: 7px; background: transparent; color: var(--a-ink-2); font-size: 12.5px; line-height: 1.5; transition: background 100ms; }
 .w-answer .w-steps-head:hover { background: var(--a-hover); }
-.w-answer .w-steps-head svg.w-steps-spark { width: 14px; height: 14px; color: var(--a-ink-3); transition: color 200ms; }
-.w-answer .w-steps.working .w-steps-spark { color: var(--a-ink-2); }
-.w-answer .w-steps-head svg.w-steps-chev { width: 13px; height: 13px; color: var(--a-ink-3); transition: transform 300ms cubic-bezier(0.23, 1, 0.32, 1); }
-.w-answer .w-steps-head[aria-expanded="true"] .w-steps-chev { transform: rotate(180deg); }
-.w-answer .w-steps-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-answer .w-steps-chev { width: 12px; height: 12px; transform: rotate(-90deg); transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+.w-answer .w-steps-head[aria-expanded="true"] .w-steps-chev { transform: none; }
+.w-answer .w-steps-count { font-variant-numeric: tabular-nums; }
+.w-answer .w-steps-panel { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 300ms cubic-bezier(0.23, 1, 0.32, 1), opacity 300ms cubic-bezier(0.23, 1, 0.32, 1); }
+.w-answer .w-steps-panel.open { grid-template-rows: 1fr; opacity: 1; }
+/* Negative margin + padding: the rows' hover pills get room inside this clip box, text stays put. */
+.w-answer .w-steps-panel > div { min-height: 0; overflow: hidden; margin: 0 -4px; padding: 4px 4px 2px; }
+.w-answer .w-rows { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.w-answer .w-row { min-width: 0; animation: w-rise 300ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+.w-answer .w-row-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.w-answer .w-row-btn { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; min-width: 0; height: 28px; margin: 0 -3px; padding: 0 3px; border: 0; border-radius: 7px; background: transparent; color: var(--a-ink); font: inherit; text-align: left; transition: background 100ms; }
+.w-answer .w-row-btn:not(:disabled):hover { background: var(--a-hover); }
+.w-answer .w-row-btn:disabled { cursor: default; opacity: 1; }
+/* The state icon; a chevron takes its place on hover (or while open) when there's more to show. */
+.w-answer .w-row-icon { position: relative; display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 16px; height: 16px; color: var(--a-ink-3); }
+.w-answer .w-row-icon > * { transition: opacity 100ms; }
+.w-answer .w-row-glyph { width: 13px; height: 13px; }
+.w-answer .w-row-chev { position: absolute; width: 12px; height: 12px; opacity: 0; transform: rotate(-90deg); transition: opacity 150ms, transform 150ms; }
+.w-answer .w-row-btn:not(:disabled):hover .w-row-chev, .w-answer .w-row.open .w-row-chev { opacity: 1; }
+.w-answer .w-row.open .w-row-chev { transform: none; }
+.w-answer .w-row-btn:not(:disabled):hover .w-row-icon > :not(.w-row-chev), .w-answer .w-row.open .w-row-icon > :not(.w-row-chev) { opacity: 0; }
+.w-answer .w-row-label { flex-shrink: 0; max-width: 62%; overflow: hidden; color: var(--a-ink); font-size: 12.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.w-answer .w-row-chip { flex: 0 1 auto; min-width: 0; height: 22px; padding: 0 7px; overflow: hidden; border-radius: 6px; background: var(--a-inset); box-shadow: inset 0 0 0 1px var(--a-line); color: var(--a-ink-2); font-size: 11.5px; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.w-answer .w-row-detail { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 300ms cubic-bezier(0.23, 1, 0.32, 1), opacity 300ms cubic-bezier(0.23, 1, 0.32, 1); }
+.w-answer .w-row-detail.open { grid-template-rows: 1fr; opacity: 1; }
+.w-answer .w-row-detail > div { min-height: 0; overflow: hidden; }
+.w-answer .w-row-lines { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 4px 8px; padding: 2px 0 2px 14px; border-left: 1px solid var(--a-line); }
+.w-answer .w-row-lines span { color: var(--a-ink-2); font-size: 11.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.w-answer .w-row-lines .error { color: var(--error); }
 .w-answer .w-steps-shimmer { background: linear-gradient(90deg, var(--a-ink-3) 35%, var(--a-ink) 50%, var(--a-ink-3) 65%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: w-shimmer 1.4s linear infinite; }
 @keyframes w-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-.w-answer .w-steps-done { color: var(--a-ink-2); animation: w-fade 350ms ease-out both; }
-.w-answer .w-steps-panel { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 400ms cubic-bezier(0.23, 1, 0.32, 1), opacity 400ms cubic-bezier(0.23, 1, 0.32, 1); }
-.w-answer .w-steps-panel.open { grid-template-rows: 1fr; opacity: 1; }
-.w-answer .w-steps-panel > div { overflow: hidden; }
-/* A thin guide line on the left that grows with the rows. */
-.w-answer .w-steps-list { position: relative; display: flex; flex-direction: column; gap: 2px; margin: 2px 0 0 6px; padding: 2px 0 2px 14px; list-style: none; }
-.w-answer .w-steps-list::before { content: ""; position: absolute; left: 0; top: 0; bottom: 6px; width: 1px; background: var(--a-line); }
-.w-answer .w-step { display: flex; align-items: center; gap: 8px; min-height: 24px; min-width: 0; color: var(--a-ink); font-size: 12.5px; font-weight: 500; line-height: 1.4; animation: w-rise 320ms cubic-bezier(0.23, 1, 0.32, 1) both; }
-/* Opened, a step may wrap (page actions describe themselves in a sentence); the folded line stays one line. */
-.w-answer .w-step-label { min-width: 0; overflow-wrap: anywhere; }
-.w-answer .w-step { align-items: flex-start; flex-wrap: wrap; }
-/* The label takes the rest of the row and wraps inside it, so the check stays beside it; Undo stays on
-   that line, and what came of it goes underneath, lined up with the label (icon 13px + 8px gap). */
-.w-answer .w-step > .w-step-label { flex: 1 1 0; order: 1; }
-.w-answer .w-step > .w-step-undo { order: 2; }
-.w-answer .w-step > .w-step-detail { flex: 0 0 calc(100% - 21px); order: 3; margin-left: 21px; }
-.w-answer .w-step > svg, .w-answer .w-step > .w-step-spin, .w-answer .w-step > .w-step-dot { margin-top: 3px; }
-.w-answer .w-steps-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; max-width: 100%; }
-.w-answer .w-steps-row .w-steps-head { flex-shrink: 1; min-width: 0; }
-.w-answer .w-steps-row .w-step-detail { flex: 1 1 140px; }
-.w-answer .w-step-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--a-ink-3); font-weight: 400; }
-.w-answer .w-step-detail::before { content: "·"; margin-right: 6px; }
-.w-answer .w-step-detail.error, .w-answer .w-step.error .w-step-detail { color: var(--error); }
-.w-answer .w-step-dot { width: 8px; height: 8px; margin: 0 2.5px; flex-shrink: 0; border-radius: 50%; background: var(--error); }
-.w-answer .w-step-undo { flex-shrink: 0; margin-left: 2px; padding: 1px 7px; border: 1px solid var(--a-line); border-radius: 6px; background: transparent; color: var(--a-ink-2); font: inherit; font-size: 11.5px; cursor: pointer; }
+.w-answer .w-step-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--error); }
+.w-answer .w-step-undo { flex-shrink: 0; padding: 1px 7px; border: 1px solid var(--a-line); border-radius: 6px; background: transparent; color: var(--a-ink-2); font: inherit; font-size: 11.5px; cursor: pointer; }
 .w-answer .w-step-undo:hover { background: var(--a-hover); color: var(--a-ink); }
 .w-answer .w-step-undo:disabled { opacity: 0.6; cursor: default; }
-.w-answer .w-step svg.w-step-check { width: 13px; height: 13px; color: var(--a-ink-3); }
 .w-answer .w-step-spin { width: 11px; height: 11px; flex-shrink: 0; box-sizing: border-box; border: 1.5px solid var(--a-line); border-top-color: var(--a-ink-2); border-radius: 50%; animation: w-spin 700ms linear infinite; }
 @keyframes w-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .w-answer .w-steps-shimmer { background: none; color: var(--a-ink-2); }
   .w-answer .w-step-spin { border-color: var(--a-ink-3); border-style: dotted; }
+  .w-answer .w-row { animation: none; }
 }
 
 /* ---------- AI-21 page actions (D-40): the card under an answer that proposed one ---------- */

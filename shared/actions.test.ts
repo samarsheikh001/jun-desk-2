@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { actionCallId, actionInputSchema, actionSummary, actionToolResult, checkInput, describePageAction, matchesPage, MAX_PAGE_ACTIONS, MAX_PAGE_ACTIONS_INTAKE, rankActions, sanitizeActions, toolSlug, type MessageAction } from "./actions.ts";
+import { actionCallId, actionChip, actionInputSchema, actionTitle, actionSummary, actionToolResult, checkInput, describePageAction, matchesPage, MAX_PAGE_ACTIONS, MAX_PAGE_ACTIONS_INTAKE, rankActions, sanitizeActions, toolSlug, type MessageAction } from "./actions.ts";
 
 const addToCart = {
   id: "add_to_cart#p1",
@@ -188,4 +188,16 @@ test("actionToolResult: what the model gets as the tool result of a past card", 
   assert.equal(actionToolResult({ ...base, status: "error", result: "Out of stock" }), "Failed: Out of stock");
   assert.equal(actionToolResult({ ...base, status: "gone" }), "No longer available (the customer left the page); it did not run.");
   assert.equal(actionToolResult({ ...base, status: "undone", result: "Added 1 × M" }), "Ran (Added 1 × M), then the customer undid it.");
+});
+
+test("actionTitle and actionChip: a short row title and the one thing worth showing beside it", () => {
+  assert.equal(actionTitle("search_places"), "Search places");
+  assert.equal(actionTitle("getBookingForm"), "Get booking form");
+  assert.equal(actionTitle("add-to-cart"), "Add to cart");
+  assert.equal(actionTitle("__"), "Page action");
+  assert.equal(actionChip({ input: { query: "Anchorvale Street" }, status: "pending", result: null }), "Anchorvale Street");
+  assert.equal(actionChip({ input: { placeId: "ChIJb9cqIPwX2jERNUBseVef4Y0" }, status: "pending", result: null }), null);
+  assert.equal(actionChip({ input: { query: "Siloso" }, status: "ok", result: "Destination set to 10A Siloso Bch Walk." }), "Destination set to 10A Siloso Bch Walk.");
+  assert.equal(actionChip({ input: { query: "Siloso" }, status: "ok", result: '[{"placeId":"x"}]' }), "Siloso");
+  assert.equal(actionChip({ input: { size: "M", quantity: 2 }, status: "error", result: "Out of stock" }), "M · 2");
 });
