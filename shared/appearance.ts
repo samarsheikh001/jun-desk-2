@@ -9,6 +9,12 @@ export type WidgetTheme = "auto" | "light" | "dark";
  * `island`: a pill at the bottom centre that morphs with each moment (D-39, `web/widget/island.tsx`).
  */
 export type LauncherStyle = "button" | "card" | "bar" | "island";
+/**
+ * What the round button (launcher `button`) shows: the company logo (a chat bubble while none is
+ * uploaded), or the words BUTTON_TEXT.
+ */
+export type ButtonStyle = "logo" | "text";
+export const BUTTON_TEXT = "Chat with us";
 
 export const APPEARANCE_DEFAULTS = {
   color: "#2f5bea",
@@ -42,6 +48,8 @@ export interface WidgetLook {
   suggestions: string[];
   /** Island launcher (D-39): the turning multi-colour border. On unless turned off. */
   neon: boolean;
+  /** Button launcher: the logo or "Chat with us". */
+  buttonStyle: ButtonStyle;
 }
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -83,6 +91,7 @@ export function widgetLook(s: Record<string, unknown>, workspaceName: string, lo
       ? s.suggestions.filter((q): q is string => typeof q === "string" && q.trim() !== "").map((q) => clean(q).slice(0, SUGGESTION_LIMIT)).slice(0, SUGGESTIONS_MAX)
       : [],
     neon: s.neon !== false,
+    buttonStyle: s.buttonStyle === "text" ? "text" : "logo",
   };
 }
 
@@ -106,6 +115,10 @@ export function applyAppearance(settings: Record<string, unknown>, body: Record<
   if (body.launcher !== undefined) {
     if (!LAUNCHERS.includes(body.launcher as LauncherStyle)) throw new Error("Launcher must be button, card, bar or island.");
     settings.launcher = body.launcher;
+  }
+  if (body.buttonStyle !== undefined) {
+    if (body.buttonStyle !== "logo" && body.buttonStyle !== "text") throw new Error("The button shows the logo or text.");
+    settings.buttonStyle = body.buttonStyle;
   }
   if (body.neon !== undefined) {
     if (typeof body.neon !== "boolean") throw new Error("Neon border must be on or off.");

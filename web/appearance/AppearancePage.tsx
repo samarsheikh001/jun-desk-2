@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { APPEARANCE_DEFAULTS, RADIUS_MAX, SUGGESTION_LIMIT, SUGGESTIONS_MAX, TEXT_LIMITS, textOn, widgetLook, type LauncherStyle, type WidgetTheme } from "../../shared/appearance.ts";
+import { APPEARANCE_DEFAULTS, BUTTON_TEXT, RADIUS_MAX, SUGGESTION_LIMIT, SUGGESTIONS_MAX, TEXT_LIMITS, textOn, widgetLook, type ButtonStyle, type LauncherStyle, type WidgetTheme } from "../../shared/appearance.ts";
 import { api, ApiError } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { PageTabs } from "../components/PageTabs.tsx";
@@ -54,12 +54,13 @@ interface Draft {
   theme?: WidgetTheme;
   radius?: number;
   launcher?: LauncherStyle;
+  buttonStyle?: ButtonStyle;
   neon?: boolean;
   csat?: boolean;
   logoKey?: string;
 }
 
-const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggestions", "color", "position", "theme", "radius", "launcher", "neon", "csat"] as const;
+const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggestions", "color", "position", "theme", "radius", "launcher", "buttonStyle", "neon", "csat"] as const;
 const pick = (s: Draft): Draft => Object.fromEntries(FIELDS.filter((f) => s[f] !== undefined).map((f) => [f, s[f]])) as Draft;
 const same = (a: Draft, b: Draft) => FIELDS.every((f) => JSON.stringify(a[f] ?? null) === JSON.stringify(b[f] ?? null));
 
@@ -208,6 +209,14 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
                 <NativeSelectOption value="island">Island</NativeSelectOption>
               </NativeSelect>
             </Field>
+            {look.launcher === "button" && (
+              <Field label="Button shows" hint={look.logoUrl ? "Your logo, or the words." : "Your logo once you upload one (a chat bubble until then), or the words."} htmlFor="appear-button">
+                <NativeSelect id="appear-button" value={look.buttonStyle} disabled={off} onChange={(e) => edit({ buttonStyle: e.target.value as ButtonStyle })}>
+                  <NativeSelectOption value="logo">Company logo</NativeSelectOption>
+                  <NativeSelectOption value="text">"{BUTTON_TEXT}"</NativeSelectOption>
+                </NativeSelect>
+              </Field>
+            )}
             {look.launcher === "island" && (
               <label className="appear-switch">
                 <Switch checked={draft.neon !== false} disabled={off} onCheckedChange={(checked) => edit({ neon: checked })} />
@@ -257,7 +266,7 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
         {canEdit && (
           <div className="appear-actions">
             <Button disabled={busy || !dirty} onClick={save}>Save</Button>
-            <Button variant="outline" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, launcher: APPEARANCE_DEFAULTS.launcher, neon: true, csat: true })}>Reset to defaults</Button>
+            <Button variant="outline" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, launcher: APPEARANCE_DEFAULTS.launcher, buttonStyle: "logo", neon: true, csat: true })}>Reset to defaults</Button>
             <span className={error ? "error small" : "muted small"} role="status">{error ?? status ?? (dirty ? "Unsaved changes" : "")}</span>
           </div>
         )}
@@ -331,10 +340,16 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
         />
         {/* The open chat takes the button's corner, as on a website. */}
         {button && !open && (
-          <button className="appear-launcher" aria-label="Open chat" aria-expanded={false} onClick={() => onOpen(true)}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z" />
-            </svg>
+          <button className={`appear-launcher${look.buttonStyle === "text" ? " txt" : ""}`} aria-label="Open chat" aria-expanded={false} onClick={() => onOpen(true)}>
+            {look.buttonStyle === "text" ? (
+              <span>{BUTTON_TEXT}</span>
+            ) : look.logoUrl ? (
+              <img src={look.logoUrl} alt="" />
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z" />
+              </svg>
+            )}
           </button>
         )}
       </div>

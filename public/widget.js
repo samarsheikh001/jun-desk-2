@@ -284,6 +284,8 @@
     ".left>*{right:auto;left:22px}" +
     "@media(max-width:768px){.frame{inset:0;width:100%;height:100dvh;border-radius:0}}" +
     // W-04 "bar" (D-32), "card" (D-34) and "island" (D-39) launchers: no button; the frame draws them and says where it goes (jun:css).
+    // The button shows the company logo (a chat bubble until one is uploaded), or "Chat with us".
+    ".btn img{width:100%;height:100%;object-fit:cover;border-radius:inherit}.txt .btn{width:auto;padding:0 18px;font:600 14px system-ui,sans-serif}" +
     ".bar .btn,.card .btn,.island .btn{display:none}.bar .frame,.island .frame{display:block;box-shadow:none;background:none}" +
     // Unseen until the frame has sized itself: before that it's the default panel, painted dark by a dark-mode browser.
     ".bar .frame:not(.sized),.island .frame:not(.sized){visibility:hidden}" +
@@ -310,6 +312,10 @@
       // W-04: side, corner rounding, dark theme, and the launcher (the bar and the card load the frame now).
       wrap.classList.add(cfg.position, cfg.theme, cfg.launcher); // "left", "dark", "bar", "card"
       if (cfg.launcher != "button") load();
+      var icon = button.querySelector("svg"), face;
+      if (cfg.buttonStyle == "text") wrap.classList.add("txt"), face = document.createElement("span"), face.textContent = "Chat with us";
+      else if (cfg.logoUrl) face = document.createElement("img"), face.src = origin + cfg.logoUrl, face.alt = "";
+      if (face) icon.replaceWith(face);
       wrap.style.setProperty("--r", cfg.radius + "px");
     }
     wrap.classList.add("on");

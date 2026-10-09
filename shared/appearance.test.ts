@@ -16,6 +16,7 @@ test("appearance: an untouched desk gets the original look", () => {
     placeholder: "Write a message…",
     suggestions: [],
     neon: true,
+    buttonStyle: "logo",
   });
   // The island's neon border is on unless turned off; anything but false keeps it.
   assert.equal(widgetLook({ neon: false }, "Acme", null).neon, false);
@@ -51,4 +52,13 @@ test("appearance: writing is strict, and empty text clears a field", () => {
 test("appearance: readable text on the brand colour", () => {
   assert.equal(textOn("#2f5bea"), "#ffffff");
   assert.equal(textOn("#ffe066"), "#1c1c1a");
+});
+
+test("appearance: the button shows the logo unless set to text; only those two are accepted", () => {
+  assert.equal(widgetLook({ buttonStyle: "text" }, "Acme", null).buttonStyle, "text");
+  assert.equal(widgetLook({ buttonStyle: "emoji" }, "Acme", null).buttonStyle, "logo");
+  const settings: Record<string, unknown> = {};
+  applyAppearance(settings, { buttonStyle: "text" });
+  assert.equal(settings.buttonStyle, "text");
+  assert.throws(() => applyAppearance(settings, { buttonStyle: "big" }), /logo or text/);
 });
