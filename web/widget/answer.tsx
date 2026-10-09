@@ -327,7 +327,8 @@ function actionLine(action: MessageAction, running: boolean, controls: ActionCon
   if (action.status === "error") line.error = action.result ?? "Didn't work";
   else if (action.status === "ok") {
     const result = visibleResult(action.result);
-    if (result && result !== chip) lines.push(result);
+    // In full here: the chip may be cut short.
+    if (result) lines.push(result);
     if (action.canUndo && controls) line.undo = { run: undo, busy: undoing, ...(controls.undoError ? { error: controls.undoError } : {}) };
   } else if (!running) lines.push(actionStatusText(action.status));
   line.lines = lines;
