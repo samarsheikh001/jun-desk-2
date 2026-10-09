@@ -90,6 +90,8 @@ export function MessageList({
   typing,
   aiStream,
   aiThinking,
+  aiTurn,
+  pendingAuthor,
   onRetry,
   onDismiss,
   mentionNames = [],
@@ -105,6 +107,13 @@ export function MessageList({
   typing: { name: string | null } | null;
   aiStream?: { text: string; sources?: Source[] } | null;
   aiThinking?: boolean;
+  /** The clientMsgId the reply being written will be saved under (`ai_status.turn`). */
+  aiTurn?: string | null;
+  /**
+   * The widget: a message being sent draws like the saved one ("You · 7:42 PM" above, dimmed),
+   * not with "Sending…" under it, so nothing moves when it's saved.
+   */
+  pendingAuthor?: string;
   onRetry?: (p: PendingMessage) => void;
   onDismiss?: (p: PendingMessage) => void;
   /** Teammates' names, to highlight @mentions in notes. */
@@ -116,20 +125,25 @@ export function MessageList({
   /** The widget: live tool steps per AI reply (`ai:<seq>`), drawn by `renderAi`. */
   aiSteps?: Record<string, AiStep[]>;
 }) {
-  const end = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  // Scroll the list's own box, never scrollIntoView: in the widget that also scrolls the host page
+  // (the whole site jumps on a phone).
+  const scroller = () => {
+    let box: HTMLElement | null = list.current?.parentElement ?? null;
+    while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) box = box.parentElement;
+    return box;
+  };
   useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
+    const box = scroller();
+    if (box) box.scrollTop = box.scrollHeight;
   }, [messages.length, pending.length, typing, aiStream?.text, aiThinking]);
   // A custom AI renderer reveals text on its own clock: keep following it while the reader is at the bottom.
-  const list = useRef<HTMLDivElement>(null);
   const customAi = Boolean(renderAi);
   useEffect(() => {
     const el = list.current;
     if (!customAi || !el || typeof ResizeObserver === "undefined") return;
-    let scroller: HTMLElement | null = el.parentElement;
-    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
-    if (!scroller) return;
-    const box = scroller;
+    const box = scroller();
+    if (!box) return;
     const observer = new ResizeObserver(() => {
       if (box.scrollHeight - box.scrollTop - box.clientHeight < 160) box.scrollTop = box.scrollHeight;
     });
@@ -143,8 +157,11 @@ export function MessageList({
 
   // One keyed list: an AI reply keeps its key (`ai:<seq>`, the answer's clientMsgId) from its
   // first streamed word to the saved message, so a custom renderer isn't remounted in between.
+  // The server names the turn (follow-ups after a page action are `ai:<seq>.<n>`); before it does,
+  // the first answer to the latest visitor message.
   const lastVisitorSeq = [...messages].reverse().find((m) => m.authorType === "visitor")?.seq;
-  const streamKey = lastVisitorSeq !== undefined && !messages.some((m) => m.clientMsgId === `ai:${lastVisitorSeq}`) ? `ai:${lastVisitorSeq}` : "ai:stream";
+  const saved = (key: string) => messages.some((m) => m.clientMsgId === key);
+  const streamKey = aiTurn && !saved(aiTurn) ? aiTurn : lastVisitorSeq !== undefined && !saved(`ai:${lastVisitorSeq}`) ? `ai:${lastVisitorSeq}` : "ai:stream";
   const last = messages.at(-1);
   // An AI reply's clientMsgId is `ai:<seq of the visitor message it answers>`.
   const actionsFor = (key: string) => {
@@ -173,7 +190,7 @@ export function MessageList({
       );
     }
     return (
-      <div key={m.authorType === "ai" ? m.clientMsgId : m.id} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""} ${m.internal ? "note" : ""}`}>
+      <div key={m.clientMsgId} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""} ${m.internal ? "note" : ""}`}>
         {showAuthor && <div className="author muted small">{m.internal && <span className="tag note-tag">Note</span>}{authorLabel(m)} · {formatTime(m.createdAt)}</div>}
         {m.authorType === "ai" && actionsFor(m.clientMsgId)}
         {m.body && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : m.body}</div>}
@@ -189,9 +206,13 @@ export function MessageList({
       </div>
     );
   });
-  for (const p of pending) {
+  const lastMessage = messages.at(-1);
+  pending.forEach((p, i) => {
+    // Same header rule as a saved message, so it doesn't move when the server confirms it.
+    const header = pendingAuthor && i === 0 && (!lastMessage || lastMessage.internal || lastMessage.authorType === "system" || lastMessage.authorType === "ai" || !mine(lastMessage));
     rows.push(
       <div key={p.clientMsgId} className={`msg own pending ${p.internal ? "note" : ""}`}>
+        {header && <div className="author muted small">{pendingAuthor} · {formatTime(Date.now())}</div>}
         {p.body && <div className="bubble">{p.body}</div>}
         <Attachments attachments={p.attachments} />
         {p.failed ? (
@@ -199,12 +220,12 @@ export function MessageList({
             {p.failed} {onRetry && <button className="link" onClick={() => onRetry(p)}>Retry</button>}{" "}
             {onDismiss && <button className="link" onClick={() => onDismiss(p)}>Discard</button>}
           </div>
-        ) : (
+        ) : pendingAuthor ? null : (
           <div className="muted small">Sending…</div>
         )}
       </div>,
     );
-  }
+  });
   if (aiStream?.text) {
     rows.push(
       renderAi ? (
@@ -227,8 +248,9 @@ export function MessageList({
       </div>,
     );
   } else if (aiThinking) {
+    // Same key as the reply it becomes: the dots, the steps and the words share one row.
     rows.push(
-      <div key="ai:thinking" className={`msg ${aiSide} ai`}>
+      <div key={streamKey} className={`msg ${aiSide} ai streaming`}>
         {lastVisitorSeq !== undefined && actionsFor(`ai:${lastVisitorSeq}`)}
         <div className="bubble typing" aria-label="The AI assistant is writing a reply">
           <span /><span /><span />
@@ -247,7 +269,6 @@ export function MessageList({
           </div>
         </div>
       )}
-      <div ref={end} />
     </div>
   );
 }

@@ -263,6 +263,7 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .bubble { padding: 8px 12px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--border); white-space: pre-wrap; word-break: break-word; }
 .msg.own .bubble { background: var(--accent); color: var(--accent-text); border-color: transparent; }
 .msg.pending .bubble { opacity: 0.6; }
+.msg.own .bubble { transition: opacity 200ms ease-out; }
 .seen { margin: 2px 4px 0; }
 .attachments { display: grid; gap: 4px; margin-top: 4px; justify-items: inherit; }
 .attachments img { max-width: 240px; max-height: 200px; border-radius: 10px; border: 1px solid var(--border); display: block; }

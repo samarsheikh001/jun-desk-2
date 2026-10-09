@@ -122,13 +122,13 @@ interface StepLine extends AiStep {
 }
 
 /**
- * The AI's tool steps above its answer (a page action's under it): open with a shimmering label while it works, then one
- * quiet line the visitor can open. Labels are the admin's `status:` text, or a page action's
- * description, nothing else.
+ * The AI's tool steps above its answer (a page action's under it): one line, the running step's
+ * label shimmering while it works, then a quiet summary the visitor can open. It never opens or
+ * folds by itself, so the chat doesn't grow and snap back while tools run. Labels are the admin's
+ * `status:` text, or a page action's description, nothing else.
  */
 function Steps({ steps, working }: { steps: StepLine[]; working: boolean }) {
-  const [manual, setManual] = useState<boolean | null>(null);
-  const expanded = manual ?? working;
+  const [expanded, setExpanded] = useState(false);
   const running = [...steps].reverse().find((s) => s.state === "running");
   const label = working ? (running?.label ?? "Working on it") : steps.length === 1 ? steps[0]!.label : `Used ${steps.length} steps`;
   // A page action's outcome stays on the folded line: what came of it, its error, and Undo.
@@ -137,7 +137,7 @@ function Steps({ steps, working }: { steps: StepLine[]; working: boolean }) {
   return (
     <div className={`w-steps${working ? " working" : ""}`}>
       <div className="w-steps-row">
-      <button type="button" className="w-steps-head" aria-expanded={expanded} onClick={() => setManual(!expanded)}>
+      <button type="button" className="w-steps-head" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
         <svg className="w-steps-spark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
         </svg>
@@ -213,7 +213,7 @@ export function AiAnswer({ answer, onFollowUp, controls }: { answer: AiAnswerVie
   // so its step goes under the text.
   const after = Boolean(actionStep && body);
   const waiting = Boolean(action && action.status === "pending" && !actionRunning && controls);
-  // Open while tools run before (or between) the words; folded once the answer is being written.
+  // Working (the label shimmers) while tools run before (or between) the words.
   const working = (streaming && (!body || steps.some((s) => s.state === "running"))) || actionRunning;
   const tokens = useMemo(() => tokenize(body), [body]);
   // Animate a reply that started streaming here; history shows as it is.

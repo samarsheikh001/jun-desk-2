@@ -135,8 +135,12 @@ export type ConversationEvent =
   | { type: "typing"; authorType: "visitor" | "agent"; name: string | null; typing: boolean }
   | { type: "read"; by: "visitor" | "agent"; seq: number }
   | { type: "conversation"; conversation: ConversationSummary }
-  /** The AI is working on a reply ("thinking") or streaming one; text accumulates per streamId. */
-  | { type: "ai_status"; state: "thinking" | "idle" }
+  /**
+   * The AI is working on a reply ("thinking") or streaming one; text accumulates per streamId.
+   * `turn`: the clientMsgId the reply will be saved under (`ai:<seq>`, or `ai:<seq>.<n>` after a
+   * page action), so clients draw it in one row from the typing dots to the saved message.
+   */
+  | { type: "ai_status"; state: "thinking" | "idle"; turn?: string }
   /**
    * `replace`: `text` is the whole reply so far (sent to late joiners), not an increment.
    * Citations arrive resolved; `sources`, when present, is every source cited so far.

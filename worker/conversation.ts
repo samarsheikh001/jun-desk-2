@@ -97,6 +97,8 @@ export class Conversation extends DurableObject<Env> {
   #thinking = false;
   /** The current AI turn's tool steps (visitor-safe labels only), for late joiners. Never stored. */
   #steps: { turn: string; steps: AiStep[] } | undefined;
+  /** The clientMsgId of the reply being written while #thinking. */
+  #turn: string | undefined;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -148,7 +150,7 @@ export class Conversation extends DurableObject<Env> {
     const since = Number(new URL(request.url).searchParams.get("since") ?? 0) || 0;
     const messages = await loadMessages(this.env.DB, ref.conversationId, { since, includeInternal: participant.role === "agent" });
     this.#send(server, { type: "messages", messages });
-    if (this.#thinking) this.#send(server, { type: "ai_status", state: "thinking" });
+    if (this.#thinking) this.#send(server, { type: "ai_status", state: "thinking", ...(this.#turn ? { turn: this.#turn } : {}) });
     if (this.#thinking && this.#steps) for (const step of this.#steps.steps) this.#send(server, { type: "ai_step", turn: this.#steps.turn, step });
     if (this.#streaming) this.#send(server, { type: "ai_delta", ...this.#streaming, replace: true });
 
@@ -549,7 +551,8 @@ export class Conversation extends DurableObject<Env> {
     if (followUp) await this.#updateAction(ref, followUp.runId, (a) => ({ ...a, continued: true }));
 
     this.#thinking = true;
-    this.#broadcast({ type: "ai_status", state: "thinking" });
+    this.#turn = turnId;
+    this.#broadcast({ type: "ai_status", state: "thinking", turn: turnId });
     try {
       let model: AgentModel;
       try {

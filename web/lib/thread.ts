@@ -35,6 +35,8 @@ export function useThread(options: {
   /** The AI's reply as it streams in, and whether it's working on one. */
   const [aiStream, setAiStream] = useState<{ streamId: string; text: string; sources: Source[] } | null>(null);
   const [aiThinking, setAiThinking] = useState(false);
+  /** The clientMsgId the reply being written will be saved under (from the server). */
+  const [aiTurn, setAiTurn] = useState<string | null>(null);
   /** Tool steps per AI reply (keyed by its clientMsgId, `ai:<seq>`), this session only: never stored. */
   const [aiSteps, setAiSteps] = useState<Record<string, AiStep[]>>({});
   const socket = useRef<LiveSocket<ConversationEvent> | null>(null);
@@ -84,6 +86,7 @@ export function useThread(options: {
           if (event.message.authorType === "ai") setAiStream(null);
         } else if (event.type === "ai_status") {
           setAiThinking(event.state === "thinking");
+          if (event.state === "thinking" && event.turn) setAiTurn(event.turn);
           if (event.state === "idle") {
             setAiStream(null);
             // The turn is over: nothing is still running, even if a "done" got lost.
@@ -150,6 +153,7 @@ export function useThread(options: {
     state,
     aiStream,
     aiThinking,
+    aiTurn,
     aiSteps,
     /** Visitor asks for a person (W-07). */
     requestHuman: () => sendEvent({ type: "handoff" }),

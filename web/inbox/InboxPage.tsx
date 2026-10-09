@@ -613,6 +613,7 @@ function Thread({
         typing={thread.typing}
         aiStream={thread.aiStream}
         aiThinking={thread.aiThinking}
+        aiTurn={thread.aiTurn}
         onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId, undefined, p.internal)}
         onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
         mentionNames={members.map((m) => m.name)}

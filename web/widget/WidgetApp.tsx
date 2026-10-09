@@ -857,6 +857,8 @@ function WidgetThread({
           aiStream={thread.aiStream}
           // Show the AI "typing" the instant the visitor sends, not when the server gets going.
           aiThinking={thread.aiThinking || awaitingAi}
+          aiTurn={thread.aiTurn}
+          pendingAuthor="You"
           aiSteps={thread.aiSteps}
           onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
           onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
@@ -891,7 +893,7 @@ function WidgetThread({
     const close = () => island.setOpen(false);
     // What the assistant is doing right now: a running tool step's label, else "Thinking…".
     const lastVisitorSeq = [...thread.messages].reverse().find((m) => m.authorType === "visitor")?.seq;
-    const turnSteps = (lastVisitorSeq !== undefined ? thread.aiSteps[`ai:${lastVisitorSeq}`] : undefined) ?? thread.aiSteps["ai:stream"] ?? [];
+    const turnSteps = (thread.aiTurn ? thread.aiSteps[thread.aiTurn] : undefined) ?? (lastVisitorSeq !== undefined ? thread.aiSteps[`ai:${lastVisitorSeq}`] : undefined) ?? thread.aiSteps["ai:stream"] ?? [];
     const running = [...turnSteps].reverse().find((s) => s.state === "running");
     // Only for a question just asked: an old chat whose last word was the visitor's (the AI never
     // answered) shows as it is, not as a status line forever.
@@ -943,6 +945,8 @@ function WidgetThread({
                   typing={thread.typing}
                   aiStream={thread.aiStream}
                   aiThinking={thread.aiThinking || awaitingAi}
+                  aiTurn={thread.aiTurn}
+                  pendingAuthor="You"
                   aiSteps={thread.aiSteps}
                   onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
                   onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
