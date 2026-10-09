@@ -945,9 +945,12 @@ function WidgetThread({
     const justAsked = Boolean(starting) || thread.pending.length > 0 || (lastMessage?.authorType === "visitor" && Date.now() - lastMessage.createdAt < 60_000);
     const thinking = !thread.aiStream?.text && (thread.aiThinking || (awaitingAi && justAsked));
     const teammate = handling === "human" ? ([...thread.messages].reverse().find((m) => m.authorType === "agent")?.authorName ?? null) : null;
-    // The latest exchange: the visitor's last message and everything after it.
+    // The latest exchange: the visitor's last message and everything after it. While one is still
+    // sending, that one is the latest: the previous exchange goes at once, not when the server
+    // confirms it (the island grew to fit both, then shrank).
+    const sending = thread.pending.length > 0 || held.length > 0 || Boolean(starting && !conversationId);
     const from = thread.messages.findLastIndex((m) => m.authorType === "visitor");
-    const recent = from >= 0 ? thread.messages.slice(from) : thread.messages.slice(-3);
+    const recent = sending ? [] : from >= 0 ? thread.messages.slice(from) : thread.messages.slice(-3);
     const head = (
       <IslandHead
         name={teammate ?? island.name}
