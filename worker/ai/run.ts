@@ -1,5 +1,5 @@
 import { isStepCount, jsonSchema, streamText, tool, type ToolSet } from "ai";
-import { actionInputSchema, matchesPage, type PageAction } from "../../shared/actions.ts";
+import { actionInputSchema, DONE_TOOL, matchesPage, type PageAction } from "../../shared/actions.ts";
 import type { AiStep, Message } from "../../shared/protocol.ts";
 import { INLINE_SKILLS_MAX_CHARS, parseReply, searchQuery, streamVisible, systemPrompt, toChatMessages, type ReplyOutcome } from "./agent.ts";
 import { intentSkill, type AgentConfig, type ToolUser } from "./config.ts";
@@ -108,6 +108,18 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   for (const action of pageActions) {
     tools[action.tool] = tool({ description: action.description, inputSchema: jsonSchema<Record<string, unknown>>(actionInputSchema(action)) });
   }
+  // A turn after a page action must decide: the next action, or DONE_TOOL (nothing more to do).
+  // Left free, models sometimes announce the next step ("I'll find Siloso Beach next") and stop,
+  // which ends the chain; with a tool call required, stopping is an explicit choice.
+  const decide = Boolean(input.followUp && pageActions.length);
+  if (decide) {
+    // Its message is the reply: with a tool call required, models put their closing words in the call
+    // and write no text (an empty reply would read as "couldn't answer" and hand off).
+    tools[DONE_TOOL] = tool({
+      description: "Call this when the customer's request needs no further page action. `message` is your reply to them: one short sentence confirming what was done, or saying what failed and what to try.",
+      inputSchema: jsonSchema<{ message: string }>({ type: "object", properties: { message: { type: "string", description: "Your reply to the customer." } }, required: ["message"], additionalProperties: false }),
+    });
+  }
 
   const system = systemPrompt({
     workspaceName: input.workspaceName,
@@ -130,6 +142,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     ...input.model.prompt(system),
     messages: toChatMessages(input.history),
     ...(Object.keys(tools).length ? { tools, stopWhen: isStepCount(MAX_TOOL_STEPS) } : {}),
+    ...(decide ? { toolChoice: "required" as const } : {}),
     maxOutputTokens: 1200,
     ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
   });
@@ -139,6 +152,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   let raw = "";
   let shown = "";
   let pageAction: RunResult["pageAction"] = null;
+  let done: string | null = null;
   for await (const part of result.fullStream) {
     if (part.type === "start-step") {
       reply.startStep();
@@ -157,6 +171,17 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
         }
         pageAction = { action: pageActionByTool.get(part.toolName)!, input: typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {} };
       }
+    } else if (part.type === "tool-call" && part.toolName === DONE_TOOL) {
+      let args: unknown = part.input;
+      if (typeof args === "string") {
+        try {
+          args = JSON.parse(args);
+        } catch {
+          args = {};
+        }
+      }
+      const message = args && typeof args === "object" ? (args as { message?: unknown }).message : undefined;
+      done = typeof message === "string" ? message.trim() : "";
     } else if (part.type === "text-delta") {
       raw = reply.delta(part.id, part.text);
       const visible = streamVisible(raw);
@@ -174,7 +199,15 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   // intended, so keep one copy even if it came as one item.
   const half = raw.length >> 1;
   if (raw.length > 40 && raw.length % 2 === 0 && raw.slice(0, half) === raw.slice(half)) raw = raw.slice(0, half);
+  // DONE_TOOL's message is the reply when the model wrote none (text it did write already streamed).
+  if (done !== null && !raw.trim() && done) {
+    raw = done;
+    const visible = streamVisible(raw);
+    if (visible) input.onVisible?.(visible, hits);
+  }
   let outcome = parseReply(raw);
+  // Ending the chain with nothing to say is fine (the steps show what was done), not a handoff.
+  if (done !== null && !raw.trim()) outcome = { kind: "answer", text: "", escalate: null, followUps: [] };
   if (pageAction) {
     // A reply that only calls the action has no text; that's an answer (the action card), not a handoff.
     if (outcome.kind === "handoff") {

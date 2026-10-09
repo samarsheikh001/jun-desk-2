@@ -1,5 +1,5 @@
 import type { ModelMessage } from "ai";
-import { ACTION_ONLY_BODY, actionCallId, actionStatusText, actionToolResult, describePageAction, toolSlug, visibleResult, type PageAction } from "../../shared/actions.ts";
+import { ACTION_ONLY_BODY, actionCallId, actionStatusText, actionToolResult, describePageAction, DONE_TOOL, toolSlug, visibleResult, type PageAction } from "../../shared/actions.ts";
 import type { Message, Source } from "../../shared/protocol.ts";
 import type { Skill, ToolUser } from "./config.ts";
 import type { SearchHit } from "./query.ts";
@@ -54,7 +54,7 @@ export function followUpRules(f: NonNullable<PromptOptions["followUp"]>): string
   const outcome = f.status === "ok" ? "has just run (its result is the last tool result)" : "just failed (the error is the last tool result)";
   return `
 
-This reply follows the page action "${f.name}", which ${outcome}. The customer hasn't written anything new. If their request still needs another step, propose that next action now (never "${f.name}" again with the same inputs). If it failed, say so plainly and suggest what to try. If nothing more is needed, confirm what was done in one short sentence, with no question and no follow-up questions.`;
+This reply follows the page action "${f.name}", which ${outcome}. The customer hasn't written anything new. If their request still needs another step, call that next action now (never "${f.name}" again with the same inputs), with one short sentence saying what you're doing. If it failed, call ${DONE_TOOL} with a message that says so plainly and suggests what to try. If nothing more is needed, call ${DONE_TOOL} with a message confirming what was done in one short sentence, with no question. This reply must call exactly one tool: the next action, or ${DONE_TOOL}.`;
 }
 
 /** AI-21 rules for page actions (D-40): only what the page offers, only when asked, one per reply. */

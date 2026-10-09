@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Message } from "../../shared/protocol.ts";
-import { actionCallId } from "../../shared/actions.ts";
-import { asksForHuman, resolveCitations, searchQuery, systemPrompt, toChatMessages } from "./agent.ts";
+import { actionCallId, DONE_TOOL } from "../../shared/actions.ts";
+import { asksForHuman, followUpRules, resolveCitations, searchQuery, systemPrompt, toChatMessages } from "./agent.ts";
 import { blocksFromText, chunkBlocks, decodeEntities } from "./chunk.ts";
 import { ftsQuery } from "./query.ts";
 import type { SearchHit } from "./query.ts";
@@ -260,4 +260,11 @@ test("citations of chunks from the same page merge into one source", () => {
   const { text, sources } = resolveCitations("Teams cost $10 [1][2]. Annual saves 20% [3]. Refunds [2].", [page("Teams"), page("Annual"), hit("Refunds")]);
   assert.equal(text, "Teams cost $10 [1]. Annual saves 20% [2]. Refunds [1].");
   assert.deepEqual(sources, [{ title: "Pricing", url: "https://x/pricing" }, { title: "Refunds", url: null }]);
+});
+
+test("followUpRules: a turn after a page action must call the next action or the done tool", () => {
+  const rules = followUpRules({ name: "set_pickup", status: "ok", result: "Pickup set to Anchorvale Cres." });
+  assert.match(rules, /must call exactly one tool: the next action, or jun_done/);
+  assert.match(rules, /never "set_pickup" again with the same inputs/);
+  assert.equal(DONE_TOOL.startsWith("pa_"), false, "never a page action's tool name");
 });

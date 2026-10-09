@@ -5,7 +5,7 @@ import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
-import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/thread.ts";
+import { formatTime, uploadFile, useThread, useTypingSignal, type PendingMessage } from "../lib/thread.ts";
 import { AiAnswer } from "./answer.tsx";
 import { BarHead, Chips, Glass, Typewriter, useBarFrame } from "./bar.tsx";
 import { Badge, MiniCard, useCardFrame } from "./card.tsx";
@@ -654,18 +654,31 @@ function WidgetThread({
   }, [latest, open, thread.state]);
 
   const startingId = useRef("");
+  // Creating the conversation takes a round trip. Messages sent meanwhile are held (shown as
+  // sending, under the ids they'll be saved with) and go into that conversation once its socket is
+  // open; without this, each of them started a conversation of its own.
+  const creating = useRef(false);
+  const [held, setHeld] = useState<PendingMessage[]>([]);
   const send = async (body: string, attachments: Attachment[]) => {
     setError(null);
+    if (!conversationId && creating.current) {
+      setHeld((h) => [...h, { clientMsgId: crypto.randomUUID(), body, attachments }]);
+      return;
+    }
+    if (!conversationId) {
+      // First message: its bubble shows at once under the id it's saved with, so it stays the same
+      // element once saved. Marked before anything is awaited, so a quick second send is held.
+      creating.current = true;
+      startingId.current = crypto.randomUUID();
+      setStarting(body);
+    }
     const { context, actions } = await hostContext();
     if (conversationId) {
       thread.setTyping(false);
       thread.send(body, attachments, undefined, context, false, actions);
       return;
     }
-    // First message: create the visitor (if needed) and the conversation in one go. Its bubble
-    // shows at once under the id it's saved with, so it stays the same element once saved.
-    startingId.current = crypto.randomUUID();
-    setStarting(body);
+    // Create the visitor (if needed) and the conversation in one go.
     try {
       await api.ensureVisitor();
       const r = await api.call<{ conversation: ConversationSummary; message: Message }>("/conversations", {
@@ -687,8 +700,19 @@ function WidgetThread({
     } catch (e) {
       setStarting(null);
       setError((e as Error).message);
+    } finally {
+      creating.current = false;
     }
   };
+  useEffect(() => {
+    if (!conversationId || !held.length || thread.state !== "open") return;
+    const batch = held;
+    setHeld([]);
+    void hostContext().then(({ context, actions }) => {
+      for (const m of batch) thread.send(m.body, m.attachments, m.clientMsgId, context, false, actions);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, held, thread.state]);
 
   // AI-21: the AI's answers may propose a page action; its card runs it on the host page through
   // the loader (jun:run / jun:undo) and the loader reports back (jun:action).
@@ -858,7 +882,7 @@ function WidgetThread({
   const messages = loading ? <ThreadSkeleton /> : (
         <MessageList
           messages={thread.messages}
-          pending={starting && !conversationId ? [{ clientMsgId: startingId.current, body: starting, attachments: [] }] : thread.pending}
+          pending={[...(starting && !conversationId ? [{ clientMsgId: startingId.current, body: starting, attachments: [] }] : thread.pending), ...held]}
           mine={(m) => m.authorType === "visitor"}
           authorLabel={(m) => (m.authorType === "visitor" ? "You" : m.authorType === "ai" ? "AI assistant" : m.authorName ?? "Support")}
           otherReadSeq={thread.otherReadSeq}
@@ -947,7 +971,7 @@ function WidgetThread({
               {loading ? <ThreadSkeleton /> : (
                 <MessageList
                   messages={recent}
-                  pending={starting && !conversationId ? [{ clientMsgId: startingId.current, body: starting, attachments: [] }] : thread.pending}
+                  pending={[...(starting && !conversationId ? [{ clientMsgId: startingId.current, body: starting, attachments: [] }] : thread.pending), ...held]}
                   mine={(m) => m.authorType === "visitor"}
                   authorLabel={(m) => (m.authorType === "visitor" ? "You" : m.authorType === "ai" ? "AI assistant" : m.authorName ?? "Support")}
                   otherReadSeq={0}

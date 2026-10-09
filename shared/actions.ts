@@ -80,6 +80,8 @@ export const MAX_PAGE_ACTIONS = 30;
 /** Accepted from the loader per message, before the question is known. */
 export const MAX_PAGE_ACTIONS_INTAKE = 60;
 export const MAX_ACTION_DESCRIPTION = 200;
+/** In a turn after a page action, the model calls this to end the chain (no further action). Never a `pa_` name. */
+export const DONE_TOOL = "jun_done";
 export const MAX_ACTION_PARAMS = 12;
 /** Lookups return JSON for the AI's next turn; keep enough of it to be useful. */
 export const MAX_ACTION_RESULT = 2000;
