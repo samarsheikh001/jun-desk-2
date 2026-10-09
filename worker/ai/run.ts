@@ -4,6 +4,7 @@ import type { AiStep, Message } from "../../shared/protocol.ts";
 import { INLINE_SKILLS_MAX_CHARS, parseReply, searchQuery, streamVisible, systemPrompt, toChatMessages, type ReplyOutcome } from "./agent.ts";
 import { intentSkill, type AgentConfig, type ToolUser } from "./config.ts";
 import type { AgentModel } from "./providers.ts";
+import { ReplyText } from "./reply-text.ts";
 import { searchKnowledge, type SearchHit } from "./search.ts";
 import { httpTools, secretsFromEnv, type ToolAction } from "./tools.ts";
 
@@ -133,14 +134,16 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
   });
 
-  // Text from several steps (before and after tool calls) reads as one reply.
+  // Text from several steps (before and after tool calls) reads as one reply; see ReplyText.
+  const reply = new ReplyText();
   let raw = "";
   let shown = "";
-  let stepHasText = false;
   let pageAction: RunResult["pageAction"] = null;
   for await (const part of result.fullStream) {
     if (part.type === "start-step") {
-      stepHasText = false;
+      reply.startStep();
+    } else if (part.type === "text-start") {
+      if (reply.startItem(part.id)) console.warn("[ai] a second message item in one step replaced the first", JSON.stringify(part.providerMetadata ?? {}));
     } else if (part.type === "tool-call" && pageActionByTool.has(part.toolName)) {
       // One action per reply: the first call counts, the rest are ignored (the turn ends anyway).
       if (!pageAction) {
@@ -155,9 +158,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
         pageAction = { action: pageActionByTool.get(part.toolName)!, input: typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {} };
       }
     } else if (part.type === "text-delta") {
-      if (!stepHasText && raw.trim()) raw = `${raw.trimEnd()}\n\n`;
-      stepHasText = true;
-      raw += part.text;
+      raw = reply.delta(part.id, part.text);
       const visible = streamVisible(raw);
       if (visible && visible !== shown) {
         shown = visible;
@@ -168,8 +169,9 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     }
   }
   const usage = await result.totalUsage;
-  // Seen once on ChatGPT plan usage: the whole reply streamed twice back to back ("…okay?I'm about…").
-  // A reply that is exactly itself twice is never intended, so keep one copy.
+  // Seen once on ChatGPT plan usage: the whole reply twice back to back ("…okay?I'm about…"), likely
+  // two message items (now handled by ReplyText). A reply that is exactly itself twice is never
+  // intended, so keep one copy even if it came as one item.
   const half = raw.length >> 1;
   if (raw.length > 40 && raw.length % 2 === 0 && raw.slice(0, half) === raw.slice(half)) raw = raw.slice(0, half);
   let outcome = parseReply(raw);
