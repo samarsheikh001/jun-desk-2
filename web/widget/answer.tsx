@@ -122,7 +122,7 @@ interface StepLine extends AiStep {
 }
 
 /**
- * The AI's tool steps above its answer: open with a shimmering label while it works, then one
+ * The AI's tool steps above its answer (a page action's under it): open with a shimmering label while it works, then one
  * quiet line the visitor can open. Labels are the admin's `status:` text, or a page action's
  * description, nothing else.
  */
@@ -209,6 +209,9 @@ export function AiAnswer({ answer, onFollowUp, controls }: { answer: AiAnswerVie
   const actionRunning = Boolean(action && action.status === "pending" && controls?.running);
   const actionStep: StepLine | null = action && (actionRunning || action.status !== "pending") ? actionLine(action, actionRunning, controls, undoing, () => { setUndoing(true); controls?.onUndo(); }) : null;
   const steps: StepLine[] = actionStep ? [...toolSteps, actionStep] : toolSteps;
+  // Server tools ran before the words; a page action is called after them ("I'll set your pickup"),
+  // so its step goes under the text.
+  const after = Boolean(actionStep && body);
   const waiting = Boolean(action && action.status === "pending" && !actionRunning && controls);
   // Open while tools run before (or between) the words; folded once the answer is being written.
   const working = (streaming && (!body || steps.some((s) => s.state === "running"))) || actionRunning;
@@ -225,7 +228,7 @@ export function AiAnswer({ answer, onFollowUp, controls }: { answer: AiAnswerVie
 
   return (
     <div className="w-answer">
-      {steps.length > 0 && <Steps steps={steps} working={working} />}
+      {after ? toolSteps.length > 0 && <Steps steps={toolSteps} working={working && !actionRunning} /> : steps.length > 0 && <Steps steps={steps} working={working} />}
       {(body || (!steps.length && !action)) && <div className="bubble">
         {tokens.slice(0, shown).map((t, i) => {
           const anim = live ? " w-anim" : "";
@@ -241,6 +244,7 @@ export function AiAnswer({ answer, onFollowUp, controls }: { answer: AiAnswerVie
         })}
         {!done && <span className="w-caret" aria-hidden="true" />}
       </div>}
+      {after && actionStep && <Steps steps={[actionStep]} working={actionRunning} />}
 
       {done && sources.length > 0 && (
         <>

@@ -136,11 +136,12 @@
     marked[0].style.outlineOffset = marked[2];
     marked = null;
   }
+  // What the AI reads back (a booking form, search results), up to the desk's MAX_ACTION_RESULT.
   function text(r) {
     if (r == null) return "";
-    if (typeof r == "string") return r.slice(0, 500);
-    if (typeof r.summary == "string") return r.summary.slice(0, 500);
-    return safe(function () { return JSON.stringify(r).slice(0, 500); }, "");
+    if (typeof r == "string") return r.slice(0, 2000);
+    if (typeof r.summary == "string") return r.summary.slice(0, 2000);
+    return safe(function () { return JSON.stringify(r).slice(0, 2000); }, "");
   }
   // From the chat: run the chosen action, or undo one. `post` answers the frame.
   function handle(m, post) {
