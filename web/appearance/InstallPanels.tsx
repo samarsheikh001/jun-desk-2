@@ -43,12 +43,12 @@ export function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; ca
   };
   if (!widgetKey) return null;
 
-  const snippet = `<script src="${window.location.origin}/widget.js" data-key="${widgetKey}" async></script>`;
+  const snippet = `<script src="${window.location.origin}/widget.js" data-key="${widgetKey}" defer></script>`;
   return (
     <>
       <SettingsCard
         title="Install the chat widget"
-        description={<>Paste this before <code>&lt;/body&gt;</code> on your site. The loader is tiny; the chat itself loads only when a visitor opens it. Colours, wording and the rest of its look are on the{" "}
+        description={<>Paste this into your site's <code>&lt;head&gt;</code>, before your own scripts (so page actions your code registers find it ready). The loader is tiny; the chat itself loads only when a visitor opens it. Colours, wording and the rest of its look are on the{" "}
           <a href="/appearance" onClick={(e) => { e.preventDefault(); navigate("/appearance", { replace: true }); }}>Look</a> tab.</>}
         action={<a data-slot="button" className={buttonVariants({ variant: "outline", size: "sm" })} href={`/demo.html?key=${widgetKey}`} target="_blank" rel="noreferrer">Open demo page</a>}
       >

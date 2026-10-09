@@ -1,5 +1,7 @@
 /*! Jun Desk widget loader | MIT License
- * Usage: <script src="https://<your-desk>/widget.js" data-key="wk_..." async></script>
+ * Usage: <script src="https://<your-desk>/widget.js" data-key="wk_..." defer></script>
+ *   in <head>, before the site's own scripts: deferred scripts run in document order, so
+ *   document.modelContext (below) exists before page code that checks for it once on load.
  * Put it in <head> so it can see errors from the start of the page.
  * Shows a chat button; the chat itself (an iframe from the desk) loads on first open.
  * Captures recent JS errors, failed requests, page navigation, rage clicks (S-02) and "stuck on

@@ -43,11 +43,13 @@ npm install && npm run build && npm run deploy
 
 ## Put the widget on your site
 
-Copy the snippet from **Settings → Install the chat widget**, ideally into `<head>` so it sees errors from the start of the page:
+Copy the snippet from **Settings → Install the chat widget** into `<head>`, before your own scripts:
 
 ```html
-<script src="https://your-desk.example.com/widget.js" data-key="wk_…" async></script>
+<script src="https://your-desk.example.com/widget.js" data-key="wk_…" defer></script>
 ```
+
+`defer` doesn't hold up the page, and deferred scripts (module bundles too) run in document order, so the loader is ready before your app's code: it sees errors from the start, and `document.modelContext` exists when your code registers page actions. With `async`, or with the tag after your bundle, code that checks for `document.modelContext` once on load can run first, find nothing and register no actions.
 
 | Option | What it does |
 |---|---|

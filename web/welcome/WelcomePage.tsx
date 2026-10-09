@@ -57,7 +57,7 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
   if (!onboarding) return <div className="content muted">Loading…</div>;
   const s = onboarding.steps;
   const doneCount = STEP_ORDER.filter((k) => s[k]).length;
-  const snippet = onboarding.widgetKey ? `<script src="${window.location.origin}/widget.js" data-key="${onboarding.widgetKey}" async></script>` : "";
+  const snippet = onboarding.widgetKey ? `<script src="${window.location.origin}/widget.js" data-key="${onboarding.widgetKey}" defer></script>` : "";
 
   const addSite = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -145,7 +145,7 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
       </StepCard>
 
       <StepCard n={5} title="Put it on your site" done={s.install}>
-        <p className="muted small">Paste this in your site's <code>&lt;head&gt;</code> (or before <code>&lt;/body&gt;</code>). It's tiny; the chat loads only when someone opens it. Allowed websites, proactive help and identity verification are on the Widget page's <a href="/appearance/install" onClick={(e) => { e.preventDefault(); navigate("/appearance/install"); }}>Install</a> tab.</p>
+        <p className="muted small">Paste this in your site's <code>&lt;head&gt;</code>, before your own scripts. It's tiny; the chat loads only when someone opens it. Allowed websites, proactive help and identity verification are on the Widget page's <a href="/appearance/install" onClick={(e) => { e.preventDefault(); navigate("/appearance/install"); }}>Install</a> tab.</p>
         <div className="invite">
           <div className="row">
             <code className="small">{snippet}</code>
