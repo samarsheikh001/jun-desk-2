@@ -567,6 +567,11 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 /* Opened, a step may wrap (page actions describe themselves in a sentence); the folded line stays one line. */
 .w-answer .w-step-label { min-width: 0; overflow-wrap: anywhere; }
 .w-answer .w-step { align-items: flex-start; flex-wrap: wrap; }
+/* The label takes the rest of the row and wraps inside it, so the check stays beside it; Undo stays on
+   that line, and what came of it goes underneath, lined up with the label (icon 13px + 8px gap). */
+.w-answer .w-step > .w-step-label { flex: 1 1 0; order: 1; }
+.w-answer .w-step > .w-step-undo { order: 2; }
+.w-answer .w-step > .w-step-detail { flex: 0 0 calc(100% - 21px); order: 3; margin-left: 21px; }
 .w-answer .w-step > svg, .w-answer .w-step > .w-step-spin, .w-answer .w-step > .w-step-dot { margin-top: 3px; }
 .w-answer .w-steps-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; max-width: 100%; }
 .w-answer .w-steps-row .w-steps-head { flex-shrink: 1; min-width: 0; }
