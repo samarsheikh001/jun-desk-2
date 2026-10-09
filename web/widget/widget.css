@@ -376,7 +376,8 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-mark { width: 22px; height: 22px; flex: none; border-radius: var(--radius-xs); object-fit: contain; }
 .i-mark.pulse { animation: i-pulse 1.6s ease-in-out infinite; }
 @keyframes i-pulse { 0%, 100% { opacity: 0.55; transform: scale(0.94); } 50% { opacity: 1; transform: scale(1); } }
-.i-root button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* A reset at element weight (:where), so the island's own button classes (.i-ask, .i-ghost) win over it. */
+:where(.i-root) button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .i-root :is(button, a, textarea, input):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* Resting: the light, the hint typing out the suggested questions (or a new reply), and the "/" key. */
