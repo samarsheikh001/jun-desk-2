@@ -1071,6 +1071,7 @@ form.kb-test-form { display: flex; gap: 8px; margin: 0; }
 .appear-stage.bar .appear-frame, .appear-stage.island .appear-frame { box-shadow: none; background: none; }
 .appear-launcher { width: 52px; height: 52px; border: 0; border-radius: var(--r); display: grid; place-items: center; background: var(--c); color: var(--t); box-shadow: none; cursor: pointer; }
 /* The loader's button: the logo filling it, or "Chat with us" (keep in step with public/widget.js). */
+.appear-launcher:has(img) { padding: 0; overflow: hidden; }
 .appear-launcher img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .appear-launcher.txt { width: auto; padding: 0 18px; font: 600 14px system-ui, sans-serif; }
 .hours-grid { display: grid; gap: 6px; }

@@ -269,7 +269,7 @@
   root.innerHTML =
     "<style>" +
     ":host{all:initial}.w{--c:#2f5bea;--t:#fff;visibility:hidden}.w.on{visibility:visible}" +
-    "button{border:0;cursor:pointer}.btn,.frame,.nudge{position:fixed;right:22px;bottom:88px;z-index:2147483000}" +
+    "button{border:0;padding:0;cursor:pointer}.btn,.frame,.nudge{position:fixed;right:22px;bottom:88px;z-index:2147483000}" +
     // D-34: the earlier Jun Desk widget's palette and radii; the open chat has a soft shadow instead of its border.
     ".frame,.nudge{background:#fff;color:#171717;border:1px solid #e5e5e5;border-radius:var(--r,16px);display:none}" +
     // W-04 dark theme ("auto" keeps the light card; the chat itself follows the system). Before .btn, which keeps its colours.
