@@ -425,6 +425,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
             neon: config.neon,
             unread: Boolean(summary && unread(summary)),
             setOpen: setBarOpen,
+            newChat: () => setView({ kind: "thread", id: null }),
           }}
         />
       );
@@ -604,7 +605,7 @@ function WidgetThread({
   /** W-04 bar launcher: the chat panel's header, the suggested questions, and opening or folding it. */
   bar?: { head: ReactNode; suggestions: string[]; side: "left" | "right"; setOpen: (open: boolean) => void };
   /** W-04 island (D-39): what its states show, and opening or closing it. */
-  island?: { name: string; logoUrl: string | null; suggestions: string[]; placeholder: string; neon: boolean; unread: boolean; setOpen: (open: boolean) => void };
+  island?: { name: string; logoUrl: string | null; suggestions: string[]; placeholder: string; neon: boolean; unread: boolean; setOpen: (open: boolean) => void; newChat: () => void };
   /**
    * The chat window (D-34): the greeting a new chat starts with, the suggested questions (until
    * dismissed), and the action row's "Contact the team" (W-07's handoff) and "Start a new chat".
@@ -957,6 +958,8 @@ function WidgetThread({
         logoUrl={island.logoUrl}
         exit={exitLabel ? { label: exitLabel, run: exit } : null}
         toggle={handling === "human" || !conversationId ? null : { label: showAll ? "Latest only" : "Show conversation", run: () => setShowAll(!showAll) }}
+        // An intent's chat ends through its exit button, not a fresh chat.
+        onNewChat={conversationId && !intent ? island.newChat : null}
         onClose={close}
       />
     );

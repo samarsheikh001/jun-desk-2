@@ -144,12 +144,14 @@ export function StatusLine({ logoUrl, label }: { logoUrl: string | null; label: 
 }
 
 /** The header of the answer and panel states: who's talking, the intent's exit, a view toggle and Close. */
-export function IslandHead({ name, logoUrl, exit, toggle, onClose }: {
+export function IslandHead({ name, logoUrl, exit, toggle, onNewChat, onClose }: {
   name: string;
   logoUrl: string | null;
   /** AI-20: the intent's exit button (D-37: always on screen, one click). */
   exit: { label: string; run: () => void } | null;
   toggle: { label: string; run: () => void } | null;
+  /** Leaves this conversation (it stays in the visitor's list) for an empty one. */
+  onNewChat: (() => void) | null;
   onClose: () => void;
 }) {
   return (
@@ -159,6 +161,14 @@ export function IslandHead({ name, logoUrl, exit, toggle, onClose }: {
       {exit && <button type="button" className="i-exit" onClick={exit.run}>{exit.label}</button>}
       <span className="i-spacer" />
       {toggle && <button type="button" className="i-ghost" onClick={toggle.run}>{toggle.label}</button>}
+      {onNewChat && (
+        <button type="button" className="i-ghost i-icon" aria-label="Start a new chat" title="New chat" onClick={onNewChat}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+          </svg>
+        </button>
+      )}
       <button type="button" className="i-ghost i-x" aria-label="Close" onClick={onClose}>×</button>
     </div>
   );

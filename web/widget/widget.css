@@ -397,6 +397,8 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-ghost { display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 10px; border: 0; border-radius: 14px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; transition: background 0.15s, color 0.15s; }
 .i-ghost:hover { background: var(--hover); color: var(--text); }
 .i-x { width: 28px; padding: 0; font-size: 20px; font-weight: 300; line-height: 1; }
+.i-icon { width: 28px; padding: 0; }
+.i-icon svg { width: 15px; height: 15px; }
 
 /* Thinking: one specific line (a running tool step's label, else "Thinking…"). */
 .i-status { display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 20px 0 16px; }
