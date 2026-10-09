@@ -653,6 +653,7 @@ function WidgetThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latest, open, thread.state]);
 
+  const startingId = useRef("");
   const send = async (body: string, attachments: Attachment[]) => {
     setError(null);
     const { context, actions } = await hostContext();
@@ -661,13 +662,15 @@ function WidgetThread({
       thread.send(body, attachments, undefined, context, false, actions);
       return;
     }
-    // First message: create the visitor (if needed) and the conversation in one go.
+    // First message: create the visitor (if needed) and the conversation in one go. Its bubble
+    // shows at once under the id it's saved with, so it stays the same element once saved.
+    startingId.current = crypto.randomUUID();
     setStarting(body);
     try {
       await api.ensureVisitor();
       const r = await api.call<{ conversation: ConversationSummary; message: Message }>("/conversations", {
         body: {
-          clientMsgId: crypto.randomUUID(),
+          clientMsgId: startingId.current,
           body,
           attachments,
           context,
@@ -692,6 +695,10 @@ function WidgetThread({
   const [undoErrors, setUndoErrors] = useState<Record<string, string>>({});
   // Runs started here, until the page reports back (the card hides, the steps list shows a spinner).
   const [running, setRunning] = useState<Record<string, true>>({});
+  // Runs started in this window. A run counts as running until the server's copy leaves "pending":
+  // the page often answers before the server does, and a card shown again in that gap would start
+  // it again (an auto action looped, re-running on the page and flooding the server with results).
+  const started = useRef(new Set<string>());
   const actionResult = useRef(thread.actionResult);
   actionResult.current = thread.actionResult;
   useEffect(() => {
@@ -721,9 +728,11 @@ function WidgetThread({
         {...(action
           ? {
               controls: {
-                running: Boolean(running[action.runId]),
+                running: Boolean(running[action.runId]) || (started.current.has(action.runId) && action.status === "pending"),
                 onInput: (input: Record<string, unknown>) => thread.actionInput(action.runId, input),
                 onRun: (input: Record<string, unknown>) => {
+                  if (started.current.has(action.runId)) return;
+                  started.current.add(action.runId);
                   setRunning((r) => ({ ...r, [action.runId]: true }));
                   postToHost({ type: "jun:run", runId: action.runId, id: action.id, input });
                 },
@@ -849,7 +858,7 @@ function WidgetThread({
   const messages = loading ? <ThreadSkeleton /> : (
         <MessageList
           messages={thread.messages}
-          pending={starting && !conversationId ? [{ clientMsgId: "starting", body: starting, attachments: [] }] : thread.pending}
+          pending={starting && !conversationId ? [{ clientMsgId: startingId.current, body: starting, attachments: [] }] : thread.pending}
           mine={(m) => m.authorType === "visitor"}
           authorLabel={(m) => (m.authorType === "visitor" ? "You" : m.authorType === "ai" ? "AI assistant" : m.authorName ?? "Support")}
           otherReadSeq={thread.otherReadSeq}
@@ -938,7 +947,7 @@ function WidgetThread({
               {loading ? <ThreadSkeleton /> : (
                 <MessageList
                   messages={recent}
-                  pending={starting && !conversationId ? [{ clientMsgId: "starting", body: starting, attachments: [] }] : thread.pending}
+                  pending={starting && !conversationId ? [{ clientMsgId: startingId.current, body: starting, attachments: [] }] : thread.pending}
                   mine={(m) => m.authorType === "visitor"}
                   authorLabel={(m) => (m.authorType === "visitor" ? "You" : m.authorType === "ai" ? "AI assistant" : m.authorName ?? "Support")}
                   otherReadSeq={0}

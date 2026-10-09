@@ -99,6 +99,8 @@ export class Conversation extends DurableObject<Env> {
   #steps: { turn: string; steps: AiStep[] } | undefined;
   /** The clientMsgId of the reply being written while #thinking. */
   #turn: string | undefined;
+  /** Page-action runs whose result was taken: repeats (a looping or retrying page) stop here, before D1. */
+  #settled = new Set<string>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -854,8 +856,13 @@ export class Conversation extends DurableObject<Env> {
   async #actionResult(ref: ConversationRef, event: { runId: string; status: string; result?: unknown; canUndo?: unknown }): Promise<void> {
     const status = event.status as MessageAction["status"];
     if (!ACTION_RESULT_STATUSES.includes(status)) return;
+    const runId = String(event.runId);
+    if (status !== "undone") {
+      if (this.#settled.has(runId)) return;
+      this.#settled.add(runId);
+    }
     const result = typeof event.result === "string" && event.result.trim() ? redact(event.result, MAX_ACTION_RESULT) : null;
-    const updated = await this.#updateAction(ref, String(event.runId), (action) => {
+    const updated = await this.#updateAction(ref, runId, (action) => {
       // pending → any result; ok → undone. Nothing else moves.
       if (action.status === "pending" && status !== "undone") return { ...action, status, result, canUndo: status === "ok" && event.canUndo === true };
       if (action.status === "ok" && status === "undone" && action.canUndo) return { ...action, status, canUndo: false };
