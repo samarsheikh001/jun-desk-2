@@ -659,25 +659,32 @@ function WidgetThread({
   // open; without this, each of them started a conversation of its own.
   const creating = useRef(false);
   const [held, setHeld] = useState<PendingMessage[]>([]);
+  /** How many are held right now (synchronous, unlike `held`): a message written meanwhile queues behind them. */
+  const holding = useRef(0);
+  // Messages go out in the order they were written: each waits for the one before it (each first
+  // asks the page for its context, and those replies can come back in any order).
+  const flushing = useRef<Promise<void>>(Promise.resolve());
   const send = async (body: string, attachments: Attachment[]) => {
     setError(null);
-    if (!conversationId && creating.current) {
+    if (conversationId ? holding.current > 0 : creating.current) {
+      holding.current++;
       setHeld((h) => [...h, { clientMsgId: crypto.randomUUID(), body, attachments }]);
       return;
     }
-    if (!conversationId) {
-      // First message: its bubble shows at once under the id it's saved with, so it stays the same
-      // element once saved. Marked before anything is awaited, so a quick second send is held.
-      creating.current = true;
-      startingId.current = crypto.randomUUID();
-      setStarting(body);
-    }
-    const { context, actions } = await hostContext();
     if (conversationId) {
       thread.setTyping(false);
-      thread.send(body, attachments, undefined, context, false, actions);
+      flushing.current = flushing.current.then(async () => {
+        const { context, actions } = await hostContext();
+        thread.send(body, attachments, undefined, context, false, actions);
+      });
       return;
     }
+    // First message: its bubble shows at once under the id it's saved with, so it stays the same
+    // element once saved. Marked before anything is awaited, so a quick second send is held.
+    creating.current = true;
+    startingId.current = crypto.randomUUID();
+    setStarting(body);
+    const { context, actions } = await hostContext();
     // Create the visitor (if needed) and the conversation in one go.
     try {
       await api.ensureVisitor();
@@ -698,17 +705,22 @@ function WidgetThread({
       setStarting(null);
       onStarted(r.conversation);
     } catch (e) {
+      creating.current = false;
       setStarting(null);
       setError((e as Error).message);
-    } finally {
-      creating.current = false;
     }
   };
+  // Still "creating" until the conversation reaches this thread, so nothing slips through the gap.
+  useEffect(() => {
+    if (conversationId) creating.current = false;
+  }, [conversationId]);
   useEffect(() => {
     if (!conversationId || !held.length || thread.state !== "open") return;
     const batch = held;
     setHeld([]);
-    void hostContext().then(({ context, actions }) => {
+    holding.current -= batch.length;
+    flushing.current = flushing.current.then(async () => {
+      const { context, actions } = await hostContext();
       for (const m of batch) thread.send(m.body, m.attachments, m.clientMsgId, context, false, actions);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
