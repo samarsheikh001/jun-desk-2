@@ -516,25 +516,28 @@ export class Conversation extends DurableObject<Env> {
     if (handling !== "ai") return false;
     const last = history.at(-1);
     if (!last) return false;
-    // AI-21: after a page action ran (or failed), the AI gets one follow-up turn: the next step of
-    // a longer request, or a short confirmation. Never after a cancel, undo or a vanished action.
-    const followUp = last.authorType === "ai" && last.meta.action && (last.meta.action.status === "ok" || last.meta.action.status === "error") && !last.meta.action.continued ? last.meta.action : null;
-    if (last.authorType !== "visitor" && !followUp) return false;
-    // The visitor message this turn answers, and how many AI messages already follow it.
+    // The visitor's latest message, and the AI replies to it so far (`ai:<seq>`, `ai:<seq>.<n>`).
+    // One sent while the AI was still writing lands before that reply, so "the last message is the
+    // visitor's" isn't the test: a message with no reply of its own still gets a turn.
     let visitorAt = history.length - 1;
     while (visitorAt >= 0 && history[visitorAt]!.authorType !== "visitor") visitorAt--;
     const visitor = history[visitorAt];
     if (!visitor) return false;
-    const chain = history.length - 1 - visitorAt;
+    const replyKey = `ai:${visitor.seq}`;
+    const chain = history.slice(visitorAt + 1).filter((m) => m.authorType === "ai" && (m.clientMsgId === replyKey || m.clientMsgId.startsWith(`${replyKey}.`))).length;
+    // AI-21: after a page action ran (or failed), the AI gets one follow-up turn: the next step of
+    // a longer request, or a short confirmation. Never after a cancel, undo or a vanished action.
+    const followUp = chain > 0 && last.authorType === "ai" && last.meta.action && (last.meta.action.status === "ok" || last.meta.action.status === "error") && !last.meta.action.continued ? last.meta.action : null;
+    if (chain > 0 && !followUp) return false;
     if (followUp && chain >= MAX_ACTION_CHAIN) return false;
-    const turnId = chain === 0 ? `ai:${visitor.seq}` : `ai:${visitor.seq}.${chain}`;
+    const turnId = chain === 0 ? replyKey : `${replyKey}.${chain}`;
 
     if (!settings.enabled) {
       // Reports don't count this one as the AI handing off (A-01).
       await this.#handoff(ref, AI_OFF_HANDOFF_REASON, HANDOFF_MESSAGES.default);
       return false;
     }
-    if (!followUp && asksForHuman(last.body)) {
+    if (!followUp && asksForHuman(visitor.body)) {
       await this.#handoff(ref, "The customer asked for a person.", HANDOFF_MESSAGES.default);
       return false;
     }

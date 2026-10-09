@@ -235,9 +235,31 @@ export function streamCitations(visible: string, hits: SearchHit[]): { text: str
  * result with what became of it, the same shape the SDK gives server tools, so the model reads
  * outcomes as observations rather than as its own words.
  */
+/**
+ * Each AI reply right after the visitor message it answers (`ai:<seq>`, `ai:<seq>.<n>`). A message
+ * sent while the AI was writing is stored before that reply; read in stored order, the reply would
+ * seem to answer it, and the model's turn would end on an assistant message (Mistral rejects that).
+ */
+export function replyOrder(history: Message[]): Message[] {
+  const out: Message[] = [];
+  const anchorOf = (m: Message) => (m.authorType === "ai" ? /^ai:(\d+)(?:\.\d+)?$/.exec(m.clientMsgId)?.[1] : undefined);
+  for (const m of history) {
+    const anchor = anchorOf(m);
+    let at = anchor === undefined ? -1 : out.findIndex((x) => x.authorType === "visitor" && x.seq === Number(anchor));
+    if (at < 0) {
+      out.push(m);
+      continue;
+    }
+    at++;
+    while (at < out.length && anchorOf(out[at]!) === anchor) at++;
+    out.splice(at, 0, m);
+  }
+  return out;
+}
+
 export function toChatMessages(history: Message[], maxMessages = 16): ModelMessage[] {
   const out: ModelMessage[] = [];
-  for (const m of history
+  for (const m of replyOrder(history)
     .filter((m) => !m.internal && (m.authorType === "visitor" || m.authorType === "ai" || m.authorType === "agent") && (m.body.trim() || m.meta.action))
     .slice(-maxMessages)) {
     const action = m.authorType === "ai" ? m.meta.action : undefined;

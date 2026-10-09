@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Message } from "../../shared/protocol.ts";
 import { actionCallId, DONE_TOOL } from "../../shared/actions.ts";
-import { asksForHuman, followUpRules, resolveCitations, searchQuery, systemPrompt, toChatMessages } from "./agent.ts";
+import { asksForHuman, followUpRules, replyOrder, resolveCitations, searchQuery, systemPrompt, toChatMessages } from "./agent.ts";
 import { blocksFromText, chunkBlocks, decodeEntities } from "./chunk.ts";
 import { ftsQuery } from "./query.ts";
 import type { SearchHit } from "./query.ts";
@@ -267,4 +267,27 @@ test("followUpRules: a turn after a page action must call the next action or the
   assert.match(rules, /must call exactly one tool: the next action, or jun_done/);
   assert.match(rules, /never "set_pickup" again with the same inputs/);
   assert.equal(DONE_TOOL.startsWith("pa_"), false, "never a page action's tool name");
+});
+
+test("replyOrder: a reply sits after the message it answers, even when another arrived while it was written", () => {
+  const stored = [
+    msg("visitor", "hey", { seq: 1 }),
+    msg("visitor", "export my usage", { seq: 2 }),
+    msg("ai", "Hello! How can I help?", { seq: 3, clientMsgId: "ai:1" }),
+  ];
+  assert.deepEqual(replyOrder(stored).map((m) => m.body), ["hey", "Hello! How can I help?", "export my usage"]);
+  // The model's turn now ends on the visitor's unanswered message.
+  const input = toChatMessages(stored);
+  assert.equal(input.at(-1)?.role, "user");
+  // A chain's replies (ai:1, ai:1.1) keep their order behind their message; replies already in place don't move.
+  const chain = [
+    msg("visitor", "book me", { seq: 1 }),
+    msg("visitor", "to the beach", { seq: 2 }),
+    msg("ai", "Searching", { seq: 3, clientMsgId: "ai:1" }),
+    msg("ai", "Set it", { seq: 4, clientMsgId: "ai:1.1" }),
+    msg("ai", "Done", { seq: 5, clientMsgId: "ai:2" }),
+  ];
+  assert.deepEqual(replyOrder(chain).map((m) => m.body), ["book me", "Searching", "Set it", "to the beach", "Done"]);
+  const plain = [msg("visitor", "a", { seq: 1 }), msg("ai", "b", { seq: 2, clientMsgId: "ai:1" }), msg("agent", "c", { seq: 3 })];
+  assert.deepEqual(replyOrder(plain).map((m) => m.body), ["a", "b", "c"]);
 });
