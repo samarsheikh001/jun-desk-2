@@ -2,7 +2,8 @@
    coloured by --ck-* tokens: the widget frame's palette by default, the dashboard's under .ck-desk.
    A card with theme="dark" (or "light") redefines them for itself. */
 
-.ck {
+.ck,
+.ck-peek {
   --ck-text: var(--text);
   --ck-text-2: var(--text-soft);
   --ck-text-3: var(--muted);
@@ -19,6 +20,11 @@
   --ck-caution: oklch(0.68 0.16 72);
   --ck-warning: oklch(0.65 0.18 48);
   --ck-danger: oklch(0.58 0.21 25);
+  /* How much of a tone a soft badge or button mixes in. */
+  --ck-tint: 14%;
+  --ck-on-solid: #fff;  /* text on a solid semantic button or badge */
+}
+.ck {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -42,16 +48,32 @@
   --ck-accent: var(--primary);
   --ck-accent-text: var(--primary-foreground);
 }
-.ck .ck-dark {
-  --ck-text: #f5f5f5;
-  --ck-text-2: rgba(255, 255, 255, 0.78);
-  --ck-text-3: rgba(255, 255, 255, 0.55);
-  --ck-surface: #1c1c1c;
+/* Dark: the whole card (`theme="dark"` on WidgetCard, e.g. on the island's near-black surface)
+   or one Card with theme="dark". Self-contained: nothing here reads the frame's own tokens, so it
+   looks right on a #0b0b0c host even when the frame itself is light. Primary is white on black. */
+.ck.ck-dark,
+.ck .ck-dark,
+.ck-peek.ck-dark {
+  --ck-text: #f5f5f7;
+  --ck-text-2: rgba(255, 255, 255, 0.72);
+  --ck-text-3: rgba(255, 255, 255, 0.5);
+  --ck-surface: #1a1a1c;
   --ck-surface-2: rgba(255, 255, 255, 0.06);
   --ck-surface-3: rgba(255, 255, 255, 0.1);
   --ck-border: rgba(255, 255, 255, 0.14);
-  --ck-border-soft: rgba(255, 255, 255, 0.1);
+  --ck-border-soft: rgba(255, 255, 255, 0.09);
+  --ck-accent: #fff;
+  --ck-accent-text: #0b0b0c;
+  --ck-info: oklch(0.74 0.14 255);
+  --ck-discovery: oklch(0.74 0.16 293);
+  --ck-success: oklch(0.78 0.16 150);
+  --ck-caution: oklch(0.84 0.15 85);
+  --ck-warning: oklch(0.78 0.15 55);
+  --ck-danger: oklch(0.72 0.18 22);
+  --ck-tint: 20%;
+  --ck-on-solid: #0b0b0c;
   color: var(--ck-text);
+  color-scheme: dark;
 }
 .ck .ck-light {
   --ck-text: #171717;
@@ -63,6 +85,21 @@
   --ck-border: #e5e5e5;
   --ck-border-soft: #ededed;
   color: var(--ck-text);
+}
+/* A light card inside a dark one: its own accent and tones back (a light frame keeps its brand accent). */
+.ck.ck-dark .ck-light,
+.ck .ck-dark .ck-light {
+  --ck-accent: #171717;
+  --ck-accent-text: #fff;
+  --ck-info: oklch(0.58 0.19 262);
+  --ck-discovery: oklch(0.56 0.21 293);
+  --ck-success: oklch(0.56 0.15 150);
+  --ck-caution: oklch(0.68 0.16 72);
+  --ck-warning: oklch(0.65 0.18 48);
+  --ck-danger: oklch(0.58 0.21 25);
+  --ck-tint: 14%;
+  --ck-on-solid: #fff;
+  color-scheme: light;
 }
 
 /* Containers */
@@ -129,8 +166,8 @@
 .ck-badge-sm { padding: 1px 6px; font-size: 11px; }
 .ck-badge-md { padding: 2px 8px; font-size: 12px; }
 .ck-badge-lg { padding: 3px 10px; font-size: 13px; }
-.ck-badge-soft { background: color-mix(in srgb, var(--ck-tone) 14%, transparent); color: var(--ck-tone); }
-.ck-badge-solid { background: var(--ck-tone); color: #fff; }
+.ck-badge-soft { background: color-mix(in srgb, var(--ck-tone) var(--ck-tint), transparent); color: var(--ck-tone); }
+.ck-badge-solid { background: var(--ck-tone); color: var(--ck-on-tone, #fff); }
 .ck-badge-outline { border: 1px solid color-mix(in srgb, var(--ck-tone) 45%, transparent); color: var(--ck-tone); }
 .ck-pill { border-radius: 9999px !important; }
 
@@ -224,7 +261,7 @@
 .ck-chart { display: flex; flex-direction: column; gap: 6px; width: 100%; }
 .ck-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
 .ck-grid { stroke: var(--ck-border-soft); stroke-width: 1; }
-.ck-tick { fill: var(--ck-text-3); font-size: 9px; font-family: inherit; }
+.ck-tick { fill: var(--ck-text-3); font-size: 10.5px; font-family: inherit; }
 .ck-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ck-text-2); font-size: 12px; }
 .ck-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .ck-legend i { width: 8px; height: 8px; border-radius: 2px; }
@@ -234,6 +271,71 @@
 .ck-status img { border-radius: 3px; }
 .ck-used .ck-card { opacity: 0.92; }
 .ck-used-note { display: flex; align-items: center; gap: 5px; padding: 0 2px; color: var(--ck-text-3); font-size: 12px; }
+
+/* Dark details the tokens alone don't cover. */
+.ck-dark .ck-card, .ck-dark.ck-card { box-shadow: none; }
+.ck-dark .ck-btn-soft { background: color-mix(in srgb, var(--ck-tone) 18%, transparent); }
+.ck-dark .ck-btn-soft:not(:disabled):hover { background: color-mix(in srgb, var(--ck-tone) 26%, transparent); }
+.ck-dark .ck-btn-outline { border-color: rgba(255, 255, 255, 0.18); }
+.ck-dark .ck-input:focus-visible { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.5); }
+.ck-dark .ck-input::placeholder { color: var(--ck-text-3); }
+.ck-dark .ck-img.ck-frame { border-color: var(--ck-border); }
+
+/* Bare (WidgetCard `bare`): the card is the answer itself, in a host that has its own surface and
+   ~16–20px side padding. The root Card or ListView loses its frame (no border, shadow, background
+   or radius) and its side padding, so its content lines up with the host's text edge. List rows
+   keep 10px of inner padding for their hover and pull out by as much, so their text lines up too
+   (the host needs ≥ 10px of side padding). A root Card with its own background or theme stays a
+   tile: its background and radius, no border or shadow. */
+.ck-bare { gap: 8px; }
+.ck-bare > .ck-card-bare {
+  --ck-pad: 0px;
+  padding: 2px 0 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.ck-bare > .ck-card-bare.ck-card-list { margin-inline: -10px; padding: 0; }
+.ck-bare > .ck-card-list .ck-item { padding: 9px 10px; border-radius: 10px; }
+.ck-bare > .ck-card-list .ck-item + .ck-item { position: relative; border-top: 0; border-radius: 10px; }
+.ck-bare > .ck-card-list .ck-item + .ck-item::before { content: ""; position: absolute; top: 0; left: 10px; right: 10px; border-top: 1px solid var(--ck-border-soft); }
+.ck-bare > .ck-card-list .ck-item-btn:not([aria-disabled="true"]):hover::before,
+.ck-bare > .ck-card-list .ck-item-btn:not([aria-disabled="true"]):hover + .ck-item::before { opacity: 0; }
+.ck-bare > .ck-card-list .ck-more { margin: 4px 10px 2px; }
+.ck-bare > .ck-card-tile { border: 0; box-shadow: none; }
+.ck-bare > .ck-status { padding: 0; gap: 5px; color: var(--ck-text-3); font-size: 12px; font-weight: 500; }
+.ck-bare > .ck-used-note { padding: 0; }
+
+/* WidgetPeek: a folded card, one quiet row (~40px) that opens it. */
+.ck-peek {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--ck-surface-2);
+  color: var(--ck-text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms;
+}
+.ck-peek:hover { background: var(--ck-surface-3); }
+.ck-peek:focus-visible { outline: 2px solid var(--ck-accent); outline-offset: 1px; }
+.ck-peek-icon { display: inline-flex; flex-shrink: 0; color: var(--ck-text-2); }
+.ck-peek-icon img { width: 16px; height: 16px; border-radius: 3px; }
+.ck-peek-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ck-peek-chev { display: inline-flex; flex-shrink: 0; color: var(--ck-text-3); transition: transform 150ms, color 150ms; }
+.ck-peek:hover .ck-peek-chev { color: var(--ck-text-2); transform: translateX(1px); }
 
 /* The inbox shows what the visitor saw, at chat width. */
 .ai-widget { width: 100%; max-width: 400px; margin: 4px 0; }

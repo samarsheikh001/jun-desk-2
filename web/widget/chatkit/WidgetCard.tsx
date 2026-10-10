@@ -1,8 +1,8 @@
 import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { actionUrl, itemIds, OPEN_URL, type MessageWidget, type WidgetActionConfig, type WidgetNode } from "../../../shared/widgets.ts";
+import { actionUrl, itemIds, OPEN_URL, widgetSummary, type MessageWidget, type WidgetActionConfig, type WidgetNode } from "../../../shared/widgets.ts";
 import { WidgetChart } from "./chart.tsx";
-import { iconSize, WidgetIcon } from "./icons.tsx";
-import { background, block, box, color, imageSrc, insets, length, SEMANTIC, space, text, type Theme } from "./style.ts";
+import { hasIcon, iconSize, WidgetIcon } from "./icons.tsx";
+import { background, block, box, color, imageSrc, insets, length, onTone, SEMANTIC, space, text, type Theme } from "./style.ts";
 import "./chatkit.css";
 
 // W-09 (D-43): draws a ChatKit widget tree (shared/widgets.ts) in the chat. Our own renderer for
@@ -111,7 +111,7 @@ function Button({ node }: { node: WidgetNode }) {
       // An icon-only button still needs a name for screen readers.
       {...(!label ? { "aria-label": link ? "Open link" : String(node.iconStart ?? node.iconEnd ?? action?.type ?? "Button").replace(/[-_]/g, " ") } : {})}
       className={`ck-btn ck-btn-${variant} ck-size-${size}${node.pill === true ? " ck-pill" : ""}${node.block === true ? " ck-block" : ""}${!label ? " ck-btn-icon" : ""}`}
-      style={{ "--ck-tone": c, "--ck-on-tone": tone === "primary" ? "var(--ck-accent-text)" : "#fff" } as CSSProperties}
+      style={{ "--ck-tone": c, "--ck-on-tone": onTone(tone) } as CSSProperties}
       disabled={disabled || node.disabled === true || (!action && !submit)}
       onClick={submit || !action ? undefined : () => fire(action, label || action.type, false, item.id)}
     >
@@ -124,10 +124,11 @@ function Button({ node }: { node: WidgetNode }) {
 
 function Badge({ node }: { node: WidgetNode }) {
   const { theme } = useContext(WidgetCtx);
-  const tone = SEMANTIC[str(node.color) || "secondary"] ?? color(node.color, theme) ?? "var(--ck-text-2)";
+  const name = str(node.color) || "secondary";
+  const tone = SEMANTIC[name] ?? color(node.color, theme) ?? "var(--ck-text-2)";
   const variant = ["solid", "soft", "outline"].includes(str(node.variant)) ? str(node.variant) : "soft";
   const size = ["sm", "md", "lg"].includes(str(node.size)) ? str(node.size) : "sm";
-  return <span className={`ck-badge ck-badge-${variant} ck-badge-${size}${node.pill === true ? " ck-pill" : ""}`} style={{ "--ck-tone": tone } as CSSProperties}>{str(node.label)}</span>;
+  return <span className={`ck-badge ck-badge-${variant} ck-badge-${size}${node.pill === true ? " ck-pill" : ""}`} style={{ "--ck-tone": tone, "--ck-on-tone": onTone(SEMANTIC[name] ? name : "") } as CSSProperties}>{str(node.label)}</span>;
 }
 
 function Image({ node }: { node: WidgetNode }) {
@@ -482,18 +483,25 @@ function Status({ status }: { status: unknown }) {
   );
 }
 
-function Card({ node, nested = false }: { node: WidgetNode; nested?: boolean }) {
+/**
+ * In a bare WidgetCard, the root Card draws flat (`bare`: no frame, no side padding) unless it has
+ * its own background or a theme of its own: then it's a tile (`tile`: background and radius only).
+ */
+function Card({ node, nested = false, look = "frame" }: { node: WidgetNode; nested?: boolean; look?: "frame" | "bare" | "tile" }) {
   const { theme, fire, disabled } = useContext(WidgetCtx);
-  const style: CSSProperties = { ...insets("padding", node.padding ?? 4), ...box({ ...node, padding: undefined, size: undefined, width: undefined, height: undefined }, theme) };
-  const pad = space(typeof node.padding === "number" ? node.padding : 4) ?? "16px";
+  const flat = look === "bare";
+  const style: CSSProperties = flat
+    ? box({ ...node, padding: undefined, size: undefined, width: undefined, height: undefined, border: undefined, background: undefined, radius: undefined, margin: undefined }, theme)
+    : { ...insets("padding", node.padding ?? 4), ...box({ ...node, padding: undefined, size: undefined, width: undefined, height: undefined }, theme) };
+  const pad = flat ? "0px" : (space(typeof node.padding === "number" ? node.padding : 4) ?? "16px");
   const confirm = node.confirm && typeof node.confirm === "object" ? (node.confirm as { label?: unknown; action?: unknown }) : null;
   const cancel = node.cancel && typeof node.cancel === "object" ? (node.cancel as { label?: unknown; action?: unknown }) : null;
   const dark = node.theme === "dark" ? " ck-dark" : node.theme === "light" ? " ck-light" : "";
-  const bg = background(node.background, theme);
+  const bg = flat ? undefined : background(node.background, theme);
   return (
     <>
       {!nested && <Status status={node.status} />}
-      <div className={`ck-card ck-card-${["sm", "md", "lg", "full"].includes(str(node.size)) ? str(node.size) : "md"}${dark}`} style={{ ...style, ...(bg ? { background: bg } : {}), "--ck-pad": pad } as CSSProperties}>
+      <div className={`ck-card ck-card-${["sm", "md", "lg", "full"].includes(str(node.size)) ? str(node.size) : "md"}${look === "frame" ? "" : ` ck-card-${look}`}${dark}`} style={{ ...style, ...(bg ? { background: bg } : {}), "--ck-pad": pad } as CSSProperties}>
         {(node.children ?? []).map((c, i) => <Node key={str(c.key) || i} node={c} />)}
         {(confirm || cancel) && (
           <div className="ck-card-actions">
@@ -537,6 +545,7 @@ export function WidgetCard({
   onAction,
   theme = "light",
   desk = false,
+  bare = false,
 }: {
   widget: MessageWidget;
   interactive: boolean;
@@ -544,6 +553,12 @@ export function WidgetCard({
   theme?: Theme;
   /** In the dashboard: its colour tokens instead of the widget frame's. */
   desk?: boolean;
+  /**
+   * The card is the answer itself, inside a host with its own surface and ~16–20px side padding
+   * (the island): no outer frame, content at the host's text edge. A root Card with its own
+   * background or theme stays a tile. See chatkit.css "Bare".
+   */
+  bare?: boolean;
 }) {
   const form = useRef<HTMLFormElement>(null);
   // What's being sent: "card", or a list item's id. A failed send (used elsewhere, socket dropped) can be retried.
@@ -581,13 +596,14 @@ export function WidgetCard({
     },
   };
   const root = widget.root;
+  const tile = Boolean(background(root.background, theme)) || ((root.theme === "dark" || root.theme === "light") && root.theme !== theme);
   return (
     <WidgetCtx.Provider value={ctx}>
-      <form ref={form} className={`ck${desk ? " ck-desk" : ""}${theme === "dark" ? " ck-dark" : ""}${used ? " ck-used" : ""}`} onSubmit={(e) => e.preventDefault()} noValidate={false} aria-label={widget.name}>
-        {root.type === "Card" ? <Card node={root} /> : root.type === "ListView" ? (
+      <form ref={form} className={`ck${desk ? " ck-desk" : ""}${theme === "dark" ? " ck-dark" : ""}${bare ? " ck-bare" : ""}${used ? " ck-used" : ""}`} onSubmit={(e) => e.preventDefault()} noValidate={false} aria-label={widget.name}>
+        {root.type === "Card" ? <Card node={root} look={!bare ? "frame" : tile ? "tile" : "bare"} /> : root.type === "ListView" ? (
           <>
             <Status status={root.status} />
-            <div className="ck-card ck-card-list"><ListView node={root} /></div>
+            <div className={`ck-card ck-card-list${bare ? " ck-card-bare" : ""}`}><ListView node={root} /></div>
           </>
         ) : (
           <Container node={root} dir={root.direction === "row" ? "row" : "col"} className=" ck-basic" />
@@ -600,5 +616,28 @@ export function WidgetCard({
         )}
       </form>
     </WidgetCtx.Provider>
+  );
+}
+
+/** The icon a card stands for: its status favicon or icon, else a generic card. */
+function peekIcon(root: WidgetNode): ReactNode {
+  const s = root.status && typeof root.status === "object" ? (root.status as { icon?: unknown; favicon?: unknown }) : {};
+  const favicon = imageSrc(s.favicon);
+  if (favicon) return <img src={favicon} alt="" width={16} height={16} referrerPolicy="no-referrer" />;
+  return <WidgetIcon name={hasIcon(s.icon) ? s.icon : root.type === "ListView" ? "batch" : "square-text"} size={16} />;
+}
+
+/**
+ * A folded card: one slim row (~40px) with the card's icon, its one-line summary and a chevron.
+ * Pressing it calls `onOpen` (the host unfolds the card).
+ */
+export function WidgetPeek({ widget, theme, onOpen }: { widget: MessageWidget; theme?: "light" | "dark"; onOpen: () => void }) {
+  const summary = useMemo(() => widgetSummary(widget.root), [widget.root]) || widget.name;
+  return (
+    <button type="button" className={`ck-peek${theme === "dark" ? " ck-dark" : ""}`} aria-label={`Show ${summary}`} onClick={onOpen}>
+      <span className="ck-peek-icon" aria-hidden="true">{peekIcon(widget.root)}</span>
+      <span className="ck-peek-text">{summary}</span>
+      <span className="ck-peek-chev" aria-hidden="true"><WidgetIcon name="chevron-right" size={14} /></span>
+    </button>
   );
 }

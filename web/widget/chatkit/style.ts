@@ -45,6 +45,17 @@ export const SEMANTIC: Record<string, string> = {
   danger: "var(--ck-danger)",
 };
 
+/**
+ * The text colour on a solid button or badge of this tone: the accent's own text for primary, the
+ * card's surface for secondary (light grey on dark, dark grey on light), a theme-aware token for the
+ * other semantic tones (bright tones on a dark card take dark text), white for palette colours.
+ */
+export function onTone(tone: string): string {
+  if (tone === "primary") return "var(--ck-accent-text)";
+  if (tone === "secondary") return "var(--ck-surface)";
+  return SEMANTIC[tone] ? "var(--ck-on-solid)" : "#fff";
+}
+
 // Tailwind's palette as oklch: a lightness and chroma curve per step, a hue (and chroma scale) per colour.
 const STEPS: Record<string, [number, number]> = {
   "50": [0.97, 0.016], "100": [0.94, 0.035], "200": [0.89, 0.068], "300": [0.82, 0.11], "400": [0.72, 0.16], "500": [0.64, 0.19],

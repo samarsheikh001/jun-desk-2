@@ -16,6 +16,7 @@ test("appearance: an untouched desk gets the original look", () => {
     placeholder: "Write a message…",
     suggestions: [],
     neon: true,
+    islandSurface: "dark",
     buttonStyle: "logo",
   });
   // The island's neon border is on unless turned off; anything but false keeps it.
@@ -61,4 +62,21 @@ test("appearance: the button shows the logo unless set to text; only those two a
   applyAppearance(settings, { buttonStyle: "text" });
   assert.equal(settings.buttonStyle, "text");
   assert.throws(() => applyAppearance(settings, { buttonStyle: "big" }), /logo or text/);
+});
+
+test("appearance: the island is dark unless set to follow the page; only dark and page are accepted", () => {
+  assert.equal(APPEARANCE_DEFAULTS.islandSurface, "dark");
+  assert.equal(widgetLook({ islandSurface: "page" }, "Acme", null).islandSurface, "page");
+  assert.equal(widgetLook({ islandSurface: "dark" }, "Acme", null).islandSurface, "dark");
+  assert.equal(widgetLook({ islandSurface: "light" }, "Acme", null).islandSurface, "dark");
+  assert.equal(widgetLook({ islandSurface: 1 }, "Acme", null).islandSurface, "dark");
+  const settings: Record<string, unknown> = {};
+  applyAppearance(settings, { islandSurface: "page" });
+  assert.equal(settings.islandSurface, "page");
+  applyAppearance(settings, { islandSurface: "dark" });
+  assert.equal(settings.islandSurface, "dark");
+  for (const islandSurface of ["light", "", null, true]) {
+    assert.throws(() => applyAppearance(settings, { islandSurface }), /Island surface must be dark or page\./);
+  }
+  assert.equal(settings.islandSurface, "dark");
 });

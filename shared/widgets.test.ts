@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { actionUrl, checkWidget, itemIds, markWidgetUsed, matchWidgetAction, nodeText, parseWidgetFile, renderWidget, TOOL_ACTION, toolActionInput, widgetActionLine, widgetActionUsed, widgetData, WidgetError } from "./widgets.ts";
+import { actionUrl, checkWidget, itemIds, markWidgetUsed, matchWidgetAction, nodeText, parseWidgetFile, renderWidget, TOOL_ACTION, toolActionInput, widgetActionLine, widgetActionUsed, widgetData, WidgetError, widgetSummary } from "./widgets.ts";
 
 // A widget exported from ChatKit Studio's Download (2026-10-10), with the Studio's own render of its
 // default state as `outputJsonPreview`: our interpreter must produce the same tree.
@@ -111,4 +111,26 @@ test("W-17: a tool action's input is its payload plus what was entered, only the
     widgetActionLine("Add", { widgetId: "w1", widget: "shop", type: "tool:add_to_cart", payload: { sku: "R1" }, item: "i0", tool: { name: "add_to_cart", status: "ok", output: '{"items":1}' } }),
     '[On the shop card the customer pressed "Add": action tool:add_to_cart, payload {"sku":"R1"}]\n[That ran add_to_cart: done. Result: {"items":1}]',
   );
+});
+
+test("a one-line summary of a card for the folded island", () => {
+  const subscription = { type: "Card", status: { text: "Billing", icon: "suitcase" }, children: [{ type: "Row", children: [{ type: "Title", value: "Team plan" }, { type: "Spacer" }, { type: "Badge", label: "active", color: "success" }] }, { type: "Caption", value: "Renews on Nov 1" }] };
+  assert.equal(widgetSummary(subscription), "Team plan · active");
+  const usage = { type: "Card", children: [{ type: "Text", value: "Events this week", weight: "semibold" }, { type: "Badge", label: "84%" }, { type: "Chart", data: [] }] };
+  assert.equal(widgetSummary(usage), "Events this week · 84%");
+  // A bare number as the title says little on its own: the first caption says what it is.
+  const weather = { type: "Card", background: "linear-gradient(#000, #111)", children: [{ type: "Title", value: "47°", size: "5xl" }, { type: "Caption", value: "San Francisco,\n  CA" }, { type: "Title", value: "69°" }] };
+  assert.equal(widgetSummary(weather), "47° · San Francisco, CA");
+  const invoices = { type: "ListView", status: { text: "Invoices" }, children: [1, 2, 3].map((n) => ({ type: "ListViewItem", children: [{ type: "Text", value: `#${n}` }] })) };
+  assert.equal(widgetSummary(invoices), "Invoices · 3");
+  assert.equal(widgetSummary({ ...invoices, status: undefined }), "3 items");
+  // No title: the status leads, then a badge, or else the first text.
+  assert.equal(widgetSummary({ type: "Card", status: { text: "Order" }, children: [{ type: "Text", value: "Shipped   today" }] }), "Order · Shipped today");
+  assert.equal(widgetSummary({ type: "Card", status: { text: "Order" }, children: [{ type: "Text", value: "x" }, { type: "Badge", label: "late" }] }), "Order · late");
+  // A one-line confirmation card (an icon and a sentence): the sentence.
+  assert.equal(widgetSummary({ type: "Card", children: [{ type: "Row", children: [{ type: "Icon", name: "mail" }, { type: "Text", value: "Sent INV-1043" }] }] }), "Sent INV-1043");
+  assert.equal(widgetSummary({ type: "Card", children: [{ type: "Title", value: " " }, { type: "Button", label: "OK" }] }), "");
+  const long = widgetSummary({ type: "Card", children: [{ type: "Title", value: "A very long title that goes on and on well past the limit" }, { type: "Badge", label: "new" }] }, 30);
+  assert.equal(long.length, 30);
+  assert.ok(long.endsWith("…"));
 });

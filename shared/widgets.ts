@@ -368,6 +368,44 @@ export function nodeText(node: WidgetNode, max = 400): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+/**
+ * One line for a card folded into the island's pill, like a live activity ("Team plan · active").
+ * Card: its first Title (else the first semibold/bold Text; else `status.text`), then the first
+ * Caption when that title is a bare number or word (≤ 4 chars: "47° · San Francisco, CA"), then the
+ * first Badge; with no Badge after a status-only lead, the first Text or Caption says what it's about.
+ * ListView: `status.text` (or "N items" alone) and the item count ("Invoices · 3"). Empty parts are
+ * skipped, whitespace collapsed, cut at `max` with "…"; "" when nothing is left.
+ */
+export function widgetSummary(root: WidgetNode, max = 60): string {
+  const clean = (v: unknown): string => (typeof v === "string" || typeof v === "number" ? String(v).replace(/\s+/g, " ").trim() : "");
+  const status = isRecord(root.status) ? clean(root.status.text) : "";
+  const nodes = [...walk(root)].slice(1);
+  const first = (match: (n: WidgetNode) => boolean, key: "value" | "label" = "value"): string => {
+    for (const n of nodes) if (match(n) && clean(n[key])) return clean(n[key]);
+    return "";
+  };
+  const parts: string[] = [];
+  if (root.type === "ListView") {
+    const count = (root.children ?? []).filter((c) => c.type === "ListViewItem").length;
+    if (status) parts.push(status, String(count));
+    else if (count) parts.push(`${count} ${count === 1 ? "item" : "items"}`);
+  } else {
+    const title = first((n) => n.type === "Title") || first((n) => n.type === "Text" && (n.weight === "semibold" || n.weight === "bold"));
+    const badge = first((n) => n.type === "Badge", "label");
+    if (title) {
+      parts.push(title);
+      if (title.length <= 4) parts.push(first((n) => n.type === "Caption"));
+      parts.push(badge);
+    } else {
+      parts.push(status, badge);
+      if (!badge) parts.push(first((n) => n.type === "Text" || n.type === "Caption"));
+    }
+  }
+  const seen = new Set<string>();
+  const line = parts.filter((p) => p && !seen.has(p) && seen.add(p)).join(" · ");
+  return line.length > max ? `${line.slice(0, Math.max(0, max - 1)).trimEnd()}…` : line;
+}
+
 /** The line the AI's history gets for an action the visitor took on a card. */
 export function widgetActionLine(label: string, meta: WidgetActionMeta): string {
   const details = [`action ${meta.type}`];

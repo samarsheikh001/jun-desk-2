@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { APPEARANCE_DEFAULTS, BUTTON_TEXT, RADIUS_MAX, SUGGESTION_LIMIT, SUGGESTIONS_MAX, TEXT_LIMITS, textOn, widgetLook, type ButtonStyle, type LauncherStyle, type WidgetTheme } from "../../shared/appearance.ts";
+import { APPEARANCE_DEFAULTS, BUTTON_TEXT, RADIUS_MAX, SUGGESTION_LIMIT, SUGGESTIONS_MAX, TEXT_LIMITS, textOn, widgetLook, type ButtonStyle, type IslandSurface, type LauncherStyle, type WidgetTheme } from "../../shared/appearance.ts";
 import { api, ApiError } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { PageTabs } from "../components/PageTabs.tsx";
@@ -56,11 +56,12 @@ interface Draft {
   launcher?: LauncherStyle;
   buttonStyle?: ButtonStyle;
   neon?: boolean;
+  islandSurface?: IslandSurface;
   csat?: boolean;
   logoKey?: string;
 }
 
-const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggestions", "color", "position", "theme", "radius", "launcher", "buttonStyle", "neon", "csat"] as const;
+const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggestions", "color", "position", "theme", "radius", "launcher", "buttonStyle", "neon", "islandSurface", "csat"] as const;
 const pick = (s: Draft): Draft => Object.fromEntries(FIELDS.filter((f) => s[f] !== undefined).map((f) => [f, s[f]])) as Draft;
 const same = (a: Draft, b: Draft) => FIELDS.every((f) => JSON.stringify(a[f] ?? null) === JSON.stringify(b[f] ?? null));
 
@@ -197,7 +198,7 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
                 look.launcher === "bar"
                   ? "An \"Ask anything…\" bar instead of a button, showing your suggested questions. The chat opens above it on dark glass. Theme and rounding don't apply to it."
                   : look.launcher === "island"
-                    ? "A small pill at the bottom centre that changes shape with each moment: it opens into a question box, shrinks to a status line while the assistant works, grows around the answer, and offers help as one line. Follows your theme, brand colour and rounding; the side doesn't apply. \"/\" opens it."
+                    ? "A small pill at the bottom centre that changes shape with each moment: it opens into a question box, shrinks to a status line while the assistant works, grows around the answer, and offers help as one line. Uses your brand colour and rounding; the side doesn't apply. \"/\" opens it."
                     : "The greeting card shows your greeting above the button until the visitor dismisses it or opens the chat (once per visit)."
               }
               htmlFor="appear-launcher"
@@ -214,6 +215,14 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
                 <NativeSelect id="appear-button" value={look.buttonStyle} disabled={off} onChange={(e) => edit({ buttonStyle: e.target.value as ButtonStyle })}>
                   <NativeSelectOption value="logo">Company logo</NativeSelectOption>
                   <NativeSelectOption value="text">"{BUTTON_TEXT}"</NativeSelectOption>
+                </NativeSelect>
+              </Field>
+            )}
+            {look.launcher === "island" && (
+              <Field label="Island colour" hint={look.islandSurface === "dark" ? "Near-black with white text on every page, whatever the theme." : "Follows the Theme above, like the rest of the widget."} htmlFor="appear-island">
+                <NativeSelect id="appear-island" value={look.islandSurface} disabled={off} onChange={(e) => edit({ islandSurface: e.target.value as IslandSurface })}>
+                  <NativeSelectOption value="dark">Dark (like Dynamic Island)</NativeSelectOption>
+                  <NativeSelectOption value="page">Match the page theme</NativeSelectOption>
                 </NativeSelect>
               </Field>
             )}
@@ -266,7 +275,7 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
         {canEdit && (
           <div className="appear-actions">
             <Button disabled={busy || !dirty} onClick={save}>Save</Button>
-            <Button variant="outline" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, launcher: APPEARANCE_DEFAULTS.launcher, buttonStyle: "logo", neon: true, csat: true })}>Reset to defaults</Button>
+            <Button variant="outline" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, launcher: APPEARANCE_DEFAULTS.launcher, buttonStyle: "logo", neon: true, islandSurface: APPEARANCE_DEFAULTS.islandSurface, csat: true })}>Reset to defaults</Button>
             <span className={error ? "error small" : "muted small"} role="status">{error ?? status ?? (dirty ? "Unsaved changes" : "")}</span>
           </div>
         )}

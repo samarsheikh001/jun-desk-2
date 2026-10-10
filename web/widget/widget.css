@@ -344,21 +344,56 @@ html.bar body {
 /* ---------- W-04 "island" launcher (D-39) ----------
    One control at the bottom centre that changes shape with each moment (web/widget/island.tsx): a
    resting pill, the question box, a status line while the assistant works, the latest answer, the
-   whole conversation, or a one-line offer of help. It takes the chat window's look (D-34): the
-   theme's palette, the brand colour on the light and the send button, the corner rounding on its
-   open shapes, Outfit. html.island is a transparent frame the loader sizes and clips from what
+   whole conversation, or a one-line offer of help. The open shapes keep the pill as their bottom
+   row (.i-row) and grow above it; no header bar (.i-ctl in the corner, .i-top only when needed).
+   Its palette is its own near-black one (html.island-dark, the default) or the theme's
+   (islandSurface "page"); the brand colour on the send button, the corner rounding on its open
+   shapes, Outfit. html.island is a transparent frame the loader sizes and clips from what
    useIslandFrame reports; the morph happens in here, with the frame's clip following it. The
    page keeps a light colour scheme whatever the theme (a frame whose scheme differs from the host
    page's gets an opaque backdrop); the palette still comes from data-theme. */
 :root.island, :root.island[data-theme] { color-scheme: light; }
 html.island, html.island body, html.island #root { background: transparent; }
 html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Desk Outfit", Arial, sans-serif; }
+/* The near-black surface (islandSurface "dark", the default), like Apple's Dynamic Island, whatever
+   the page or theme: the island's own palette, so every part (status shimmer, chips, box, sources,
+   steps, action cards, CSAT and email asks, typing dots) reads on black. With "page" none of this
+   applies and the theme's tokens are used as before. Beats :root[data-theme] and the dark media query. */
+html.island.island-dark {
+  --bg: #18181a;
+  --surface: #0c0c0d;
+  --field: #1a1a1c;
+  --hover: #1d1d20;
+  --quote: #151517;
+  --text: #f5f5f7;
+  --text-soft: #d6d6da;
+  --muted: #98989f;
+  --border: #2c2c30;
+  --border-soft: #222225;
+  --bubble: #222225;
+  --bubble-text: #ffffff;
+  --code: #1f1f22;
+  --pre: #141416;
+  --link: #c9b2e2;
+  --error: #ff8a7e;
+  --tag: #1b1e2a;
+  --focus: #b9a3d0;
+}
+.island-dark .i-shell { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 28px rgba(0, 0, 0, 0.32); }
+/* A hairline highlight on the edge (under the neon ring when that's on). */
+.island-dark .i-shell::after { content: ""; position: absolute; inset: 0; z-index: 2; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); pointer-events: none; }
+.island-dark .i-rest:hover { background: #161618; }
+.island-dark .i-body::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.14); }
+.island-dark .i-body:hover::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.26); }
+.island-dark .i-view .composer-menu { box-shadow: 0 8px 24px rgb(0 0 0 / 0.5); }
 .i-root { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 24px; overflow: visible; }
 @media (max-width: 639px) { .i-root { padding-bottom: 12px; } }
 /* The box springs to the measured size (the proposal's stiffness 380 / damping 30, about 0.65s with a
    slight overshoot). The shell fills it; the neon ring and its glow sit on the box, outside the shell's
    clip, and stay inside the 32px the frame keeps visible around the island. */
-.i-box { position: relative; border-radius: 28px; transition: width 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), height 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), border-radius 0.65s cubic-bezier(0.34, 1.25, 0.5, 1); }
+.i-box { position: relative; border-radius: 28px; transition: width 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), height 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), border-radius 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), transform 0.35s cubic-bezier(0.34, 1.6, 0.5, 1); }
+/* Pressing the resting pill squishes it a little; it springs back on release. */
+.i-box:has(.i-rest:active) { transform: scale(0.97); transition-duration: 0.65s, 0.65s, 0.65s, 0.12s; }
 /* While an answer streams in, the box grows with it without bouncing. */
 .i-box.i-live { transition-duration: 0.25s; transition-timing-function: ease-out; }
 .i-s-open, .i-s-answer, .i-s-panel { border-radius: var(--radius); }
@@ -369,9 +404,10 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-ring { inset: 0; padding: 1.5px; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; z-index: 1; }
 .i-glow { inset: -2px; filter: blur(14px); opacity: 0.55; }
 @keyframes i-turn { to { --i-angle: 360deg; } }
-/* Content sits on the bottom edge (the box stays put while the shell grows) and arrives from a blur after the old content has gone. */
-.i-view { position: absolute; left: 0; bottom: 0; animation: i-in 0.3s 0.14s both; }
-@keyframes i-in { from { opacity: 0; filter: blur(6px); } to { opacity: 1; filter: none; } }
+/* Content sits on the bottom edge (the box stays put while the shell grows) and rises out of the
+   pill's row from a blur after the old content has gone, so the island reads as one thing growing. */
+.i-view { position: absolute; left: 0; bottom: 0; animation: i-in 0.34s 0.12s both; }
+@keyframes i-in { from { opacity: 0; filter: blur(6px); transform: translateY(6px); } to { opacity: 1; filter: none; transform: none; } }
 /* The mark (the chat header's logo at 22px), breathing while the assistant works. */
 .i-mark { width: 22px; height: 22px; flex: none; border-radius: var(--radius-xs); object-fit: contain; }
 .i-mark.pulse { animation: i-pulse 1.6s ease-in-out infinite; }
@@ -386,6 +422,8 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-rest:focus-visible { outline-offset: -4px; border-radius: 28px; }
 .i-rest .b-hint { position: static; flex: 1; min-width: 0; height: 20px; color: var(--muted); }
 .i-rest-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Folded with a chat: its last answer in a few words. */
+.i-rest-sum { color: var(--text-soft); animation: b-fade 300ms ease-out; }
 .i-kbd { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted); font: 12px/1 "Jun Desk Mono", ui-monospace, monospace; }
 @media (hover: none) { .i-kbd { display: none; } }
 .i-up { display: grid; place-items: center; width: 22px; height: 22px; flex: none; color: var(--muted); }
@@ -407,19 +445,35 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-status { display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 20px 0 16px; }
 .i-status-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; background: linear-gradient(90deg, var(--muted) 35%, var(--text) 50%, var(--muted) 65%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: w-shimmer 1.6s linear infinite; }
 
-/* Open: the suggested questions over the box. */
-.i-open { display: flex; flex-direction: column; padding: 10px; }
-.i-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px 10px; }
+/* Open: the suggested questions over the pill's row. */
+.i-open { display: flex; flex-direction: column; }
+.i-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 14px 2px; }
 .i-chip { max-width: 100%; padding: 6px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-size: 12.5px; line-height: 1.5; text-align: left; animation: b-rise 0.35s cubic-bezier(0.22, 0.61, 0.36, 1) both; transition: background 0.15s; }
 .i-chip:hover { background: var(--hover); }
 .i-error { margin: 0; padding: 6px 12px 8px; color: var(--error); font-size: 13px; }
 
-/* The header of the answer and panel states. */
-.i-head { display: flex; align-items: center; gap: 10px; flex: none; height: 48px; padding: 0 10px 0 16px; }
-.i-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; font-weight: 600; }
+/* No header bar. The top row only when it has something (who's talking, Earlier/Latest, an intent's
+   exit: D-37, always visible); it leaves the top-right corner to the controls. */
+.i-top { display: flex; align-items: center; gap: 8px; flex: none; min-height: 28px; padding: 12px 76px 0 20px; }
+.i-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; font-weight: 500; }
 .i-spacer { flex: 1; }
-.i-exit { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-xs); background: var(--bg); color: var(--text); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.i-exit { height: 26px; padding: 0 11px; border: 1px solid var(--border); border-radius: 13px; background: var(--bg); color: var(--text); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .i-exit:hover { background: var(--hover); }
+/* Small quiet chips: Earlier / Latest, Talk to a person. */
+.i-pill-chip { height: 24px; padding: 0 10px; border: 1px solid var(--border-soft); border-radius: 12px; background: transparent; color: var(--muted); font-size: 11.5px; font-weight: 500; white-space: nowrap; transition: background 0.15s, color 0.15s; }
+.i-pill-chip:hover { background: var(--hover); color: var(--text); }
+.i-foot { display: flex; flex: none; padding: 2px 16px 0; }
+/* Minimize and End: small, over the top-right corner, on hover or when tabbed to; quiet but always there on touch screens. */
+.i-ctl { position: absolute; top: 8px; right: 8px; z-index: 3; display: flex; gap: 2px; opacity: 0; transition: opacity 0.18s; }
+.i-box:hover .i-ctl, .i-ctl:focus-within { opacity: 1; }
+@media (hover: none) { .i-ctl { opacity: 0.6; } }
+.i-ctl .i-ghost { width: 26px; height: 26px; border-radius: 13px; }
+
+/* The pill's row: the mark and the question box, 54px like the resting pill. "+" and Send stay out
+   of the way until the visitor types (or points at the row, or tabs to "+"). */
+.i-row { display: flex; align-items: flex-end; gap: 10px; flex: none; min-height: 54px; padding: 0 10px 0 16px; }
+.i-row > .i-mark { margin-bottom: 16px; }
+.i-row > .w-composer-wrap { flex: 1; min-width: 0; }
 
 /* Answer (the latest exchange) and panel (the whole conversation): the chat window's thread styles. */
 .i-answer, .i-panel { display: flex; flex-direction: column; }
@@ -445,10 +499,21 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-body .msg.ai .bubble { background: none; color: var(--text-soft); }
 .i-body .msg.own .bubble { float: right; max-width: 85%; padding: 8px 12px; background: var(--bubble); color: var(--bubble-text); }
 .i-body .msg.own > :not(.bubble) { clear: both; text-align: right; }
-/* In the answer state the question is a quiet line above its answer. */
-.i-answer .i-body .msg.own { margin-left: 0; align-self: flex-start; text-align: left; }
-.i-answer .i-body .msg.own .bubble { float: none; max-width: 100%; padding: 0 0 2px; background: none; color: var(--muted); font-size: 12.5px; }
+/* Without a header the body starts at the island's top edge (a top row brings its own space). */
+.i-answer > .i-body, .i-panel > .i-body { padding-top: 14px; }
+.i-top + .i-body { padding-top: 8px; }
+/* In the answer state the question is the answer's title: bold, at the top, left-aligned (clear of the corner controls). */
+.i-answer .i-body .msg.own { margin-left: 0; padding-right: 48px; align-self: flex-start; justify-items: start; text-align: left; }
+.i-answer .i-top + .i-body .msg.own { padding-right: 0; }
+.i-answer .i-body .msg.own .bubble { float: none; max-width: 100%; padding: 0 0 4px; background: none; color: var(--text); font-size: 15.5px; font-weight: 600; line-height: 1.4; letter-spacing: -0.005em; }
+.i-answer .i-body .msg.own.pending .bubble { opacity: 0.7; }
 .i-answer .i-body .msg.own > :not(.bubble) { text-align: left; }
+/* The island's answer: a card is the answer (bare, full width), its words a caption under it, more cards as peeks. */
+.i-body .w-card-open { animation: i-card 0.28s cubic-bezier(0.23, 1, 0.32, 1) both; }
+@keyframes i-card { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.i-body .w-answer .bubble.w-caption { margin-top: 6px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.i-body .w-peeks { display: flex; flex-direction: column; gap: 2px; margin: 8px -10px 0; }
+@media (prefers-reduced-motion: reduce) { .i-body .w-card-open { animation: none; } }
 .i-body .bubble.typing { display: flex; align-items: center; gap: 3px; min-height: 22px; padding: 0; }
 .i-body .typing span { background: var(--focus); }
 .i-body .bubble code { font-family: "Jun Desk Mono", monospace; font-size: 0.88em; background: var(--code); border-radius: 4px; padding: 0.15em 0.35em; }
@@ -467,11 +532,15 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-body .w-email button:not(.w-x, .ghost), .i-body .w-csat button:not(.w-x, .w-thumb, .ghost) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .i-body .messages.w-skel { display: flex; padding: 8px 20px; }
 
-/* The box: the chat window's flat filled field, with "+", the input and Send. */
-.i-view .composer.pill { flex: none; padding: 0 8px 8px; border: 0; background: transparent; }
-.i-open .composer.pill { padding: 0; }
-.i-view .composer-box { min-height: 44px; padding: 6px; border-radius: var(--radius); background: var(--hover); justify-content: center; }
-.i-view .composer.pill textarea { min-height: 30px; max-height: 120px; margin: 0; padding: 5px 6px; border: 0; border-radius: 0; background: transparent; color: var(--text); font-size: 13px; line-height: 20px; outline: none; }
+/* The box, in the pill's row: no field of its own (the island is the field), with "+", the input and Send. */
+.i-view .composer.pill { flex: none; padding: 0; border: 0; background: transparent; }
+.i-view .composer-box { min-height: 54px; padding: 12px 0; border-radius: 0; background: transparent; justify-content: center; }
+/* "+" and Send fold away while the box is empty; "+" comes back on hover, when tabbed to or open (and when focused on touch). */
+.i-row .composer.pill .composer-plus, .i-row .composer.pill .composer-send { overflow: hidden; transition: width 0.2s ease-out, opacity 0.2s ease-out, background-color 150ms, color 150ms, transform 150ms; }
+.i-view .i-row .composer.pill .composer-send:disabled { width: 0; opacity: 0; pointer-events: none; }
+.i-row:not(:hover) .composer:not(:has(textarea:not(:placeholder-shown), .composer-files, .composer-plus:focus-visible, .composer-plus.active)) .composer-plus { width: 0; opacity: 0; }
+@media (hover: none) { .i-row:focus-within .composer.pill .composer-plus { width: 30px !important; opacity: 1 !important; } }
+.i-view .composer.pill textarea { min-height: 30px; max-height: 120px; margin: 0; padding: 5px 4px; border: 0; border-radius: 0; background: transparent; color: var(--text); font-size: 14px; line-height: 20px; outline: none; }
 .i-view .composer.pill textarea::placeholder { color: var(--muted); }
 .i-view .composer-plus { width: 30px; height: 30px; border-radius: var(--radius-xs); background: transparent; color: var(--muted); }
 .i-view .composer-plus:hover:not(:disabled), .i-view .composer-plus.active { background: var(--border-soft); color: var(--text); }
@@ -490,7 +559,9 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 /* Reduce motion: no spring, bounce, blur or shimmer; states cross-fade. */
 @media (prefers-reduced-motion: reduce) {
   .i-box { transition: none; }
+  .i-box:has(.i-rest:active) { transform: none; }
   .i-view { animation: i-fade 0.15s both; }
+  .i-ctl, .i-row .composer.pill .composer-plus, .i-row .composer.pill .composer-send { transition: none; }
   .i-chip, .i-mark.pulse, .i-ring, .i-glow { animation: none; }
   .i-status-text { animation: none; background: none; color: var(--muted); }
 }

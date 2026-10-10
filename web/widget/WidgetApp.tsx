@@ -3,13 +3,15 @@ import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatR
 import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
+import { ACTION_ONLY_BODY } from "../../shared/actions.ts";
+import { WIDGET_ONLY_BODY, widgetSummary } from "../../shared/widgets.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal, type PendingMessage } from "../lib/thread.ts";
 import { AiAnswer } from "./answer.tsx";
 import { BarHead, Chips, Glass, Typewriter, useBarFrame } from "./bar.tsx";
 import { Badge, MiniCard, useCardFrame } from "./card.tsx";
-import { Island, IslandChips, IslandHead, NudgeLine, RestPill, StatusLine, type IslandState } from "./island.tsx";
+import { Island, IslandChips, IslandControls, IslandRow, IslandTop, NudgeLine, RestPill, StatusLine, type IslandState } from "./island.tsx";
 
 // The chat UI inside the widget iframe. The visitor's token is created only when they
 // first send something, so just opening the chat stores nothing in their browser.
@@ -159,6 +161,17 @@ interface WidgetConfig extends WidgetLook {
 const asBar = (look: WidgetLook) => look.launcher === "bar" && window.parent !== window;
 /** In a frame, as the morphing island (D-39). */
 const asIsland = (look: WidgetLook) => look.launcher === "island" && window.parent !== window;
+/** The island on its near-black surface (the default; `page` follows the theme). */
+const islandDark = (look: WidgetLook) => asIsland(look) && look.islandSurface !== "page";
+/** The frame's theme as drawn: `auto` follows the visitor's system, as styles.css does. */
+const effectiveTheme = (look: WidgetLook): "light" | "dark" =>
+  look.theme === "auto" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : look.theme;
+/** A brand colour too dark to read as a button on the near-black island (by textOn's weights). */
+function tooDarkForIsland(color: string): boolean {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return false;
+  const n = parseInt(color.slice(1), 16);
+  return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 < 0.25;
+}
 
 /** W-04: brand colour (with readable text on it), light/dark/auto and corner rounding on the frame. */
 function applyLook(look: WidgetLook): void {
@@ -172,6 +185,13 @@ function applyLook(look: WidgetLook): void {
   // the theme like the chat window; its page stays light the same way (widget.css).
   root.classList.toggle("bar", asBar(look));
   root.classList.toggle("island", asIsland(look));
+  // D-39: the island's own near-black palette (widget.css, html.island-dark); a near-black brand
+  // colour would vanish on it, so its buttons go white there instead.
+  root.classList.toggle("island-dark", islandDark(look));
+  if (islandDark(look) && tooDarkForIsland(look.color)) {
+    root.style.setProperty("--accent", "#f5f5f5");
+    root.style.setProperty("--accent-text", "#0c0c0d");
+  }
   if (look.theme === "auto" || asBar(look)) delete root.dataset.theme;
   else root.dataset.theme = look.theme;
   for (const [name, value] of Object.entries(radiusVars(look.radius))) root.style.setProperty(name, value);
@@ -423,6 +443,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
             suggestions: config.suggestions,
             placeholder: config.placeholder,
             neon: config.neon,
+            cardTheme: islandDark(config) ? "dark" : effectiveTheme(config),
             unread: Boolean(summary && unread(summary)),
             setOpen: setBarOpen,
             newChat: () => setView({ kind: "thread", id: null }),
@@ -605,7 +626,18 @@ function WidgetThread({
   /** W-04 bar launcher: the chat panel's header, the suggested questions, and opening or folding it. */
   bar?: { head: ReactNode; suggestions: string[]; side: "left" | "right"; setOpen: (open: boolean) => void };
   /** W-04 island (D-39): what its states show, and opening or closing it. */
-  island?: { name: string; logoUrl: string | null; suggestions: string[]; placeholder: string; neon: boolean; unread: boolean; setOpen: (open: boolean) => void; newChat: () => void };
+  island?: {
+    name: string;
+    logoUrl: string | null;
+    suggestions: string[];
+    placeholder: string;
+    neon: boolean;
+    /** The cards' palette: dark on the near-black surface, else the frame's theme. */
+    cardTheme: "light" | "dark";
+    unread: boolean;
+    setOpen: (open: boolean) => void;
+    newChat: () => void;
+  };
   /**
    * The chat window (D-34): the greeting a new chat starts with, the suggested questions (until
    * dismissed), and the action row's "Contact the team" (W-07's handoff) and "Start a new chat".
@@ -665,8 +697,17 @@ function WidgetThread({
   // Messages go out in the order they were written: each waits for the one before it (each first
   // asks the page for its context, and those replies can come back in any order).
   const flushing = useRef<Promise<void>>(Promise.resolve());
+  /**
+   * The island: a card's button was pressed and its answer hasn't come yet. Until the pressed
+   * message is saved (then its meta.widgetAction says so) this is the only sign of it.
+   */
+  const [pressed, setPressed] = useState(false);
+  useEffect(() => {
+    if (lastMessage && lastMessage.authorType !== "visitor") setPressed(false);
+  }, [lastMessage?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const send = async (body: string, attachments: Attachment[]) => {
     setError(null);
+    setPressed(false);
     if (conversationId ? holding.current > 0 : creating.current) {
       holding.current++;
       setHeld((h) => [...h, { clientMsgId: crypto.randomUUID(), body, attachments }]);
@@ -755,14 +796,17 @@ function WidgetThread({
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, []);
-  // Follow-ups only while the AI is still the one answering.
-  const renderAnswer = (answer: AiAnswerView) => {
+  // Follow-ups only while the AI is still the one answering. `cardFirst`: the island's answer view.
+  const renderAnswer = (answer: AiAnswerView, cardFirst = false) => {
     const action = answer.action;
     return (
       <AiAnswer
         answer={answer}
         {...(handling === "ai" ? { onFollowUp: (q: string) => void send(q, []) } : {})}
+        {...(island ? { cardTheme: island.cardTheme } : {})}
+        cardFirst={cardFirst}
         onWidgetAction={(messageId, widget, event) => {
+          if (island) setPressed(true);
           // W-09: in order with anything typed before it, with the page's context like a typed message.
           flushing.current = flushing.current.then(async () => {
             const { context, actions } = await hostContext();
@@ -921,7 +965,7 @@ function WidgetThread({
   const extras = (
     <>
       {/* W-07: a person is always one click away while the AI is answering. */}
-      {(bar || island) && conversationId && handling === "ai" && (
+      {bar && conversationId && handling === "ai" && (
         <div className="w-human">
           <button className="link small" onClick={() => thread.requestHuman()}>Talk to a person</button>
         </div>
@@ -935,9 +979,11 @@ function WidgetThread({
       )}
     </>
   );
+  // The island's box reads like its pill: a follow-up once there's a conversation (a reply in a teammate's).
+  const boxPlaceholder = !island || !(conversationId || starting) ? placeholder : handling === "human" ? "Write a reply…" : "Ask a follow-up…";
   const composer = (
     <div className="w-composer-wrap" inert={loading}>
-      <Composer pill placeholder={placeholder} upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
+      <Composer pill placeholder={boxPlaceholder} upload={(file) => api.upload(file)} onTyping={conversationId ? onTyping : undefined} onSend={send} screenshot />
     </div>
   );
 
@@ -959,38 +1005,54 @@ function WidgetThread({
     const sending = thread.pending.length > 0 || held.length > 0 || Boolean(starting && !conversationId);
     const from = thread.messages.findLastIndex((m) => m.authorType === "visitor");
     const recent = sending ? [] : from >= 0 ? thread.messages.slice(from) : thread.messages.slice(-3);
-    const head = (
-      <IslandHead
-        name={teammate ?? island.name}
-        logoUrl={island.logoUrl}
-        exit={exitLabel ? { label: exitLabel, run: exit } : null}
-        toggle={handling === "human" || !conversationId ? null : { label: showAll ? "Latest only" : "Show conversation", run: () => setShowAll(!showAll) }}
+    // No header bar: Minimize and End in the corner (on hover), the rest in IslandTop when needed.
+    const controls = (
+      <IslandControls
         // × ends the chat (the next question starts a new one); an intent's chat ends through its exit button.
         onEnd={conversationId && !intent ? () => { island.newChat(); close(); } : null}
         onMinimize={close}
       />
     );
+    const exitButton = exitLabel ? { label: exitLabel, run: exit } : null;
+    // Earlier exchanges than the one on screen (not counting system notices).
+    const earlier = (sending ? thread.messages : thread.messages.slice(0, Math.max(0, from))).some((m) => m.authorType !== "system" && !m.internal);
+    // W-07: a person is always one click away while the AI is answering: a quiet chip over the row.
+    const human = conversationId && handling === "ai" ? (
+      <div className="i-foot">
+        <button type="button" className="i-pill-chip" onClick={() => thread.requestHuman()}>Talk to a person</button>
+      </div>
+    ) : null;
+    const row = <IslandRow logoUrl={island.logoUrl}>{composer}</IslandRow>;
     const live = Boolean(thread.aiStream?.text);
     // The status-line shape only before the first reply: once there is one, a follow-up keeps the
     // answer shape (its question, the typing dots or tool steps, then the reply streaming in place),
     // so the island doesn't collapse to a line and grow back, which reads as the widget blinking.
+    // A card's button press is different: the card is the answer, so the island shrinks to the line
+    // ("Adding seats…") and grows back with the new card. Never for an intent with an exit button
+    // (D-37: the line has no room for it, and it must stay on screen).
     const answered = thread.messages.some((m) => (m.authorType === "ai" || m.authorType === "agent") && !m.internal);
-    const shown: IslandState = state === "answer" && thinking && !loading && !answered ? "thinking" : state;
+    const widgetTurn = pressed || Boolean(lastMessage?.authorType === "visitor" && lastMessage.meta.widgetAction);
+    const shown: IslandState = state === "answer" && thinking && !loading && (!answered || widgetTurn) && !exitLabel ? "thinking" : state;
+    // It folds itself a few seconds after an answer is done, never while anything waits on the
+    // visitor or the AI, nor in an intent's or a teammate's chat (useAutoFold has the rest).
+    const actionWaiting = thread.messages.some((m) => m.authorType === "ai" && m.meta.action?.status === "pending");
+    const settled = !thinking && !awaitingAi && !thread.aiThinking && !thread.aiStream && !sending && !running && !actionWaiting && !loading && !error;
+    const autoFold = open && shown === "answer" && conversationId && !intent && handling === "ai" && answered && settled ? close : null;
     return (
-      <Island state={shown} live={live} neon={island.neon} onOpen={() => island.setOpen(true)}>
-        {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} chat={Boolean(conversationId)} onOpen={() => island.setOpen(true)} />}
+      <Island state={shown} live={live} neon={island.neon} onOpen={() => island.setOpen(true)} autoFold={autoFold}>
+        {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} summary={restSummary(thread.messages)} chat={Boolean(conversationId)} onOpen={() => island.setOpen(true)} />}
         {shown === "nudge" && opener && <NudgeLine logoUrl={island.logoUrl} text={opener.text} from={opener.from ?? null} onAsk={() => island.setOpen(true)} onDismiss={dismissNudge} />}
         {shown === "open" && (
           <div className="i-open">
             {island.suggestions.length > 0 && <IslandChips questions={island.suggestions} onPick={(q) => void send(q, [])} />}
-            {composer}
             {error && <p className="i-error" role="alert">{error}</p>}
+            {row}
           </div>
         )}
         {shown === "thinking" && <StatusLine logoUrl={island.logoUrl} label={running?.label ?? "Thinking…"} />}
         {shown === "answer" && (
           <div className="i-answer">
-            {head}
+            <IslandTop who={null} view={earlier ? { label: "Earlier", run: () => setShowAll(true) } : null} exit={exitButton} />
             <div className="i-body" role="log">
               {!conversationId && openerMessage}
               {loading ? <ThreadSkeleton /> : (
@@ -1008,26 +1070,34 @@ function WidgetThread({
                   aiSteps={thread.aiSteps}
                   onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
                   onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
-                  renderAi={renderAnswer}
+                  renderAi={(answer) => renderAnswer(answer, true)}
                   follow="start"
                 />
               )}
               {error && <p className="i-error" role="alert">{error}</p>}
               {extras}
             </div>
-            {composer}
+            {human}
+            {row}
+            {controls}
           </div>
         )}
         {shown === "panel" && (
           <div className="i-panel">
-            {head}
+            <IslandTop
+              who={handling === "human" ? (teammate ? `${teammate} · ${island.name}` : island.name) : null}
+              view={handling === "human" || !conversationId ? null : { label: "Latest", run: () => setShowAll(false) }}
+              exit={exitButton}
+            />
             <div className="i-body i-log" role="log">
               {openerMessage}
               {messages}
               {error && <p className="i-error" role="alert">{error}</p>}
               {extras}
             </div>
-            {composer}
+            {human}
+            {row}
+            {controls}
           </div>
         )}
       </Island>
@@ -1160,6 +1230,24 @@ function useIslandState({ island, open, hasChat, conversationId, opener, intent,
   }, [nudgeText]);
   const state: IslandState = !open ? (nudgeText && nudgeShown ? "nudge" : "rest") : !hasChat ? "open" : handling === "human" || showAll ? "panel" : "answer";
   return { state, showAll, setShowAll, dismissNudge: () => setNudgeShown(false) };
+}
+
+/**
+ * D-39: the folded island's line for its chat, like a live activity: the last reply's first card
+ * in a few words ("Team plan · active"), else the reply's first sentence without its [n] markers;
+ * at most 60 characters. Null when there's no reply to sum up.
+ */
+function restSummary(messages: Message[], max = 60): string | null {
+  const last = messages.findLast((m) => (m.authorType === "ai" || m.authorType === "agent") && !m.internal);
+  if (!last) return null;
+  const card = last.meta.widgets?.[0];
+  const fromCard = card ? widgetSummary(card.root, max) : "";
+  if (fromCard) return fromCard;
+  if (last.body === ACTION_ONLY_BODY || last.body === WIDGET_ONLY_BODY) return null;
+  const text = last.body.replace(/\s*\[\d{1,2}\]/g, "").replace(/[*_`#>]+/g, "").replace(/\s+/g, " ").trim();
+  const sentence = /^.+?[.!?](?=\s|$)/.exec(text)?.[0] ?? text;
+  if (!sentence) return null;
+  return sentence.length > max ? `${sentence.slice(0, max - 1).trimEnd()}…` : sentence;
 }
 
 /** How long the island's one-line offer of help stays before it rests again. */

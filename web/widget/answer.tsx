@@ -4,7 +4,7 @@ import type { AiStep, Source } from "../../shared/protocol.ts";
 import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
 import type { AiAnswerView } from "../components/MessageList.tsx";
 import { ActionCard } from "./action.tsx";
-import { WidgetCard, type WidgetActionEvent } from "./chatkit/WidgetCard.tsx";
+import { WidgetCard, WidgetPeek, type WidgetActionEvent } from "./chatkit/WidgetCard.tsx";
 
 // An AI answer in the widget: words resolve out of a blur as they stream, citations become
 // inline source chips, then copy, the cited sources and follow-up questions appear.
@@ -220,12 +220,22 @@ export function AiAnswer({
   onFollowUp,
   controls,
   onWidgetAction,
+  cardTheme,
+  cardFirst = false,
 }: {
   answer: AiAnswerView;
   onFollowUp?: (question: string) => void;
   controls?: ActionControls;
   /** W-09: the visitor pressed one of a card's actions (saved answers only). */
   onWidgetAction?: (messageId: string, widget: MessageWidget, event: WidgetActionEvent) => void;
+  /** The cards' palette (the island's dark surface, or the frame's theme); the card's default otherwise. */
+  cardTheme?: "light" | "dark";
+  /**
+   * The island's answer view (D-39): a card is the answer. The open card draws bare (the island is
+   * its frame), the reply's words go under it as a caption, and further cards are one-line peeks
+   * that open in its place. Off (the default) for the bar, the chat window and the island's panel.
+   */
+  cardFirst?: boolean;
 }) {
   const { sources, followUps, streaming, latest, steps: toolSteps } = answer;
   const action = answer.action;
@@ -253,6 +263,20 @@ export function AiAnswer({
   const shown = useReveal(tokens.length, live);
   const done = !streaming && shown >= tokens.length;
   const [open, setOpen] = useState(false);
+  // cardFirst: which card is open (the first until the visitor picks a peek).
+  const [openCard, setOpenCard] = useState<string | null>(null);
+  const asCards = cardFirst && widgets.length > 0;
+  const shownCard = asCards ? (widgets.find((w) => w.id === openCard) ?? widgets[0]!) : null;
+  const card = (w: MessageWidget, bare: boolean) => (
+    <WidgetCard
+      key={w.id}
+      widget={w}
+      interactive={!streaming && Boolean(answer.messageId && onWidgetAction)}
+      {...(answer.messageId && onWidgetAction ? { onAction: (event: WidgetActionEvent) => onWidgetAction(answer.messageId!, w, event) } : {})}
+      {...(cardTheme ? { theme: cardTheme } : {})}
+      {...(bare ? { bare: true } : {})}
+    />
+  );
 
   // Distinct sites for the avatar stack.
   const stack = sources.filter((s, i) => sources.findIndex((o) => sourceLabel(o) === sourceLabel(s)) === i).slice(0, 3);
@@ -261,15 +285,12 @@ export function AiAnswer({
   return (
     <div className="w-answer">
       {after ? toolSteps.length > 0 && <Steps steps={toolSteps} working={working && !actionRunning} /> : steps.length > 0 && <Steps steps={steps} working={working} />}
-      {widgets.map((w) => (
-        <WidgetCard
-          key={w.id}
-          widget={w}
-          interactive={!streaming && Boolean(answer.messageId && onWidgetAction)}
-          {...(answer.messageId && onWidgetAction ? { onAction: (event: WidgetActionEvent) => onWidgetAction(answer.messageId!, w, event) } : {})}
-        />
-      ))}
-      {(body || (!steps.length && !action && !widgets.length)) && <div className="bubble">
+      {shownCard ? (
+        <div key={shownCard.id} className="w-card-open">{card(shownCard, true)}</div>
+      ) : (
+        widgets.map((w) => card(w, false))
+      )}
+      {(body || (!steps.length && !action && !widgets.length)) && <div className={`bubble${asCards ? " w-caption" : ""}`}>
         {tokens.slice(0, shown).map((t, i) => {
           const anim = live ? " w-anim" : "";
           if (t.kind === "word") return <span key={i} className={`w-word${anim}`}>{t.text}</span>;
@@ -284,6 +305,13 @@ export function AiAnswer({
         })}
         {!done && <span className="w-caret" aria-hidden="true" />}
       </div>}
+      {shownCard && widgets.length > 1 && (
+        <div className="w-peeks" role="group" aria-label="More cards">
+          {widgets.filter((w) => w !== shownCard).map((w) => (
+            <WidgetPeek key={w.id} widget={w} {...(cardTheme ? { theme: cardTheme } : {})} onOpen={() => setOpenCard(w.id)} />
+          ))}
+        </div>
+      )}
       {after && actionStep && <Steps steps={[actionStep]} working={actionRunning} />}
 
       {done && sources.length > 0 && (

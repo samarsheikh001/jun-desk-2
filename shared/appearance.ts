@@ -15,6 +15,11 @@ export type LauncherStyle = "button" | "card" | "bar" | "island";
  */
 export type ButtonStyle = "logo" | "text";
 export const BUTTON_TEXT = "Chat with us";
+/**
+ * The island launcher's surface: `dark` is always near-black with white text (like Apple's
+ * Dynamic Island), whatever the page or theme; `page` follows the widget's `theme`.
+ */
+export type IslandSurface = "dark" | "page";
 
 export const APPEARANCE_DEFAULTS = {
   color: "#2f5bea",
@@ -23,6 +28,7 @@ export const APPEARANCE_DEFAULTS = {
   theme: "auto",
   radius: 16,
   launcher: "card",
+  islandSurface: "dark",
   greeting: "Hi! How can we help?",
   replyTime: "We usually reply in a few minutes",
   placeholder: "Write a message…",
@@ -48,6 +54,8 @@ export interface WidgetLook {
   suggestions: string[];
   /** Island launcher (D-39): the turning multi-colour border. On unless turned off. */
   neon: boolean;
+  /** Island launcher: near-black (`dark`, the default) or following `theme` (`page`). */
+  islandSurface: IslandSurface;
   /** Button launcher: the logo or "Chat with us". */
   buttonStyle: ButtonStyle;
 }
@@ -91,6 +99,7 @@ export function widgetLook(s: Record<string, unknown>, workspaceName: string, lo
       ? s.suggestions.filter((q): q is string => typeof q === "string" && q.trim() !== "").map((q) => clean(q).slice(0, SUGGESTION_LIMIT)).slice(0, SUGGESTIONS_MAX)
       : [],
     neon: s.neon !== false,
+    islandSurface: s.islandSurface === "page" ? "page" : APPEARANCE_DEFAULTS.islandSurface,
     buttonStyle: s.buttonStyle === "text" ? "text" : "logo",
   };
 }
@@ -123,6 +132,10 @@ export function applyAppearance(settings: Record<string, unknown>, body: Record<
   if (body.neon !== undefined) {
     if (typeof body.neon !== "boolean") throw new Error("Neon border must be on or off.");
     settings.neon = body.neon;
+  }
+  if (body.islandSurface !== undefined) {
+    if (body.islandSurface !== "dark" && body.islandSurface !== "page") throw new Error("Island surface must be dark or page.");
+    settings.islandSurface = body.islandSurface;
   }
   if (body.radius !== undefined) {
     if (typeof body.radius !== "number" || !Number.isInteger(body.radius) || body.radius < 0 || body.radius > RADIUS_MAX) {

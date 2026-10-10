@@ -1,19 +1,29 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Typewriter } from "./bar.tsx";
 
 // W-04 "island" launcher (D-39): one small control at the bottom centre of the page that changes
 // shape to fit each moment and always returns to a resting pill. Like the bar (bar.tsx) the frame
 // is transparent and always shown; it tells the loader its size and the part of it that's drawn
 // (`jun:css`), which the loader applies as the frame's inline style. Everything happens inside
-// the frame: the page itself is never touched. Styles: `widget.css` (`html.island`).
+// the frame: the page itself is never touched. Styles: `widget.css` (`html.island`; on the
+// near-black surface, the default, also `html.island-dark`).
+//
+// It is one object, never a box swapped for another: in the open, answer and panel states the
+// bottom row is the pill itself (the mark and the input, 54px like the resting pill) and the
+// content grows above it. There's no header bar: the visitor's question is the answer's title,
+// Minimize and End sit in the top-right corner on hover (IslandControls), and a short top row
+// carries what must stay visible (an intent's exit, who's talking, Earlier/Latest).
 
 const postToHost = (message: unknown) => window.parent !== window && window.parent.postMessage(message, "*");
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /**
- * rest: the pill. nudge: a one-line offer of help (P-01, V-07). open: the question box and the
- * suggested questions. thinking: one status line while the assistant works. answer: the latest
- * exchange with a follow-up box. panel: the whole conversation (a teammate's chat, or on request).
+ * rest: the pill (or, with a chat, a one-line summary of its last answer). nudge: a one-line offer
+ * of help (P-01, V-07). open: the suggested questions over the pill's row. thinking: one status
+ * line while the assistant works (before the first reply, and while a card's button is being
+ * handled). answer: the latest exchange, its question as the title, over the pill's row; it folds
+ * itself back to rest a few seconds after it's done (`autoFold`). panel: the whole conversation
+ * (a teammate's chat, or "Earlier").
  */
 export type IslandState = "rest" | "nudge" | "open" | "thinking" | "answer" | "panel";
 
@@ -47,13 +57,70 @@ function useIslandFrame(box: { w: number; h: number }, live: boolean): void {
   }, [box.w, box.h, live]);
 }
 
+/** How long a finished answer stays open, untouched, before the island folds itself. */
+export const AUTO_FOLD_MS = 8_000;
+
+/**
+ * Folds the island AUTO_FOLD_MS after `fold` becomes set (the caller sets it only once an answer
+ * is finished and nothing waits on the visitor), unless it's in use: the pointer over it, focus
+ * on something in it other than the empty question box (which keeps the focus after sending),
+ * text in the box, the "+" menu or a screenshot open. Any pointer, key, scroll or focus inside
+ * starts the wait again. Reduced motion still folds (the shapes just don't animate).
+ */
+function useAutoFold(box: RefObject<HTMLDivElement | null>, fold: (() => void) | null): void {
+  const latest = useRef(fold);
+  latest.current = fold;
+  const enabled = Boolean(fold);
+  useEffect(() => {
+    const el = box.current;
+    if (!enabled || !el) return;
+    let over = el.matches(":hover");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const inUse = () => {
+      if (over) return true;
+      const active = document.hasFocus() ? document.activeElement : null;
+      const field = el.querySelector<HTMLTextAreaElement>(".i-row textarea");
+      if (field?.value.trim()) return true;
+      if (el.querySelector(".composer-menu, .composer-shot, .composer-files")) return true;
+      return Boolean(active && active !== document.body && el.contains(active) && active !== field);
+    };
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => (inUse() ? arm() : latest.current?.()), AUTO_FOLD_MS);
+    };
+    const enter = () => {
+      over = true;
+    };
+    const leave = () => {
+      over = false;
+      arm();
+    };
+    el.addEventListener("pointerenter", enter);
+    el.addEventListener("pointerleave", leave);
+    const pokes = ["pointerdown", "keydown", "input", "focusin", "wheel"] as const;
+    for (const type of pokes) document.addEventListener(type, arm, true);
+    document.addEventListener("scroll", arm, true);
+    arm();
+    return () => {
+      clearTimeout(timer);
+      el.removeEventListener("pointerenter", enter);
+      el.removeEventListener("pointerleave", leave);
+      for (const type of pokes) document.removeEventListener(type, arm, true);
+      document.removeEventListener("scroll", arm, true);
+    };
+  }, [enabled, box]);
+}
+
 /**
  * The morphing container. New content is drawn off to the side at the state's width and measured;
- * the shell then springs to that exact size (measure, then move). A key per state swaps the content
- * with a short fade and un-blur.
+ * the shell then springs to that exact size (measure, then move). A key per state swaps the content,
+ * rising into place from the pill's row with a short fade and un-blur. `autoFold`: set while a
+ * finished answer may fold itself (see useAutoFold).
  */
-export function Island({ state, live, neon, onOpen, children }: { state: IslandState; live: boolean; neon: boolean; onOpen: () => void; children: ReactNode }) {
+export function Island({ state, live, neon, onOpen, autoFold = null, children }: { state: IslandState; live: boolean; neon: boolean; onOpen: () => void; autoFold?: (() => void) | null; children: ReactNode }) {
   const content = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  useAutoFold(boxRef, autoFold);
   // "/" opens the resting island from inside the frame too (after Escape the focus is still here;
   // the loader handles the key on the host page).
   useEffect(() => {
@@ -110,7 +177,7 @@ export function Island({ state, live, neon, onOpen, children }: { state: IslandS
   return (
     <div className="i-root">
       {/* The box carries the size and its spring; the neon ring and glow sit on it, outside the clipped shell. */}
-      <div className={`i-box i-s-${state}${live ? " i-live" : ""}`} style={{ width: w, height: h }}>
+      <div ref={boxRef} className={`i-box i-s-${state}${live ? " i-live" : ""}`} style={{ width: w, height: h }}>
         {neon && <div className="i-glow" aria-hidden="true" />}
         {neon && <div className="i-ring" aria-hidden="true" />}
         <div className="i-shell" role="region" aria-label="Chat">
@@ -131,12 +198,15 @@ export function Mark({ logoUrl, pulse = false }: { logoUrl: string | null; pulse
 /**
  * Resting: the mark, a hint that types out the suggested questions (or a new reply), and the "/" key;
  * an up arrow instead while a minimized chat is waiting to be opened again ("/" still opens it).
+ * Folded with a chat, `summary` (its last answer in a few words) stands in for the typewriter; an
+ * unread teammate reply still wins.
  */
-export function RestPill({ logoUrl, suggestions, placeholder, unread, chat = false, onOpen }: { logoUrl: string | null; suggestions: string[]; placeholder: string; unread: string | null; chat?: boolean; onOpen: () => void }) {
+export function RestPill({ logoUrl, suggestions, placeholder, unread, summary = null, chat = false, onOpen }: { logoUrl: string | null; suggestions: string[]; placeholder: string; unread: string | null; summary?: string | null; chat?: boolean; onOpen: () => void }) {
+  const line = unread ?? (chat ? summary : null);
   return (
-    <button type="button" className="i-rest" aria-label={unread ?? (chat ? "Open the chat" : "Ask this page anything")} onClick={onOpen}>
+    <button type="button" className="i-rest" aria-label={unread ?? (chat ? (summary ? `Open the chat: ${summary}` : "Open the chat") : "Ask this page anything")} onClick={onOpen}>
       <Mark logoUrl={logoUrl} pulse={Boolean(unread)} />
-      {unread ? <span className="i-rest-text">{unread}</span> : <Typewriter phrases={suggestions} fallback={placeholder} />}
+      {line ? <span className={`i-rest-text${unread ? "" : " i-rest-sum"}`}>{line}</span> : <Typewriter phrases={suggestions} fallback={placeholder} />}
       {chat ? <span className="i-up" aria-hidden="true">{chevron(CHEVRON_UP)}</span> : <kbd className="i-kbd" aria-hidden="true">/</kbd>}
     </button>
   );
@@ -167,7 +237,6 @@ export function StatusLine({ logoUrl, label }: { logoUrl: string | null; label: 
   );
 }
 
-/** The header of the answer and panel states: who's talking, the intent's exit, a view toggle and Close. */
 const chevron = (d: string) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d={d} />
@@ -177,31 +246,54 @@ export const CHEVRON_DOWN = "M6 9l6 6 6-6";
 export const CHEVRON_UP = "M6 15l6-6 6 6";
 
 /**
- * The open island's header. The down arrow folds it back to the pill and keeps the chat (the pill's
- * up arrow brings it back); × ends this chat: the next question starts a new one (the old one stays
- * in the visitor's list). An intent's chat ends through its exit button, so there × only folds it.
+ * The open island's corner: small, over the content (not a row of their own), shown on hover or
+ * when tabbed to (always, but quiet, on touch screens). The down arrow folds it back to the pill
+ * and keeps the chat (the pill's up arrow brings it back); × ends this chat: the next question
+ * starts a new one (the old one stays in the visitor's list). An intent's chat ends through its
+ * exit button (IslandTop), so there × only folds it.
  */
-export function IslandHead({ name, logoUrl, exit, toggle, onEnd, onMinimize }: {
-  name: string;
-  logoUrl: string | null;
-  /** AI-20: the intent's exit button (D-37: always on screen, one click). */
-  exit: { label: string; run: () => void } | null;
-  toggle: { label: string; run: () => void } | null;
+export function IslandControls({ onEnd, onMinimize }: {
   /** Ends this conversation (it stays in the visitor's list) and folds the island; null when × only folds it. */
   onEnd: (() => void) | null;
   onMinimize: () => void;
 }) {
   return (
-    <div className="i-head">
-      <Mark logoUrl={logoUrl} />
-      <span className="i-name">{name}</span>
-      {exit && <button type="button" className="i-exit" onClick={exit.run}>{exit.label}</button>}
-      <span className="i-spacer" />
-      {toggle && <button type="button" className="i-ghost" onClick={toggle.run}>{toggle.label}</button>}
+    <div className="i-ctl">
       <button type="button" className="i-ghost i-icon" aria-label="Minimize" title="Minimize" onClick={onMinimize}>
         {chevron(CHEVRON_DOWN)}
       </button>
       <button type="button" className="i-ghost i-x" aria-label={onEnd ? "End chat" : "Close"} title={onEnd ? "End chat (start a new one next time)" : "Close"} onClick={onEnd ?? onMinimize}>×</button>
+    </div>
+  );
+}
+
+/**
+ * The short row over the content, only when there's something for it: who's talking in a
+ * teammate's chat ("Sam · Acme"), the Earlier / Latest switch, and an intent's exit button
+ * (AI-20, D-37: always on screen, one click; never hover-only, never folded away by itself).
+ */
+export function IslandTop({ who, view, exit }: {
+  who: string | null;
+  view: { label: string; run: () => void } | null;
+  exit: { label: string; run: () => void } | null;
+}) {
+  if (!who && !view && !exit) return null;
+  return (
+    <div className="i-top">
+      {who && <span className="i-who">{who}</span>}
+      {view && <button type="button" className="i-pill-chip" onClick={view.run}>{view.label}</button>}
+      <span className="i-spacer" />
+      {exit && <button type="button" className="i-exit" onClick={exit.run}>{exit.label}</button>}
+    </div>
+  );
+}
+
+/** The pill's row at the bottom of the open shapes: the mark and the question box, 54px like the resting pill. */
+export function IslandRow({ logoUrl, pulse = false, children }: { logoUrl: string | null; pulse?: boolean; children: ReactNode }) {
+  return (
+    <div className="i-row">
+      <Mark logoUrl={logoUrl} pulse={pulse} />
+      {children}
     </div>
   );
 }

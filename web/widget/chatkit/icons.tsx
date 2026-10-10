@@ -70,6 +70,11 @@ const P: Record<string, string> = {
 };
 const FILLED = new Set(["check-circle-filled", "star-filled", "play"]);
 
+/** Whether a name draws an icon (unknown names draw nothing). */
+export function hasIcon(name: unknown): boolean {
+  return typeof name === "string" && Object.hasOwn(P, name);
+}
+
 const SIZES: Record<string, number> = { xs: 12, sm: 14, md: 16, lg: 18, xl: 20, "2xl": 24, "3xl": 32 };
 
 export function iconSize(size: unknown, fallback = 16): number {
