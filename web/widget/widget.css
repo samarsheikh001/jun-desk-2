@@ -268,7 +268,8 @@ html.bar body {
 /* Messages: the assistant's and the team's as plain text, the visitor's in a tinted bubble. */
 .b-log .messages { flex: none; overflow: visible; padding: 8px 16px 12px 32px; display: block; gap: 0; }
 .b-log .msg { display: flow-root; max-width: 100%; padding-bottom: 16px; }
-.b-log .msg:last-of-type { padding-bottom: 24px; }
+.b-log .msg:nth-last-child(1 of .msg) { padding-bottom: 24px; }
+.b-log .messages-jump button { border-color: rgba(255, 255, 255, 0.18); background: rgba(40, 40, 44, 0.85); color: rgb(250, 250, 250); }
 .b-log .msg .author, .b-log .seen, .b-log .msg .meta { display: none; }
 .b-log .bubble { padding: 0; border: 0; border-radius: 16px; background: transparent; color: rgb(250, 250, 250); font-size: 14px; line-height: 1.4; }
 .b-log .msg.ai .bubble { background: transparent; color: rgb(250, 250, 250); }

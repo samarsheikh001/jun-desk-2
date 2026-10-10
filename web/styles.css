@@ -268,6 +268,13 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .attachments { display: grid; gap: 4px; margin-top: 4px; justify-items: inherit; }
 .attachments img { max-width: 240px; max-height: 200px; border-radius: 10px; border: 1px solid var(--border); display: block; }
 .attachments .file { padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); text-decoration: none; font-size: 0.9rem; }
+/* useMessageScroll: the spacer that lets a new message sit near the top, and "Jump to latest",
+   pinned to the bottom of the scroll box (a 0-high sticky row) while the reader is scrolled away. */
+.messages-spacer { flex: none; }
+.messages-jump { position: sticky; bottom: 0; flex: none; height: 0; z-index: 2; pointer-events: none; }
+.messages-jump button { position: absolute; bottom: 12px; left: 50%; margin-left: -16px; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--text); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12); cursor: pointer; pointer-events: auto; opacity: 0; visibility: hidden; transform: translateY(6px) scale(0.9); transition: opacity 150ms, transform 150ms, visibility 0s 150ms; }
+.messages-jump button.on { opacity: 1; visibility: visible; transform: none; transition: opacity 150ms, transform 150ms; }
+@media (prefers-reduced-motion: reduce) { .messages-jump button { transition: none; } }
 .typing { display: flex; align-items: center; gap: 4px; padding: 12px 14px; }
 .typing { color: var(--muted); }
 .pixel-loader { display: grid; grid-template-columns: repeat(3, 4px); gap: 1.5px; flex-shrink: 0; }

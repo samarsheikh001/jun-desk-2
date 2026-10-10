@@ -7,6 +7,7 @@ import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
 import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { PixelLoader } from "./PixelLoader.tsx";
+import { useMessageScroll, type Follow } from "./useMessageScroll.ts";
 import { formatSize, formatTime, isImage, type PendingMessage } from "../lib/thread.ts";
 
 function Attachments({ attachments }: { attachments: Attachment[] }) {
@@ -129,11 +130,13 @@ export function MessageList({
   /** The widget: live tool steps per AI reply (`ai:<seq>`), drawn by `renderAi`. */
   aiSteps?: Record<string, AiStep[]>;
   /**
-   * `end` (default): keep the newest at the bottom in view. `start`: the island's answer view, which
-   * shows only the latest exchange; when it's taller than the island it stays at its start (the
-   * question, then the answer and its card), and the visitor scrolls down.
+   * `end` (default): keep the newest at the bottom in view while the reader is there. `anchor` (the
+   * widget): the same, and a new message of mine moves near the top with its reply streaming in
+   * below (useMessageScroll.ts). `start`: the island's answer view, which shows only the latest
+   * exchange; when it's taller than the island it stays at its start (the question, then the answer
+   * and its card), and the visitor scrolls down.
    */
-  follow?: "end" | "start";
+  follow?: Follow;
   /**
    * The island's answer view: the text shown for one of my saved messages (its title), e.g. a card
    * press with what it was about; null (or no function, the default) shows the stored body.
@@ -141,6 +144,9 @@ export function MessageList({
   ownText?: (m: Message) => string | null;
 }) {
   const list = useRef<HTMLDivElement>(null);
+  const spacer = useRef<HTMLDivElement>(null);
+  // `end` and `anchor`: follow at the bottom, a jump button when scrolled away (useMessageScroll.ts).
+  const { jump, toLatest } = useMessageScroll(list, spacer, follow, messages[0]?.clientMsgId ?? pending[0]?.clientMsgId);
   // Scroll the list's own box, never scrollIntoView: in the widget that also scrolls the host page
   // (the whole site jumps on a phone).
   const scroller = () => {
@@ -148,23 +154,6 @@ export function MessageList({
     while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) box = box.parentElement;
     return box;
   };
-  useEffect(() => {
-    const box = scroller();
-    if (box && follow === "end") box.scrollTop = box.scrollHeight;
-  }, [messages.length, pending.length, typing, aiStream?.text, aiThinking, follow]);
-  // A custom AI renderer reveals text on its own clock: keep following it while the reader is at the bottom.
-  const customAi = Boolean(renderAi);
-  useEffect(() => {
-    const el = list.current;
-    if (!customAi || follow !== "end" || !el || typeof ResizeObserver === "undefined") return;
-    const box = scroller();
-    if (!box) return;
-    const observer = new ResizeObserver(() => {
-      if (box.scrollHeight - box.scrollTop - box.clientHeight < 160) box.scrollTop = box.scrollHeight;
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [customAi, follow]);
   // `start`: a new exchange (the visitor asked again) begins at its top.
   const firstKey = pending[0]?.clientMsgId ?? messages[0]?.id;
   useEffect(() => {
@@ -173,6 +162,8 @@ export function MessageList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstKey, follow]);
 
+  /** The widget: my messages are where the view anchors when I send one. */
+  const anchors = follow === "anchor";
   // "Seen" goes under the last of my messages the other side has read.
   const lastSeenSeq = [...messages].reverse().find((m) => mine(m) && m.authorType !== "system" && !m.internal && m.seq <= otherReadSeq)?.seq;
   const aiSide = mine({ authorType: "ai" } as Message) ? "own" : "other";
@@ -212,7 +203,7 @@ export function MessageList({
       );
     }
     return (
-      <div key={m.clientMsgId} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""} ${m.internal ? "note" : ""}`}>
+      <div key={m.clientMsgId} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""} ${m.internal ? "note" : ""}`} data-anchor={anchors && own ? m.clientMsgId : undefined}>
         {showAuthor && <div className="author muted small">{m.internal && <span className="tag note-tag">Note</span>}{authorLabel(m)} · {formatTime(m.createdAt)}</div>}
         {m.authorType === "ai" && actionsFor(m.clientMsgId)}
         {m.authorType === "ai" && m.meta.widgets?.map((w) => (
@@ -243,7 +234,7 @@ export function MessageList({
     // Same header rule as a saved message, so it doesn't move when the server confirms it.
     const header = pendingAuthor && i === 0 && (!lastMessage || lastMessage.internal || lastMessage.authorType === "system" || lastMessage.authorType === "ai" || !mine(lastMessage));
     rows.push(
-      <div key={p.clientMsgId} className={`msg own pending ${p.internal ? "note" : ""}`}>
+      <div key={p.clientMsgId} className={`msg own pending ${p.internal ? "note" : ""}`} data-anchor={anchors ? p.clientMsgId : undefined}>
         {header && <div className="author muted small">{pendingAuthor} · {formatTime(Date.now())}</div>}
         {p.body && <div className="bubble">{p.body}</div>}
         <Attachments attachments={p.attachments} />
@@ -292,13 +283,23 @@ export function MessageList({
   }
 
   return (
-    <div className="messages" ref={list}>
+    <div className="messages" ref={list} aria-busy={Boolean(aiStream?.text) || Boolean(aiThinking)}>
       {rows}
       {typing && (
         <div className="msg other">
           <div className="bubble typing" aria-label={`${typing.name ?? "Someone"} is typing`}>
             <PixelLoader />
           </div>
+        </div>
+      )}
+      <div ref={spacer} className="messages-spacer" aria-hidden="true" hidden />
+      {follow !== "start" && (
+        <div className="messages-jump">
+          <button type="button" className={jump ? "on" : ""} aria-label="Jump to latest" title="Jump to latest" tabIndex={jump ? 0 : -1} aria-hidden={!jump} onClick={toLatest}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 5v14M19 12l-7 7-7-7" />
+            </svg>
+          </button>
         </div>
       )}
     </div>
