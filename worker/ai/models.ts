@@ -19,7 +19,7 @@ export const DEFAULT_MODELS: Record<ProviderId, string> = {
  * `topics`: topic labels; `judge`: eval grading; `suggestions`: the widget's suggested
  * questions drafted from the knowledge base (W-15).
  */
-export const AI_JOBS = ["answer", "brief", "nudge", "draft", "topics", "judge", "suggestions"] as const;
+export const AI_JOBS = ["answer", "brief", "nudge", "draft", "topics", "judge", "suggestions", "followups"] as const;
 export type AiJob = (typeof AI_JOBS)[number];
 export type JobModels = Partial<Record<AiJob, string>>;
 

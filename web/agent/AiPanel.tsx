@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch.tsx";
 import { SettingRow, SettingsCard } from "../settings/layout.tsx";
 
 type ProviderId = "openai" | "workers-ai" | "chatgpt";
-type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge" | "suggestions";
+type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge" | "suggestions" | "followups";
 
 interface AiState {
   settings: { enabled: boolean; provider: ProviderId; model: string | null; models: Partial<Record<AiJob, string>>; instructions: string; monthlyReplyCap: number };
@@ -30,6 +30,7 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
 const JOBS: { job: AiJob; label: string; hint: string }[] = [
   { job: "answer", label: "Replies to visitors", hint: "Also the replies evals test." },
   { job: "brief", label: "Handoff briefs", hint: "Fast job: a short summary for your team." },
+  { job: "followups", label: "Follow-up questions", hint: "Fast job: questions under an answer from your knowledge." },
   { job: "nudge", label: "Nudges and openers", hint: "Fast job: one line when a visitor gets stuck." },
   { job: "draft", label: "Issue drafts", hint: "Bug reports written from a conversation." },
   { job: "topics", label: "Topic labels", hint: "Fast job: labels for the Dashboard." },
@@ -38,7 +39,7 @@ const JOBS: { job: AiJob; label: string; hint: string }[] = [
 ];
 // "Suggested for ChatGPT": the small model for fast jobs, the workspace model for the rest.
 const CHATGPT_FAST_MODEL = "gpt-6-luna";
-const FAST_JOBS: AiJob[] = ["nudge", "topics", "brief"];
+const FAST_JOBS: AiJob[] = ["nudge", "topics", "brief", "followups"];
 
 export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const base = `/workspaces/${workspaceId}/ai`;

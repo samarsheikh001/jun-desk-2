@@ -1,7 +1,7 @@
 import { isStepCount, jsonSchema, streamText, tool, type ToolSet } from "ai";
 import { actionInputSchema, DONE_TOOL, matchesPage, type PageAction } from "../../shared/actions.ts";
 import type { AiStep, Message } from "../../shared/protocol.ts";
-import { FLAG_TOOL, FOLLOWUPS_TOOL, HANDOFF_TOOL, INLINE_SKILLS_MAX_CHARS, MAX_FOLLOWUPS, replyOutcome, searchQuery, systemPrompt, toChatMessages, type ReplyDecisions, type ReplyOutcome } from "./agent.ts";
+import { FLAG_TOOL, HANDOFF_TOOL, INLINE_SKILLS_MAX_CHARS, replyOutcome, searchQuery, systemPrompt, toChatMessages, type ReplyDecisions, type ReplyOutcome } from "./agent.ts";
 import { intentSkill, type AgentConfig, type ToolUser } from "./config.ts";
 import type { AgentModel } from "./providers.ts";
 import { ReplyText } from "./reply-text.ts";
@@ -139,11 +139,17 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   }
 
   // The model's decisions about the conversation (see HANDOFF_TOOL in agent.ts), read from its
-  // tool calls, never searched for in the text. Handoff and follow-ups have no execute: calling one
-  // ends the turn. Flagging runs, so the model can flag first and then explain in the next step:
-  // some models (Workers AI's Mistral) don't write text and call a tool in the same response.
-  const decisions: ReplyDecisions = { handoff: null, flag: null, followUps: null };
-  tools[HANDOFF_TOOL] = tool({ description: "Hand this chat to a person on the team. The customer is told a teammate will reply.", inputSchema: oneString("reason", "Why, in a few words, for the team.") });
+  // tool calls, never searched for in the text. Handoff has no execute: calling it ends the turn.
+  // Flagging runs, so the model can flag first and then explain in the next step: some models
+  // (Workers AI's Mistral) don't write text and call a tool in the same response.
+  const decisions: ReplyDecisions = { handoff: null, flag: null };
+  tools[HANDOFF_TOOL] = tool({
+    // The when-to is here as well as in the prompt: Mistral otherwise wrote "a member of our team will
+    // help" without calling it, and the chat stayed with the AI.
+    description:
+      "Hand this chat to a person on the team. Call it when the customer asks for a person, or needs something only staff can do (refunds, account, email or billing changes, cancellations, data deletion) that no other tool or page action covers, or when you can't help. Don't tell them a teammate will help without calling it: calling it is what brings one in, and the customer is told.",
+    inputSchema: oneString("reason", "Why, in a few words, for the team."),
+  });
   if (input.technical?.length) {
     tools[FLAG_TOOL] = tool({
       description: "Flag a problem seen in the customer's browser (an error or failed request) to the engineers. Call it first, then tell the customer what failed.",
@@ -153,12 +159,6 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
         onAction({ tool: FLAG_TOOL, input: { summary: decisions.flag }, output: "flagged", status: "ok", httpStatus: null, durationMs: 0 });
         return "Flagged for the engineers. Now tell the customer plainly what failed and when, and that the team has it. Don't repeat anything you already said.";
       },
-    });
-  }
-  if (hits.length) {
-    tools[FOLLOWUPS_TOOL] = tool({
-      description: `Offer up to ${MAX_FOLLOWUPS} short questions the customer might ask next, shown as buttons under your answer.`,
-      inputSchema: jsonSchema<{ questions: string[] }>({ type: "object", properties: { questions: { type: "array", items: { type: "string" } } }, required: ["questions"], additionalProperties: false }),
     });
   }
 
@@ -217,9 +217,6 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     } else if (part.type === "tool-call" && part.toolName === HANDOFF_TOOL) {
       const reason = callArgs(part.input).reason;
       decisions.handoff = typeof reason === "string" ? reason : "";
-    } else if (part.type === "tool-call" && part.toolName === FOLLOWUPS_TOOL) {
-      const questions = callArgs(part.input).questions;
-      decisions.followUps = Array.isArray(questions) ? questions : [];
     } else if (part.type === "text-delta") {
       // Every word is the reply's: the model's decisions come as tool calls, so nothing is held back.
       raw = reply.delta(part.id, part.text);
@@ -244,14 +241,12 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   }
   let outcome = replyOutcome(raw, decisions);
   // Ending the chain with nothing to say is fine (the steps show what was done), not a handoff.
-  if (done !== null && !raw.trim()) outcome = { kind: "answer", text: "", escalate: null, followUps: [] };
+  if (done !== null && !raw.trim()) outcome = { kind: "answer", text: "", escalate: null };
   if (pageAction) {
     // A reply that only calls the action has no text; that's an answer (the action card), not a handoff.
     if (outcome.kind === "handoff") {
       if (decisions.handoff !== null) pageAction = null; // handing off wins over the call
-      else outcome = { kind: "answer", text: "", escalate: null, followUps: [] };
-    } else {
-      outcome = { ...outcome, followUps: [] }; // the card is the follow-up
+      else outcome = { kind: "answer", text: "", escalate: null };
     }
   }
   return {

@@ -16,7 +16,9 @@ import {
 import { asksForHuman, briefPrompt, HANDOFF_MESSAGES, resolveCitations, streamCitations } from "./ai/agent.ts";
 import type { ToolUser } from "./ai/config.ts";
 import { loadAgentConfig } from "./ai/config-store.ts";
+import { followUpsInput, followUpsPrompt, parseFollowUpLines } from "./ai/followups.ts";
 import { AiUnavailableError, completeText, createModel, loadAiSettings, type AgentModel, type AiSettings } from "./ai/providers.ts";
+import type { SearchHit } from "./ai/query.ts";
 import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
 import type { ToolAction } from "./ai/tools.ts";
@@ -671,7 +673,6 @@ export class Conversation extends DurableObject<Env> {
         clientMsgId: turnId, // one answer per visitor message (or per action follow-up), even if this turn is retried
         meta: {
           ...(sources.length ? { sources } : {}),
-          ...(outcome.followUps.length ? { followUps: outcome.followUps } : {}),
           ...(config.version !== null ? { configVersion: config.version } : {}),
           ...(action ? { action } : {}),
         },
@@ -685,6 +686,8 @@ export class Conversation extends DurableObject<Env> {
         await this.#handoff(ref, `Bug flagged by the AI: ${outcome.escalate}`, HANDOFF_MESSAGES.escalated, settings, [...history, answer], technical.lines);
         return false;
       }
+      // Questions the customer might ask next, under an answer from the knowledge (not under a card).
+      if (sources.length && text && !action) await this.#addFollowUps(ref, settings, visitor.body, answer, hits);
       return true;
     } catch (error) {
       console.error("AI turn failed:", error);
@@ -695,6 +698,30 @@ export class Conversation extends DurableObject<Env> {
       this.#streaming = undefined;
       this.#steps = undefined;
       this.#broadcast({ type: "ai_status", state: "idle" });
+    }
+  }
+
+  /**
+   * Follow-up questions under an answer that used the knowledge: a separate small job after the
+   * answer is saved (worker/ai/followups.ts), added to the message in place. Best effort.
+   */
+  async #addFollowUps(ref: ConversationRef, settings: AiSettings, question: string, answer: Message, hits: SearchHit[]): Promise<void> {
+    try {
+      const model = createModel(this.env, ref.workspaceId, settings, "followups");
+      const { text } = await completeText({
+        model: model.model,
+        ...model.prompt(followUpsPrompt()),
+        messages: [{ role: "user", content: followUpsInput(question, answer.body, hits) }],
+        maxOutputTokens: 1000,
+        abortSignal: AbortSignal.timeout(15_000),
+      });
+      const followUps = parseFollowUpLines(text);
+      if (!followUps.length) return;
+      const meta: MessageMeta = { ...answer.meta, followUps };
+      await this.env.DB.prepare("UPDATE messages SET meta = ? WHERE id = ?").bind(JSON.stringify(meta), answer.id).run();
+      this.#broadcast({ type: "message", message: { ...answer, meta } });
+    } catch (error) {
+      console.error("follow-up questions failed:", error);
     }
   }
 

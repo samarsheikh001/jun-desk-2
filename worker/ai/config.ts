@@ -1,10 +1,10 @@
 import { parse as parseYaml } from "yaml";
 import { INTENT_NAME, MAX_INTENT_EXIT, MAX_INTENT_OPENING, MAX_INTENT_REPLIES, MAX_INTENT_REPLY, type IntentSpec } from "../../shared/intents.ts";
 import { DONE_TOOL } from "../../shared/actions.ts";
-import { FLAG_TOOL, FOLLOWUPS_TOOL, HANDOFF_TOOL } from "./agent.ts";
+import { FLAG_TOOL, HANDOFF_TOOL } from "./agent.ts";
 
 /** The agent's own tools: a tools/<name>.yaml can't take their names. */
-const BUILT_IN_TOOLS = new Set([HANDOFF_TOOL, FLAG_TOOL, FOLLOWUPS_TOOL, DONE_TOOL, "activate_skill"]);
+const BUILT_IN_TOOLS = new Set([HANDOFF_TOOL, FLAG_TOOL, DONE_TOOL, "activate_skill"]);
 
 // Support agent as code (AI-18). A config is a set of text files, the same in git and in the desk:
 //   AGENTS.md                 persona, tone, rules; optional frontmatter guardrails

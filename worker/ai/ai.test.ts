@@ -98,9 +98,6 @@ test("system prompt numbers sources and keeps the handoff rule", () => {
   const prompt = systemPrompt({ workspaceName: "Acme", persona: "Be brief.", hits: [hit("Refunds", "https://acme.dev/refunds")] });
   assert.match(prompt, /\[1\] Refunds \(https:\/\/acme\.dev\/refunds\)/);
   assert.match(prompt, /Call the handoff tool/);
-  // Follow-up questions are offered only when there are sources to ask about.
-  assert.match(prompt, /suggest_followups/);
-  assert.doesNotMatch(systemPrompt({ workspaceName: "Acme", persona: "", hits: [] }), /suggest_followups/);
   assert.match(prompt, /Be brief\./);
 });
 
@@ -111,19 +108,18 @@ test("FTS query quotes terms and drops stopwords", () => {
 
 test("replyOutcome: the reply's words plus what it decided with tools", async () => {
   const { replyOutcome } = await import("./agent.ts");
-  const none = { handoff: null, flag: null, followUps: null };
-  assert.deepEqual(replyOutcome("Refunds take 14 days [1].", none), { kind: "answer", text: "Refunds take 14 days [1].", escalate: null, followUps: [] });
+  const none = { handoff: null, flag: null };
+  assert.deepEqual(replyOutcome("Refunds take 14 days [1].", none), { kind: "answer", text: "Refunds take 14 days [1].", escalate: null });
   // A handoff wins over everything, and keeps what was said before it.
-  assert.deepEqual(replyOutcome("I can't change billing myself.", { ...none, handoff: "needs a refund", followUps: ["Why?"] }), { kind: "handoff", reason: "needs a refund", text: "I can't change billing myself." });
+  assert.deepEqual(replyOutcome("I can't change billing myself.", { ...none, handoff: "needs a refund" }), { kind: "handoff", reason: "needs a refund", text: "I can't change billing myself." });
   assert.deepEqual(replyOutcome("", { ...none, handoff: "  " }), { kind: "handoff", reason: "The AI handed the chat to the team.", text: "" });
   // No words and no decision: the team takes it.
   assert.deepEqual(replyOutcome("  ", none), { kind: "handoff", reason: "The AI couldn't answer from the knowledge base.", text: "" });
-  // A flagged problem: the answer stands, follow-ups go.
-  assert.deepEqual(replyOutcome("Your payment request failed with a 500 at 14:02. I've flagged it.", { ...none, flag: "POST /api/billing returns 500", followUps: ["Why did it fail?"] }), {
+  // A flagged problem: the answer stands, and carries the summary for engineers.
+  assert.deepEqual(replyOutcome("Your payment request failed with a 500 at 14:02. I've flagged it.", { ...none, flag: "POST /api/billing returns 500" }), {
     kind: "answer",
     text: "Your payment request failed with a 500 at 14:02. I've flagged it.",
     escalate: "POST /api/billing returns 500",
-    followUps: [],
   });
   // Flagged with nothing said to the customer: hand it over with the flag as the reason.
   assert.deepEqual(replyOutcome("", { ...none, flag: "POST /api/billing returns 500" }), { kind: "handoff", reason: "Bug flagged by the AI: POST /api/billing returns 500", text: "" });
@@ -131,19 +127,19 @@ test("replyOutcome: the reply's words plus what it decided with tools", async ()
   assert.equal(replyOutcome("HANDOFF: you need staff.", none).kind, "answer");
 });
 
-test("follow-up questions are cleaned: unnumbered, unquoted, uncited, deduped, capped", async () => {
-  const { replyOutcome, cleanFollowUps } = await import("./agent.ts");
-  assert.deepEqual(cleanFollowUps(["How do I request one?", '2. "Can I get credit instead?"', "how do i request one?", "Is it free [1]?", "ok", 7, "Fourth one?"]), [
+test("follow-up questions: the job's input, and its lines cleaned (unnumbered, unquoted, uncited, deduped, capped)", async () => {
+  const { followUpsInput, parseFollowUpLines } = await import("./followups.ts");
+  assert.deepEqual(parseFollowUpLines('How do I request one?\n2. "Can I get credit instead?"\nhow do i request one?\n\nIs it free [1]?\nok\nFourth one?'), [
     "How do I request one?",
     "Can I get credit instead?",
     "Is it free?",
   ]);
-  assert.deepEqual(replyOutcome("Refunds take 14 days [1].", { handoff: null, flag: null, followUps: ["How do I request one?"] }), {
-    kind: "answer",
-    text: "Refunds take 14 days [1].",
-    escalate: null,
-    followUps: ["How do I request one?"],
-  });
+  assert.deepEqual(parseFollowUpLines(""), []);
+  const input = followUpsInput("How long do refunds take?", "Refunds take 14 days [1].", [hit("Refunds", "https://acme.dev/refunds"), hit("Billing"), hit("Plans"), hit("Extra")]);
+  assert.match(input, /Customer's question:\nHow long do refunds take\?/);
+  assert.match(input, /Answer they got:\nRefunds take 14 days \[1\]\./);
+  assert.match(input, /\[3\] Plans/);
+  assert.doesNotMatch(input, /Extra/, "at most three sources");
 });
 
 test("citations in full-width brackets (some models) are understood", () => {
