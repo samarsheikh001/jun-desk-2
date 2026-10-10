@@ -49,6 +49,8 @@ export interface WidgetLook {
   position: "left" | "right";
   replyTime: string;
   logoUrl: string | null;
+  /** W-21: an optional second logo for dark surfaces (the dark island, the dark theme, the bar's glass). */
+  logoDarkUrl: string | null;
   theme: WidgetTheme;
   radius: number;
   launcher: LauncherStyle;
@@ -85,7 +87,7 @@ export function radiusVars(radius: number): Record<"--r-md" | "--r-sm", string> 
  * The look for stored (or draft) settings. Lenient: anything unreadable falls back to its
  * default, so a hand-edited row or a half-typed colour never breaks a visitor's chat.
  */
-export function widgetLook(s: Record<string, unknown>, workspaceName: string, logoUrl: string | null): WidgetLook {
+export function widgetLook(s: Record<string, unknown>, workspaceName: string, logoUrl: string | null, logoDarkUrl: string | null = null): WidgetLook {
   const text = (v: unknown, fallback: string) => (typeof v === "string" && v.trim() ? v : fallback);
   const radius = Number(s.radius);
   return {
@@ -95,6 +97,7 @@ export function widgetLook(s: Record<string, unknown>, workspaceName: string, lo
     position: s.position === "left" ? "left" : "right",
     replyTime: text(s.replyTime, APPEARANCE_DEFAULTS.replyTime),
     logoUrl,
+    logoDarkUrl,
     theme: THEMES.includes(s.theme as WidgetTheme) ? (s.theme as WidgetTheme) : APPEARANCE_DEFAULTS.theme,
     radius: s.radius !== undefined && Number.isInteger(radius) && radius >= 0 && radius <= RADIUS_MAX ? radius : APPEARANCE_DEFAULTS.radius,
     launcher: LAUNCHERS.includes(s.launcher as LauncherStyle) ? (s.launcher as LauncherStyle) : APPEARANCE_DEFAULTS.launcher,
@@ -107,6 +110,14 @@ export function widgetLook(s: Record<string, unknown>, workspaceName: string, lo
     buttonStyle: s.buttonStyle === "text" ? "text" : "logo",
     sound: s.sound !== false,
   };
+}
+
+/**
+ * W-21: the logo to draw on a surface: on a dark one the dark-background logo if there is one,
+ * else the main logo (null: the caller shows the Jun mark).
+ */
+export function logoFor(look: Pick<WidgetLook, "logoUrl" | "logoDarkUrl">, dark: boolean): string | null {
+  return (dark && look.logoDarkUrl) || look.logoUrl;
 }
 
 /**

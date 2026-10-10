@@ -89,8 +89,10 @@ widget.get("/widget/:key/config", async (c) => {
   const now = Date.now();
   const open = isOpen(hours, now);
   const next = open ? null : nextOpening(hours, now);
-  const logoUrl = typeof s.logoKey === "string" ? `/api/widget/${encodeURIComponent(c.req.param("key"))}/logo?v=${s.logoKey}` : null;
-  const look = widgetLook(s, inbox.workspaceName, logoUrl);
+  const base = `/api/widget/${encodeURIComponent(c.req.param("key"))}`;
+  const logoUrl = typeof s.logoKey === "string" ? `${base}/logo?v=${s.logoKey}` : null;
+  const logoDarkUrl = typeof s.logoDarkKey === "string" ? `${base}/logo-dark?v=${s.logoDarkKey}` : null;
+  const look = widgetLook(s, inbox.workspaceName, logoUrl, logoDarkUrl);
   // The loader's data-color attribute overrides the colour on that site; it sends it as ?color=.
   const override = c.req.query("color");
   return c.json(
@@ -115,23 +117,26 @@ widget.get("/widget/:key/config", async (c) => {
   );
 });
 
-// W-04: the workspace logo shown in the widget header.
-widget.get("/widget/:key/logo", async (c) => {
-  const inbox = await widgetInbox(c);
-  if (typeof inbox.settings.logoKey !== "string") throw new HttpError(404, "not_found", "No logo.");
-  const object = await c.env.FILES.get(inbox.settings.logoKey);
-  if (!object) throw new HttpError(404, "not_found", "No logo.");
-  return new Response(object.body, {
-    headers: {
-      "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
-      // The URL changes (?v=) whenever the logo does.
-      "Cache-Control": "public, max-age=86400",
-      "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": "default-src 'none'",
-      "Access-Control-Allow-Origin": "*",
-    },
+// W-04: the workspace logo shown in the widget header; W-21: the one for dark surfaces.
+for (const [path, setting] of [["logo", "logoKey"], ["logo-dark", "logoDarkKey"]] as const) {
+  widget.get(`/widget/:key/${path}`, async (c) => {
+    const inbox = await widgetInbox(c);
+    const key = inbox.settings[setting];
+    if (typeof key !== "string") throw new HttpError(404, "not_found", "No logo.");
+    const object = await c.env.FILES.get(key);
+    if (!object) throw new HttpError(404, "not_found", "No logo.");
+    return new Response(object.body, {
+      headers: {
+        "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
+        // The URL changes (?v=) whenever the logo does.
+        "Cache-Control": "public, max-age=86400",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
   });
-});
+}
 
 // S-11 / P-01: the loader saw something break and asks what to offer. The AI phrases it from
 // the masked failure ("Looks like the usage chart didn't load. Want a hand?"); the generic line

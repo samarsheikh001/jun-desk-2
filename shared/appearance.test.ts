@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { APPEARANCE_DEFAULTS, applyAppearance, radiusVars, textOn, widgetLook } from "./appearance.ts";
+import { APPEARANCE_DEFAULTS, applyAppearance, logoFor, radiusVars, textOn, widgetLook } from "./appearance.ts";
 
 test("appearance: an untouched desk gets the original look", () => {
   assert.deepEqual(widgetLook({}, "Acme", null), {
@@ -10,6 +10,7 @@ test("appearance: an untouched desk gets the original look", () => {
     position: "right",
     replyTime: "We usually reply in a few minutes",
     logoUrl: null,
+    logoDarkUrl: null,
     theme: "auto",
     radius: 16,
     launcher: "card",
@@ -96,4 +97,20 @@ test("appearance: the island is dark unless set to follow the page; only dark an
     assert.throws(() => applyAppearance(settings, { islandSurface }), /Island surface must be dark or page\./);
   }
   assert.equal(settings.islandSurface, "dark");
+});
+
+test("appearance: the dark-background logo (W-21) is used only on dark surfaces, else the main logo", () => {
+  const both = widgetLook({}, "Acme", "/logo", "/logo-dark");
+  assert.equal(both.logoDarkUrl, "/logo-dark");
+  assert.equal(logoFor(both, true), "/logo-dark");
+  assert.equal(logoFor(both, false), "/logo");
+  // No dark logo: the main one everywhere.
+  const main = widgetLook({}, "Acme", "/logo");
+  assert.equal(main.logoDarkUrl, null);
+  assert.equal(logoFor(main, true), "/logo");
+  // Only a dark logo: on dark surfaces only (light ones show the Jun mark).
+  const dark = widgetLook({}, "Acme", null, "/logo-dark");
+  assert.equal(logoFor(dark, true), "/logo-dark");
+  assert.equal(logoFor(dark, false), null);
+  assert.equal(logoFor(widgetLook({}, "Acme", null), true), null);
 });

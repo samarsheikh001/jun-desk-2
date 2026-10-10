@@ -1069,6 +1069,8 @@ form.kb-test-form { display: flex; gap: 8px; margin: 0; }
 .appear-logo { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .appear-logo img, .appear-logo-empty { width: 40px; height: 40px; flex: none; border-radius: calc(var(--radius) * 0.8); border: 1px solid var(--border); object-fit: cover; background: var(--muted); }
 .appear-logo input[type="file"] { flex: 1; min-width: 160px; }
+/* W-21: the dark-background logo is shown on the island's near-black. */
+.appear-logo.dark img, .appear-logo.dark .appear-logo-empty { background: #0c0c0d; border-color: transparent; }
 .appear-color { display: flex; align-items: center; gap: 10px; }
 .appear-color input[type="color"] { width: 44px; height: 36px; padding: 2px; border: 1px solid var(--input); border-radius: calc(var(--radius) * 0.8); background: var(--background); cursor: pointer; }
 .appear-color [data-slot="input"] { max-width: 120px; font-family: var(--font-mono), monospace; }

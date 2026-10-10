@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { APPEARANCE_DEFAULTS, BUTTON_TEXT, RADIUS_MAX, SUGGESTION_LIMIT, SUGGESTIONS_MAX, TEXT_LIMITS, textOn, widgetLook, type ButtonStyle, type IslandSurface, type LauncherStyle, type WidgetTheme } from "../../shared/appearance.ts";
+import { APPEARANCE_DEFAULTS, BUTTON_TEXT, RADIUS_MAX, SUGGESTION_LIMIT, SUGGESTIONS_MAX, TEXT_LIMITS, logoFor, textOn, widgetLook, type ButtonStyle, type IslandSurface, type LauncherStyle, type WidgetTheme } from "../../shared/appearance.ts";
 import { api, ApiError } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { PageTabs } from "../components/PageTabs.tsx";
@@ -61,6 +61,7 @@ interface Draft {
   sound?: boolean;
   csat?: boolean;
   logoKey?: string;
+  logoDarkKey?: string;
 }
 
 const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggestions", "color", "position", "theme", "radius", "launcher", "buttonStyle", "neon", "islandSurface", "sound", "csat"] as const;
@@ -90,7 +91,8 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
   };
   const dirty = !same(draft, saved);
   const logoUrl = widgetKey && saved.logoKey ? `/api/widget/${widgetKey}/logo?v=${saved.logoKey}` : null;
-  const look = useMemo(() => widgetLook(draft as Record<string, unknown>, workspaceName, logoUrl), [draft, workspaceName, logoUrl]);
+  const logoDarkUrl = widgetKey && saved.logoDarkKey ? `/api/widget/${widgetKey}/logo-dark?v=${saved.logoDarkKey}` : null;
+  const look = useMemo(() => widgetLook(draft as Record<string, unknown>, workspaceName, logoUrl, logoDarkUrl), [draft, workspaceName, logoUrl, logoDarkUrl]);
 
   const save = () =>
     run(async () => {
@@ -112,9 +114,10 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
       setStatus("Saved. Visitors see it within a minute; no need to change the snippet.");
     });
 
-  const uploadLogo = (file: File) =>
+  // W-21: `logo-dark` is the same control for the logo used on dark surfaces.
+  const uploadLogo = (file: File, dark = false) =>
     run(async () => {
-      const response = await fetch(`/api/workspaces/${workspaceId}/inbox/logo`, {
+      const response = await fetch(`/api/workspaces/${workspaceId}/inbox/${dark ? "logo-dark" : "logo"}`, {
         method: "POST",
         headers: { "Content-Type": file.type || "application/octet-stream", "X-Jun-Upload": "1" },
         body: file,
@@ -122,12 +125,12 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
       });
       const json = (await response.json().catch(() => ({}))) as { settings?: Draft; error?: { code: string; message: string } };
       if (!response.ok) throw new ApiError(json.error?.code ?? "http_error", json.error?.message ?? "Upload failed.");
-      setSaved((s) => ({ ...s, logoKey: json.settings!.logoKey }));
+      setSaved((s) => ({ ...s, logoKey: json.settings!.logoKey, logoDarkKey: json.settings!.logoDarkKey }));
     });
-  const removeLogo = () =>
+  const removeLogo = (dark = false) =>
     run(async () => {
-      const r = await api<{ settings: Draft }>(`/workspaces/${workspaceId}/inbox/logo`, { method: "DELETE" });
-      setSaved((s) => ({ ...s, logoKey: r.settings.logoKey }));
+      const r = await api<{ settings: Draft }>(`/workspaces/${workspaceId}/inbox/${dark ? "logo-dark" : "logo"}`, { method: "DELETE" });
+      setSaved((s) => ({ ...s, logoKey: r.settings.logoKey, logoDarkKey: r.settings.logoDarkKey }));
     });
 
   // W-15: the AI drafts questions from the knowledge base into the draft; nothing is saved until Save.
@@ -163,7 +166,14 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
               <div className="appear-logo">
                 {logoUrl ? <img src={logoUrl} alt="Current logo" /> : <span className="appear-logo-empty" aria-hidden="true" />}
                 {canEdit && <Input id="appear-logo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLogo(f); e.target.value = ""; }} />}
-                {canEdit && logoUrl && <Button variant="outline" size="sm" disabled={busy} onClick={removeLogo}>Remove</Button>}
+                {canEdit && logoUrl && <Button variant="outline" size="sm" disabled={busy} onClick={() => removeLogo()}>Remove</Button>}
+              </div>
+            </Field>
+            <Field label="Logo on dark backgrounds" hint="Optional. Used on the dark island and dark theme. Leave empty to use the logo above." htmlFor="appear-logo-dark">
+              <div className="appear-logo dark">
+                {logoDarkUrl ? <img src={logoDarkUrl} alt="Current logo on dark backgrounds" /> : <span className="appear-logo-empty" aria-hidden="true" />}
+                {canEdit && <Input id="appear-logo-dark" type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLogo(f, true); e.target.value = ""; }} />}
+                {canEdit && logoDarkUrl && <Button variant="outline" size="sm" disabled={busy} onClick={() => removeLogo(true)}>Remove</Button>}
               </div>
             </Field>
             <Field label="Theme" hint="Auto follows each visitor's light or dark system setting." htmlFor="appear-theme">
@@ -348,6 +358,8 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
     if (frame.current && (changed || (button && !open))) frame.current.style.cssText = "";
   }, [look.launcher, open, button]);
   const brand = { "--c": look.color, "--t": textOn(look.color), "--r": `${look.radius}px` } as CSSProperties;
+  // As the loader: on a dark button colour, the logo for dark backgrounds (W-21).
+  const buttonLogo = logoFor(look, textOn(look.color) === "#ffffff");
   return (
     <div className="appear-preview" aria-label="Preview">
       <div className={`appear-stage ${look.position} ${look.theme} ${look.launcher}`} style={brand}>
@@ -363,8 +375,8 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
           <button className={`appear-launcher${look.buttonStyle === "text" ? " txt" : ""}`} aria-label="Open chat" aria-expanded={false} onClick={() => onOpen(true)}>
             {look.buttonStyle === "text" ? (
               <span>{BUTTON_TEXT}</span>
-            ) : look.logoUrl ? (
-              <img src={look.logoUrl} alt="" />
+            ) : buttonLogo ? (
+              <img src={buttonLogo} alt="" />
             ) : (
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z" />

@@ -131,6 +131,29 @@ await step("W-04: appearance is validated, served cross-origin to the loader, an
   assert.equal((await logo.arrayBuffer()).byteLength, png.byteLength);
   assert.equal((await agent.call(`${inbox}/logo`, { method: "DELETE" })).status, 200);
   assert.equal((await fetch(`${BASE}${logoUrl}`)).status, 404);
+  // W-21: the optional logo for dark surfaces, beside the main one.
+  assert.equal((await agent.call(`${inbox}/logo-dark`, { body: new TextEncoder().encode("<svg/>"), headers: { "Content-Type": "image/svg+xml", "X-Jun-Upload": "1" } })).status, 400, "SVG refused here too");
+  assert.equal((await agent.call(`${inbox}/logo-dark`, { body: new Uint8Array(512 * 1024 + 1), headers: { "Content-Type": "image/png", "X-Jun-Upload": "1" } })).status, 400, "over 512 KB refused");
+  assert.equal((await agent.call(`${inbox}/logo`, { body: png, headers: { "Content-Type": "image/png", "X-Jun-Upload": "1" } })).status, 200);
+  const upDark = await agent.call(`${inbox}/logo-dark`, { body: png, headers: { "Content-Type": "image/webp", "X-Jun-Upload": "1" } });
+  assert.equal(upDark.status, 200, JSON.stringify(upDark.json));
+  const both = (await (await fetch(`${BASE}/api/widget/${widgetKey}/config`)).json()) as { logoUrl: string | null; logoDarkUrl: string | null };
+  assert.ok(both.logoDarkUrl?.startsWith(`/api/widget/${widgetKey}/logo-dark?v=`), both.logoDarkUrl ?? "no logoDarkUrl");
+  assert.ok(both.logoUrl && both.logoUrl !== both.logoDarkUrl);
+  const darkLogo = await fetch(`${BASE}${both.logoDarkUrl}`);
+  assert.equal(darkLogo.status, 200);
+  assert.equal(darkLogo.headers.get("content-type"), "image/webp");
+  assert.equal(darkLogo.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(darkLogo.headers.get("access-control-allow-origin"), "*");
+  assert.equal((await darkLogo.arrayBuffer()).byteLength, png.byteLength);
+  // Removing the dark one leaves the main logo alone, and the other way round.
+  assert.equal((await agent.call(`${inbox}/logo-dark`, { method: "DELETE" })).status, 200);
+  const afterDark = (await (await fetch(`${BASE}/api/widget/${widgetKey}/config`)).json()) as { logoUrl: string | null; logoDarkUrl: string | null };
+  assert.equal(afterDark.logoDarkUrl, null);
+  assert.equal(afterDark.logoUrl, both.logoUrl);
+  assert.equal((await fetch(`${BASE}${both.logoDarkUrl}`)).status, 404);
+  assert.equal((await fetch(`${BASE}${both.logoUrl}`)).status, 200);
+  assert.equal((await agent.call(`${inbox}/logo`, { method: "DELETE" })).status, 200);
   // Back to defaults for the other suites.
   await agent.call(inbox, { method: "PATCH", body: { color: "#2f5bea", position: "right", greeting: "", replyTime: "", displayName: "", theme: "auto", radius: 16, launcher: "card", neon: true, sound: true, placeholder: "", suggestions: [] } });
 });

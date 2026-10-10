@@ -24,6 +24,7 @@ visitors.use("/workspaces/:id/identity", requireUser);
 visitors.use("/workspaces/:id/visitors/*", requireUser);
 visitors.use("/workspaces/:id/contacts/*", requireUser);
 visitors.use("/workspaces/:id/inbox/logo", requireUser);
+visitors.use("/workspaces/:id/inbox/logo-dark", requireUser);
 
 const LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 const MAX_LOGO_BYTES = 512 * 1024;
@@ -35,34 +36,38 @@ async function inboxSettings(c: AppContext, workspaceId: string): Promise<{ id: 
 }
 
 // W-04: upload the widget logo (raw body, X-Jun-Upload: 1). PNG, JPEG, WebP or GIF; SVG isn't
-// accepted because it can carry scripts.
-visitors.post("/workspaces/:id/inbox/logo", async (c) => {
-  const workspaceId = c.req.param("id");
-  await requireAdmin(c, workspaceId);
-  const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
-  if (!LOGO_TYPES.has(type)) throw new HttpError(400, "invalid_file", "Use a PNG, JPEG, WebP or GIF image.");
-  const body = await c.req.arrayBuffer();
-  if (body.byteLength === 0 || body.byteLength > MAX_LOGO_BYTES) throw new HttpError(400, "too_large", "Logos are limited to 512 KB.");
-  const inbox = await inboxSettings(c, workspaceId);
-  const key = `logo_${randomToken(12)}`;
-  await c.env.FILES.put(key, body, { httpMetadata: { contentType: type } });
-  const old = inbox.settings.logoKey;
-  inbox.settings.logoKey = key;
-  await c.env.DB.prepare("UPDATE inboxes SET settings = ? WHERE id = ?").bind(JSON.stringify(inbox.settings), inbox.id).run();
-  if (typeof old === "string") c.executionCtx.waitUntil(c.env.FILES.delete(old));
-  return c.json({ settings: inbox.settings });
-});
+// accepted because it can carry scripts. W-21: the same for the logo used on dark surfaces.
+const LOGOS = { logo: { setting: "logoKey", prefix: "logo_" }, "logo-dark": { setting: "logoDarkKey", prefix: "logodark_" } } as const;
 
-visitors.delete("/workspaces/:id/inbox/logo", async (c) => {
-  const workspaceId = c.req.param("id");
-  await requireAdmin(c, workspaceId);
-  const inbox = await inboxSettings(c, workspaceId);
-  const old = inbox.settings.logoKey;
-  delete inbox.settings.logoKey;
-  await c.env.DB.prepare("UPDATE inboxes SET settings = ? WHERE id = ?").bind(JSON.stringify(inbox.settings), inbox.id).run();
-  if (typeof old === "string") c.executionCtx.waitUntil(c.env.FILES.delete(old));
-  return c.json({ settings: inbox.settings });
-});
+for (const [path, { setting, prefix }] of Object.entries(LOGOS)) {
+  visitors.post(`/workspaces/:id/inbox/${path}`, async (c) => {
+    const workspaceId = c.req.param("id");
+    await requireAdmin(c, workspaceId);
+    const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+    if (!LOGO_TYPES.has(type)) throw new HttpError(400, "invalid_file", "Use a PNG, JPEG, WebP or GIF image.");
+    const body = await c.req.arrayBuffer();
+    if (body.byteLength === 0 || body.byteLength > MAX_LOGO_BYTES) throw new HttpError(400, "too_large", "Logos are limited to 512 KB.");
+    const inbox = await inboxSettings(c, workspaceId);
+    const key = `${prefix}${randomToken(12)}`;
+    await c.env.FILES.put(key, body, { httpMetadata: { contentType: type } });
+    const old = inbox.settings[setting];
+    inbox.settings[setting] = key;
+    await c.env.DB.prepare("UPDATE inboxes SET settings = ? WHERE id = ?").bind(JSON.stringify(inbox.settings), inbox.id).run();
+    if (typeof old === "string") c.executionCtx.waitUntil(c.env.FILES.delete(old));
+    return c.json({ settings: inbox.settings });
+  });
+
+  visitors.delete(`/workspaces/:id/inbox/${path}`, async (c) => {
+    const workspaceId = c.req.param("id");
+    await requireAdmin(c, workspaceId);
+    const inbox = await inboxSettings(c, workspaceId);
+    const old = inbox.settings[setting];
+    delete inbox.settings[setting];
+    await c.env.DB.prepare("UPDATE inboxes SET settings = ? WHERE id = ?").bind(JSON.stringify(inbox.settings), inbox.id).run();
+    if (typeof old === "string") c.executionCtx.waitUntil(c.env.FILES.delete(old));
+    return c.json({ settings: inbox.settings });
+  });
+}
 
 // The identity secret is shown to admins so they can put it in their backend. Rotating it
 // revokes every identity token signed with the old one.

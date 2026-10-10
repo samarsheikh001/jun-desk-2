@@ -312,9 +312,10 @@
       // W-04: side, corner rounding, dark theme, and the launcher (the bar and the card load the frame now).
       wrap.classList.add(cfg.position, cfg.theme, cfg.launcher); // "left", "dark", "bar", "card"
       if (cfg.launcher != "button") load();
-      var icon = button.querySelector("svg"), face;
+      // W-21: on a dark button colour (white text on it), the logo made for dark backgrounds if there is one.
+      var icon = button.querySelector("svg"), face, logo = (cfg.text == "#ffffff" && cfg.logoDarkUrl) || cfg.logoUrl;
       if (cfg.buttonStyle == "text") wrap.classList.add("txt"), face = document.createElement("span"), face.textContent = "Chat with us";
-      else if (cfg.logoUrl) face = document.createElement("img"), face.src = origin + cfg.logoUrl, face.alt = "";
+      else if (logo) face = document.createElement("img"), face.src = origin + logo, face.alt = "";
       if (face) icon.replaceWith(face);
       wrap.style.setProperty("--r", cfg.radius + "px");
     }

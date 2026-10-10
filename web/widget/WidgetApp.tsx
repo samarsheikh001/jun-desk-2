@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
 import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
-import { radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
+import { logoFor, radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
 import { ACTION_ONLY_BODY } from "../../shared/actions.ts";
 import { WIDGET_ONLY_BODY, widgetSummary } from "../../shared/widgets.ts";
 import { Composer } from "../components/Composer.tsx";
@@ -207,6 +207,16 @@ const islandDark = (look: WidgetLook) => asIsland(look) && look.islandSurface !=
 /** The frame's theme as drawn: `auto` follows the visitor's system, as styles.css does. */
 const effectiveTheme = (look: WidgetLook): "light" | "dark" =>
   look.theme === "auto" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : look.theme;
+/** Re-renders when the visitor's system switches light/dark, so `auto` picks the right logo (W-21). */
+function useSystemScheme(): void {
+  const [, setDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => setDark(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+}
 /** A brand colour too dark to read as a button on the near-black island (by textOn's weights). */
 function tooDarkForIsland(color: string): boolean {
   if (!/^#[0-9a-f]{6}$/i.test(color)) return false;
@@ -261,6 +271,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const [grown, setGrown] = useState(false);
   const [miniHidden, setMiniHidden] = useState(false);
   const [suggestHidden, setSuggestHidden] = useState(false);
+  useSystemScheme();
   const closedRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -496,6 +507,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     const away = config.hours && !config.hours.open ? `back ${config.hours.back ?? "soon"}` : null;
     if (asIsland(config)) {
       const summary = conversations.find((c) => c.id === id) ?? null;
+      const cardTheme = islandDark(config) ? "dark" : effectiveTheme(config);
       return (
         <WidgetThread
           key={threadKey}
@@ -506,11 +518,11 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           intent={view.kind === "thread" ? view.intent : undefined}
           island={{
             name: config.workspaceName,
-            logoUrl: config.logoUrl,
+            logoUrl: logoFor(config, cardTheme === "dark"),
             suggestions: config.suggestions,
             placeholder: config.placeholder,
             neon: config.neon,
-            cardTheme: islandDark(config) ? "dark" : effectiveTheme(config),
+            cardTheme,
             unread: Boolean(summary && unread(summary)),
             setOpen: setBarOpen,
             newChat: () => {
@@ -532,7 +544,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         opener={view.kind === "thread" ? view.opener : undefined}
         intent={view.kind === "thread" ? view.intent : undefined}
         bar={{
-          head: <BarHead name={config.workspaceName} logoUrl={config.logoUrl} sub={away} onClose={() => setBarOpen(false)} />,
+          head: <BarHead name={config.workspaceName} logoUrl={logoFor(config, true)} sub={away} onClose={() => setBarOpen(false)} />,
           suggestions: config.suggestions,
           side: config.position,
           setOpen: setBarOpen,
@@ -546,6 +558,8 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       ? `We're away${config.hours.back ? ` · back ${config.hours.back}` : ""}${config.ai ? ". The assistant can still help." : ""}`
       : config.replyTime;
   const opener = view.kind === "thread" ? view.opener : undefined;
+  /** W-21: the chat window and the card follow the theme; on dark, the dark-background logo. */
+  const logoUrl = logoFor(config, effectiveTheme(config) === "dark");
   /** The conversation the chat would show: the one on screen, else the ongoing one. */
   const current = view.kind === "thread" && view.id ? view.id : (conversations.find((c) => c.status !== "resolved")?.id ?? null);
   const openChat = (next?: typeof view) => {
@@ -564,7 +578,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           <MiniCard
             name={config.workspaceName}
             sub={opener?.from ?? sub}
-            logoUrl={config.logoUrl}
+            logoUrl={logoUrl}
             welcome={opener ? (opener.page || opener.inviteId ? opener.text : `${opener.text} Tell me what you were trying to do and I'll take a look.`) : config.greeting}
             placeholder={config.placeholder}
             onOpen={() => openChat()}
@@ -587,7 +601,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
               <Icon d="M15 18l-6-6 6-6" />
             </button>
           )}
-          <img className="w-agent-icon" src={config.logoUrl ?? "/jun-agent.svg"} alt="" />
+          <img className="w-agent-icon" src={logoUrl ?? "/jun-agent.svg"} alt="" />
           <span className="w-name-wrap">
             <span className="w-name">{config.workspaceName}</span>
             <span className="w-sub">{sub}</span>

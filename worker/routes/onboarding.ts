@@ -36,7 +36,7 @@ onboarding.get("/workspaces/:id/onboarding", async (c) => {
     account: true,
     knowledge: (knowledge?.n ?? 0) > 0,
     ai: ai?.enabled === 1,
-    brand: typeof settings.color === "string" || typeof settings.logoKey === "string" || typeof settings.greeting === "string",
+    brand: typeof settings.color === "string" || typeof settings.logoKey === "string" || typeof settings.logoDarkKey === "string" || typeof settings.greeting === "string",
     // Set the first time the loader connects from a site other than the desk itself.
     install: typeof settings.installedAt === "number",
     team: (team?.members ?? 0) > 1 || (team?.invites ?? 0) > 0,
