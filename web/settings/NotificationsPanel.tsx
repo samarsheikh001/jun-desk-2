@@ -113,6 +113,9 @@ export function NotificationsPanel({ workspaceId }: { workspaceId: string }) {
           <Switch checked={prefs?.[t.key] ?? true} disabled={!prefs || busy} onCheckedChange={(value) => toggle(t.key, value)} aria-label={t.label} />
         </SettingRow>
       ))}
+      <SettingRow label="Play a sound" description="A soft chime in the open desk for the events above, not while you're looking at that conversation.">
+        <Switch checked={prefs?.sound ?? true} disabled={!prefs || busy} onCheckedChange={(value) => toggle("sound", value)} aria-label="Play a sound" />
+      </SettingRow>
     </SettingsCard>
 
       {devices.length > 0 && (

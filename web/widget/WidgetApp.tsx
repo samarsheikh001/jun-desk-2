@@ -8,6 +8,7 @@ import { WIDGET_ONLY_BODY, widgetSummary } from "../../shared/widgets.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal, type PendingMessage } from "../lib/thread.ts";
+import { playChime, unlockSoundOnInteraction } from "../lib/sound.ts";
 import { AiAnswer } from "./answer.tsx";
 import { BarHead, Chips, Glass, Typewriter, useBarFrame } from "./bar.tsx";
 import { Badge, MiniCard, useCardFrame } from "./card.tsx";
@@ -465,6 +466,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     sessionId,
     aiEnabled: config.ai,
     open,
+    sound: config.sound !== false,
     restoring,
     onStarted: (c: ConversationSummary) => {
       upsert(c);
@@ -668,6 +670,7 @@ function WidgetThread({
   sessionId,
   aiEnabled,
   open,
+  sound,
   restoring,
   onStarted,
   onConversation,
@@ -687,6 +690,8 @@ function WidgetThread({
   sessionId: string | null;
   aiEnabled: boolean;
   open: boolean;
+  /** W-20: chime for a new reply while the visitor isn't looking. */
+  sound: boolean;
   /** The app is still finding the visitor's ongoing conversation (a new chat may turn into it). */
   restoring: boolean;
   onStarted: (c: ConversationSummary) => void;
@@ -755,6 +760,29 @@ function WidgetThread({
     if (open && document.visibilityState === "visible" && latest > 0) thread.markRead(latest);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latest, open, thread.state]);
+
+  // W-20: a soft chime for a new public reply (AI or teammate) while the visitor isn't looking: the
+  // widget folded or closed, or the tab hidden. Messages the thread loaded with it (history) only set
+  // where "new" starts; a reply updated in place keeps its seq, so it never chimes twice.
+  useEffect(() => {
+    if (sound) unlockSoundOnInteraction();
+  }, [sound]);
+  const heardSeq = useRef<number | null>(null);
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    if (initial === null) return; // still loading the history
+    const top = thread.messages.at(-1)?.seq ?? 0;
+    if (heardSeq.current === null) {
+      heardSeq.current = top;
+      return;
+    }
+    const since = heardSeq.current;
+    if (top <= since) return;
+    heardSeq.current = top;
+    const reply = thread.messages.some((m) => m.seq > since && (m.authorType === "ai" || m.authorType === "agent") && !m.internal);
+    if (sound && reply && (!openRef.current || document.visibilityState === "hidden")) playChime();
+  }, [thread.messages, initial, sound]);
 
   const startingId = useRef("");
   // Creating the conversation takes a round trip. Messages sent meanwhile are held (shown as

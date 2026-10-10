@@ -14,9 +14,14 @@ export interface NotificationPrefs {
   visitorReply: boolean;
   /** A teammate @mentioned me in a note. */
   mention: boolean;
+  /**
+   * Not a trigger: a soft chime in the open desk for the events above (not while the focused tab
+   * is showing that conversation). Doesn't change who is notified.
+   */
+  sound: boolean;
 }
 
-export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { needsPerson: true, assigned: true, visitorReply: true, mention: true };
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { needsPerson: true, assigned: true, visitorReply: true, mention: true, sound: true };
 export const NOTIFICATION_PREF_KEYS = Object.keys(DEFAULT_NOTIFICATION_PREFS) as (keyof NotificationPrefs)[];
 
 /** Stored prefs (JSON text or object) with defaults filled in; unknown keys and non-booleans are ignored. */

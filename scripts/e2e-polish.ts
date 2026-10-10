@@ -110,6 +110,11 @@ await step("W-04: appearance is validated, served cross-origin to the loader, an
   assert.equal((await agent.call(inbox, { method: "PATCH", body: { neon: false } })).status, 200);
   assert.equal(((await (await fetch(`${BASE}/api/widget/${widgetKey}/config`)).json()) as Record<string, unknown>).neon, false);
   assert.equal((await agent.call(inbox, { method: "PATCH", body: { neon: "yes" } })).status, 400);
+  // W-20: the reply sound, on unless turned off.
+  assert.equal(islandCfg.sound, true, "the reply sound is on unless turned off");
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { sound: false } })).status, 200);
+  assert.equal(((await (await fetch(`${BASE}/api/widget/${widgetKey}/config`)).json()) as Record<string, unknown>).sound, false);
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { sound: "on" } })).status, 400);
   assert.equal((await agent.call(inbox, { method: "PATCH", body: { launcher: "banner" } })).status, 400);
 
   // A 1×1 PNG.
@@ -127,7 +132,7 @@ await step("W-04: appearance is validated, served cross-origin to the loader, an
   assert.equal((await agent.call(`${inbox}/logo`, { method: "DELETE" })).status, 200);
   assert.equal((await fetch(`${BASE}${logoUrl}`)).status, 404);
   // Back to defaults for the other suites.
-  await agent.call(inbox, { method: "PATCH", body: { color: "#2f5bea", position: "right", greeting: "", replyTime: "", displayName: "", theme: "auto", radius: 16, launcher: "card", neon: true, placeholder: "", suggestions: [] } });
+  await agent.call(inbox, { method: "PATCH", body: { color: "#2f5bea", position: "right", greeting: "", replyTime: "", displayName: "", theme: "auto", radius: 16, launcher: "card", neon: true, sound: true, placeholder: "", suggestions: [] } });
 });
 
 await step("I-10: outside business hours a chat with the team gets one away reply; the widget says when you're back", async () => {

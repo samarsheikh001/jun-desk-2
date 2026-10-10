@@ -207,8 +207,9 @@ export type HubEvent =
    * I-14: sent only to the recipient's own sockets. `toast`: one of their desk tabs is focused, so
    * no push was sent and the visible tab handles it in-app. `system`: no focused tab; a hidden tab
    * shows a system notification (a push of the same event, same tag and id, replaces it silently).
+   * `sound`: the recipient's "Play a sound" setting (the desk chimes unless it's showing that chat).
    */
-  | { type: "notify"; notification: NotificationPayload; mode: "toast" | "system" };
+  | { type: "notify"; notification: NotificationPayload; mode: "toast" | "system"; sound: boolean };
 
 /** Dashboard → hub: whether this tab is visible and focused (I-14: no push while you're looking). */
 export type HubClientEvent = { type: "focus"; focused: boolean };

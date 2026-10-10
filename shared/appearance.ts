@@ -32,6 +32,8 @@ export const APPEARANCE_DEFAULTS = {
   greeting: "Hi! How can we help?",
   replyTime: "We usually reply in a few minutes",
   placeholder: "Write a message…",
+  /** W-20: a soft chime for a new reply while the visitor isn't looking. */
+  sound: true,
 } as const;
 
 export const RADIUS_MAX = 24;
@@ -58,6 +60,8 @@ export interface WidgetLook {
   islandSurface: IslandSurface;
   /** Button launcher: the logo or "Chat with us". */
   buttonStyle: ButtonStyle;
+  /** W-20, all launchers: a soft chime for a new reply while the widget is folded or the tab hidden. On unless turned off. */
+  sound: boolean;
 }
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -101,6 +105,7 @@ export function widgetLook(s: Record<string, unknown>, workspaceName: string, lo
     neon: s.neon !== false,
     islandSurface: s.islandSurface === "page" ? "page" : APPEARANCE_DEFAULTS.islandSurface,
     buttonStyle: s.buttonStyle === "text" ? "text" : "logo",
+    sound: s.sound !== false,
   };
 }
 
@@ -132,6 +137,10 @@ export function applyAppearance(settings: Record<string, unknown>, body: Record<
   if (body.neon !== undefined) {
     if (typeof body.neon !== "boolean") throw new Error("Neon border must be on or off.");
     settings.neon = body.neon;
+  }
+  if (body.sound !== undefined) {
+    if (typeof body.sound !== "boolean") throw new Error("Sound must be true or false.");
+    settings.sound = body.sound;
   }
   if (body.islandSurface !== undefined) {
     if (body.islandSurface !== "dark" && body.islandSurface !== "page") throw new Error("Island surface must be dark or page.");

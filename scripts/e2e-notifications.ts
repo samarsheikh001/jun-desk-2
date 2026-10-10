@@ -139,12 +139,12 @@ try {
   await step("prefs: all on by default, per person, partial updates, validated", async () => {
     assert.equal((await new Client().call(`/workspaces/${workspaceId}/notifications`)).status, 401);
     const initial = await owner.call(`/workspaces/${workspaceId}/notifications`);
-    assert.deepEqual(initial.json.prefs, { needsPerson: true, assigned: true, visitorReply: true, mention: true });
+    assert.deepEqual(initial.json.prefs, { needsPerson: true, assigned: true, visitorReply: true, mention: true, sound: true });
     const saved = await prefs(owner, { mention: false });
     assert.equal(saved.status, 200);
-    assert.deepEqual(saved.json.prefs, { needsPerson: true, assigned: true, visitorReply: true, mention: false });
+    assert.deepEqual(saved.json.prefs, { needsPerson: true, assigned: true, visitorReply: true, mention: false, sound: true });
     assert.equal((await teammate.call(`/workspaces/${workspaceId}/notifications`)).json.prefs.mention, true, "the teammate's own settings");
-    for (const bad of [{ sound: true }, { mention: "off" }, [true]]) assert.equal((await prefs(owner, bad)).status, 400, JSON.stringify(bad));
+    for (const bad of [{ volume: 1 }, { sound: "on" }, { mention: "off" }, [true]]) assert.equal((await prefs(owner, bad)).status, 400, JSON.stringify(bad));
     assert.equal((await prefs(owner, { mention: true })).json.prefs.mention, true);
   });
 
@@ -266,6 +266,7 @@ try {
       const id = await newChat("Focused test");
       const ownerEvent = await ownerHub.next((e) => e.type === "notify" && e.notification.url === `/inbox/${id}`);
       assert.equal(ownerEvent.mode, "toast");
+      assert.equal(ownerEvent.sound, true, "the desk chimes unless the person turned sound off");
       const teammateEvent = await teammateHub.next((e) => e.type === "notify" && e.notification.url === `/inbox/${id}`);
       assert.equal(teammateEvent.mode, "system");
       const push = await expectPush(teammateDevice, about(id, "needs_person"), "unfocused teammate");

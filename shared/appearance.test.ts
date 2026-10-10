@@ -18,6 +18,7 @@ test("appearance: an untouched desk gets the original look", () => {
     neon: true,
     islandSurface: "dark",
     buttonStyle: "logo",
+    sound: true,
   });
   // The island's neon border is on unless turned off; anything but false keeps it.
   assert.equal(widgetLook({ neon: false }, "Acme", null).neon, false);
@@ -62,6 +63,22 @@ test("appearance: the button shows the logo unless set to text; only those two a
   applyAppearance(settings, { buttonStyle: "text" });
   assert.equal(settings.buttonStyle, "text");
   assert.throws(() => applyAppearance(settings, { buttonStyle: "big" }), /logo or text/);
+});
+
+test("appearance: the reply sound (W-20) is on unless turned off; only true or false is accepted", () => {
+  assert.equal(APPEARANCE_DEFAULTS.sound, true);
+  assert.equal(widgetLook({ sound: false }, "Acme", null).sound, false);
+  assert.equal(widgetLook({ sound: "off" }, "Acme", null).sound, true);
+  assert.equal(widgetLook({ sound: 0 }, "Acme", null).sound, true);
+  const settings: Record<string, unknown> = {};
+  applyAppearance(settings, { sound: false });
+  assert.equal(settings.sound, false);
+  applyAppearance(settings, { sound: true });
+  assert.equal(settings.sound, true);
+  for (const sound of ["off", 0, null, "true"]) {
+    assert.throws(() => applyAppearance(settings, { sound }), /Sound must be true or false\./);
+  }
+  assert.equal(settings.sound, true);
 });
 
 test("appearance: the island is dark unless set to follow the page; only dark and page are accepted", () => {

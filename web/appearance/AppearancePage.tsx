@@ -57,11 +57,12 @@ interface Draft {
   buttonStyle?: ButtonStyle;
   neon?: boolean;
   islandSurface?: IslandSurface;
+  sound?: boolean;
   csat?: boolean;
   logoKey?: string;
 }
 
-const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggestions", "color", "position", "theme", "radius", "launcher", "buttonStyle", "neon", "islandSurface", "csat"] as const;
+const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggestions", "color", "position", "theme", "radius", "launcher", "buttonStyle", "neon", "islandSurface", "sound", "csat"] as const;
 const pick = (s: Draft): Draft => Object.fromEntries(FIELDS.filter((f) => s[f] !== undefined).map((f) => [f, s[f]])) as Draft;
 const same = (a: Draft, b: Draft) => FIELDS.every((f) => JSON.stringify(a[f] ?? null) === JSON.stringify(b[f] ?? null));
 
@@ -102,6 +103,7 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
         suggestions: draft.suggestions ?? [],
         csat: draft.csat !== false,
         neon: draft.neon !== false,
+        sound: draft.sound !== false,
       };
       const r = await api<{ settings: Draft }>(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body });
       setSaved(r.settings);
@@ -232,6 +234,10 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
                 <span>Neon border (a slowly turning multi-colour glow around the island)</span>
               </label>
             )}
+            <label className="appear-switch">
+              <Switch checked={draft.sound !== false} disabled={off} onCheckedChange={(checked) => edit({ sound: checked })} />
+              <span>Play a sound for new replies (a soft chime while the chat is closed or the visitor is on another tab)</span>
+            </label>
           </section>
 
           <section className="appear-group">
@@ -275,7 +281,7 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
         {canEdit && (
           <div className="appear-actions">
             <Button disabled={busy || !dirty} onClick={save}>Save</Button>
-            <Button variant="outline" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, launcher: APPEARANCE_DEFAULTS.launcher, buttonStyle: "logo", neon: true, islandSurface: APPEARANCE_DEFAULTS.islandSurface, csat: true })}>Reset to defaults</Button>
+            <Button variant="outline" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, launcher: APPEARANCE_DEFAULTS.launcher, buttonStyle: "logo", neon: true, islandSurface: APPEARANCE_DEFAULTS.islandSurface, sound: APPEARANCE_DEFAULTS.sound, csat: true })}>Reset to defaults</Button>
             <span className={error ? "error small" : "muted small"} role="status">{error ?? status ?? (dirty ? "Unsaved changes" : "")}</span>
           </div>
         )}

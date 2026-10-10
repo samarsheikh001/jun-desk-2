@@ -11,7 +11,7 @@ import {
 } from "./notifications.ts";
 
 const on = DEFAULT_NOTIFICATION_PREFS;
-const off: NotificationPrefs = { needsPerson: false, assigned: false, visitorReply: false, mention: false };
+const off: NotificationPrefs = { needsPerson: false, assigned: false, visitorReply: false, mention: false, sound: false };
 const team = (prefs: Record<string, Partial<NotificationPrefs>> = {}) =>
   ["ann", "bo", "cy"].map((userId) => ({ userId, prefs: { ...on, ...prefs[userId] } }));
 
@@ -44,9 +44,19 @@ test("prefs: defaults all on, partial updates, validation", () => {
   assert.deepEqual(readNotificationPrefs("not json"), on);
   assert.deepEqual(readNotificationPrefs('{"mention":false,"junk":1,"assigned":"no"}'), { ...on, mention: false });
   assert.deepEqual(parseNotificationPrefs({ visitorReply: false }, { ...on, mention: false }), { ...on, mention: false, visitorReply: false });
-  assert.throws(() => parseNotificationPrefs({ sound: true }), /Unknown/);
+  assert.throws(() => parseNotificationPrefs({ volume: 1 }), /Unknown/);
   assert.throws(() => parseNotificationPrefs({ mention: "off" }), /true or false/);
   assert.throws(() => parseNotificationPrefs([]), /object/);
+});
+
+test("sound: on by default, a per-person boolean, and it never changes who is notified", () => {
+  assert.equal(DEFAULT_NOTIFICATION_PREFS.sound, true);
+  assert.equal(readNotificationPrefs('{"sound":false}').sound, false);
+  assert.equal(readNotificationPrefs('{"sound":"off"}').sound, true);
+  assert.equal(parseNotificationPrefs({ sound: false }).sound, false);
+  assert.deepEqual(parseNotificationPrefs({ sound: false }, { ...on, mention: false }), { ...on, mention: false, sound: false });
+  assert.throws(() => parseNotificationPrefs({ sound: "no" }), /sound must be true or false/);
+  assert.deepEqual(notificationRecipients({ kind: "needs_person", conversationId: "c", actorId: null }, team({ bo: { sound: false } })), ["ann", "bo", "cy"]);
 });
 
 test("payload: contact label, ~100 characters, url and tag of the conversation", () => {

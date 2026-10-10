@@ -201,7 +201,8 @@ export class WorkspaceHub extends DurableObject<Env> {
     const members = await this.env.DB.prepare("SELECT user_id, notification_prefs FROM members WHERE workspace_id = ?")
       .bind(input.workspaceId)
       .all<{ user_id: string; notification_prefs: string }>();
-    const recipients = notificationRecipients(input, members.results.map((m) => ({ userId: m.user_id, prefs: readNotificationPrefs(m.notification_prefs) })));
+    const prefs = new Map(members.results.map((m) => [m.user_id, readNotificationPrefs(m.notification_prefs)]));
+    const recipients = notificationRecipients(input, [...prefs].map(([userId, p]) => ({ userId, prefs: p })));
     if (recipients.length === 0) return;
     const payload = notificationPayload({
       id: newId("ntf"),
@@ -216,7 +217,7 @@ export class WorkspaceHub extends DurableObject<Env> {
     // Only the recipient's own sockets hear about it (other teammates get the usual inbox events).
     const sockets = this.#live<AgentAttachment>("agent").filter(([, a]) => recipients.includes(a.userId));
     const focused = new Set(sockets.filter(([, a]) => a.focused).map(([, a]) => a.userId));
-    for (const [ws, a] of sockets) this.#send(ws, { type: "notify", notification: payload, mode: focused.has(a.userId) ? "toast" : "system" });
+    for (const [ws, a] of sockets) this.#send(ws, { type: "notify", notification: payload, mode: focused.has(a.userId) ? "toast" : "system", sound: prefs.get(a.userId)?.sound !== false });
     await this.#push(input.workspaceId, recipients.filter((id) => !focused.has(id)), payload);
   }
 
