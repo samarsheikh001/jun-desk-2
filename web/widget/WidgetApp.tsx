@@ -965,9 +965,9 @@ function WidgetThread({
         logoUrl={island.logoUrl}
         exit={exitLabel ? { label: exitLabel, run: exit } : null}
         toggle={handling === "human" || !conversationId ? null : { label: showAll ? "Latest only" : "Show conversation", run: () => setShowAll(!showAll) }}
-        // An intent's chat ends through its exit button, not a fresh chat.
-        onNewChat={conversationId && !intent ? island.newChat : null}
-        onClose={close}
+        // × ends the chat (the next question starts a new one); an intent's chat ends through its exit button.
+        onEnd={conversationId && !intent ? () => { island.newChat(); close(); } : null}
+        onMinimize={close}
       />
     );
     const live = Boolean(thread.aiStream?.text);
@@ -978,7 +978,7 @@ function WidgetThread({
     const shown: IslandState = state === "answer" && thinking && !loading && !answered ? "thinking" : state;
     return (
       <Island state={shown} live={live} neon={island.neon} onOpen={() => island.setOpen(true)}>
-        {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} onOpen={() => island.setOpen(true)} />}
+        {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} chat={Boolean(conversationId)} onOpen={() => island.setOpen(true)} />}
         {shown === "nudge" && opener && <NudgeLine logoUrl={island.logoUrl} text={opener.text} from={opener.from ?? null} onAsk={() => island.setOpen(true)} onDismiss={dismissNudge} />}
         {shown === "open" && (
           <div className="i-open">

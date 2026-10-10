@@ -128,13 +128,16 @@ export function Mark({ logoUrl, pulse = false }: { logoUrl: string | null; pulse
   return <img className={`i-mark${pulse ? " pulse" : ""}`} src={logoUrl ?? "/jun-agent.svg"} alt="" />;
 }
 
-/** Resting: the mark, a hint that types out the suggested questions (or a new reply), and the "/" key. */
-export function RestPill({ logoUrl, suggestions, placeholder, unread, onOpen }: { logoUrl: string | null; suggestions: string[]; placeholder: string; unread: string | null; onOpen: () => void }) {
+/**
+ * Resting: the mark, a hint that types out the suggested questions (or a new reply), and the "/" key;
+ * an up arrow instead while a minimized chat is waiting to be opened again ("/" still opens it).
+ */
+export function RestPill({ logoUrl, suggestions, placeholder, unread, chat = false, onOpen }: { logoUrl: string | null; suggestions: string[]; placeholder: string; unread: string | null; chat?: boolean; onOpen: () => void }) {
   return (
-    <button type="button" className="i-rest" aria-label={unread ?? "Ask this page anything"} onClick={onOpen}>
+    <button type="button" className="i-rest" aria-label={unread ?? (chat ? "Open the chat" : "Ask this page anything")} onClick={onOpen}>
       <Mark logoUrl={logoUrl} pulse={Boolean(unread)} />
       {unread ? <span className="i-rest-text">{unread}</span> : <Typewriter phrases={suggestions} fallback={placeholder} />}
-      <kbd className="i-kbd" aria-hidden="true">/</kbd>
+      {chat ? <span className="i-up" aria-hidden="true">{chevron(CHEVRON_UP)}</span> : <kbd className="i-kbd" aria-hidden="true">/</kbd>}
     </button>
   );
 }
@@ -165,15 +168,28 @@ export function StatusLine({ logoUrl, label }: { logoUrl: string | null; label: 
 }
 
 /** The header of the answer and panel states: who's talking, the intent's exit, a view toggle and Close. */
-export function IslandHead({ name, logoUrl, exit, toggle, onNewChat, onClose }: {
+const chevron = (d: string) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d={d} />
+  </svg>
+);
+export const CHEVRON_DOWN = "M6 9l6 6 6-6";
+export const CHEVRON_UP = "M6 15l6-6 6 6";
+
+/**
+ * The open island's header. The down arrow folds it back to the pill and keeps the chat (the pill's
+ * up arrow brings it back); × ends this chat: the next question starts a new one (the old one stays
+ * in the visitor's list). An intent's chat ends through its exit button, so there × only folds it.
+ */
+export function IslandHead({ name, logoUrl, exit, toggle, onEnd, onMinimize }: {
   name: string;
   logoUrl: string | null;
   /** AI-20: the intent's exit button (D-37: always on screen, one click). */
   exit: { label: string; run: () => void } | null;
   toggle: { label: string; run: () => void } | null;
-  /** Leaves this conversation (it stays in the visitor's list) for an empty one. */
-  onNewChat: (() => void) | null;
-  onClose: () => void;
+  /** Ends this conversation (it stays in the visitor's list) and folds the island; null when × only folds it. */
+  onEnd: (() => void) | null;
+  onMinimize: () => void;
 }) {
   return (
     <div className="i-head">
@@ -182,15 +198,10 @@ export function IslandHead({ name, logoUrl, exit, toggle, onNewChat, onClose }: 
       {exit && <button type="button" className="i-exit" onClick={exit.run}>{exit.label}</button>}
       <span className="i-spacer" />
       {toggle && <button type="button" className="i-ghost" onClick={toggle.run}>{toggle.label}</button>}
-      {onNewChat && (
-        <button type="button" className="i-ghost i-icon" aria-label="Start a new chat" title="New chat" onClick={onNewChat}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
-          </svg>
-        </button>
-      )}
-      <button type="button" className="i-ghost i-x" aria-label="Close" onClick={onClose}>×</button>
+      <button type="button" className="i-ghost i-icon" aria-label="Minimize" title="Minimize" onClick={onMinimize}>
+        {chevron(CHEVRON_DOWN)}
+      </button>
+      <button type="button" className="i-ghost i-x" aria-label={onEnd ? "End chat" : "Close"} title={onEnd ? "End chat (start a new one next time)" : "Close"} onClick={onEnd ?? onMinimize}>×</button>
     </div>
   );
 }

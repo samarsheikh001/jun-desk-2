@@ -388,6 +388,8 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-rest-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .i-kbd { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted); font: 12px/1 "Jun Desk Mono", ui-monospace, monospace; }
 @media (hover: none) { .i-kbd { display: none; } }
+.i-up { display: grid; place-items: center; width: 22px; height: 22px; flex: none; color: var(--muted); }
+.i-up svg { width: 16px; height: 16px; }
 
 /* Nudge: a one-line offer with Ask; × or 8 s puts it to rest. */
 .i-nudge { display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 9px 9px 9px 16px; }
