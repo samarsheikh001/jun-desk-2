@@ -337,7 +337,10 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
       if (data?.type === "jun:close") onOpen(false);
       // The bar and the card open themselves, and size and place their frame like the loader does.
       if (data?.type === "jun:open") onOpen(true);
-      if (data?.type === "jun:css" && frame.current) frame.current.style.cssText = String((data as { css?: unknown }).css ?? "");
+      if (data?.type === "jun:css" && frame.current) {
+        frame.current.style.cssText = String((data as { css?: unknown }).css ?? "");
+        frame.current.dataset.sized = "";
+      }
       // No host page here, so no debug context: answer at once instead of letting it time out.
       if (data?.type === "jun:context-request") post({ type: "jun:context", id: data.id, context: undefined });
     };
@@ -355,7 +358,10 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
   useEffect(() => {
     const changed = launcher.current !== look.launcher;
     launcher.current = look.launcher;
-    if (frame.current && (changed || (button && !open))) frame.current.style.cssText = "";
+    if (frame.current && (changed || (button && !open))) {
+      frame.current.style.cssText = "";
+      delete frame.current.dataset.sized;
+    }
   }, [look.launcher, open, button]);
   const brand = { "--c": look.color, "--t": textOn(look.color), "--r": `${look.radius}px` } as CSSProperties;
   // As the loader: on a dark button colour, the logo for dark backgrounds (W-21).

@@ -411,7 +411,9 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     return () => window.removeEventListener("message", onMessage);
   }, [api]);
 
-  useEffect(() => {
+  // Before paint: the island and the bar size their frame before paint too, and their first paint
+  // must already be on the transparent page (html.island / html.bar), not the plain white one.
+  useLayoutEffect(() => {
     if (config) applyLook(config);
   }, [config]);
 
