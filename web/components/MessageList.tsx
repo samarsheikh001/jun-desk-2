@@ -104,6 +104,7 @@ export function MessageList({
   renderAi,
   aiActions,
   aiSteps,
+  follow = "end",
 }: {
   messages: Message[];
   pending: PendingMessage[];
@@ -130,6 +131,12 @@ export function MessageList({
   aiActions?: (visitorSeq: number) => ReactNode;
   /** The widget: live tool steps per AI reply (`ai:<seq>`), drawn by `renderAi`. */
   aiSteps?: Record<string, AiStep[]>;
+  /**
+   * `end` (default): keep the newest at the bottom in view. `start`: the island's answer view, which
+   * shows only the latest exchange; when it's taller than the island it stays at its start (the
+   * question, then the answer and its card), and the visitor scrolls down.
+   */
+  follow?: "end" | "start";
 }) {
   const list = useRef<HTMLDivElement>(null);
   // Scroll the list's own box, never scrollIntoView: in the widget that also scrolls the host page
@@ -141,13 +148,13 @@ export function MessageList({
   };
   useEffect(() => {
     const box = scroller();
-    if (box) box.scrollTop = box.scrollHeight;
-  }, [messages.length, pending.length, typing, aiStream?.text, aiThinking]);
+    if (box && follow === "end") box.scrollTop = box.scrollHeight;
+  }, [messages.length, pending.length, typing, aiStream?.text, aiThinking, follow]);
   // A custom AI renderer reveals text on its own clock: keep following it while the reader is at the bottom.
   const customAi = Boolean(renderAi);
   useEffect(() => {
     const el = list.current;
-    if (!customAi || !el || typeof ResizeObserver === "undefined") return;
+    if (!customAi || follow !== "end" || !el || typeof ResizeObserver === "undefined") return;
     const box = scroller();
     if (!box) return;
     const observer = new ResizeObserver(() => {
@@ -155,7 +162,14 @@ export function MessageList({
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [customAi]);
+  }, [customAi, follow]);
+  // `start`: a new exchange (the visitor asked again) begins at its top.
+  const firstKey = pending[0]?.clientMsgId ?? messages[0]?.id;
+  useEffect(() => {
+    const box = scroller();
+    if (box && follow === "start") box.scrollTop = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstKey, follow]);
 
   // "Seen" goes under the last of my messages the other side has read.
   const lastSeenSeq = [...messages].reverse().find((m) => mine(m) && m.authorType !== "system" && !m.internal && m.seq <= otherReadSeq)?.seq;

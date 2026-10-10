@@ -38,7 +38,9 @@ function useIslandFrame(box: { w: number; h: number }, live: boolean): void {
     postToHost({
       type: "jun:css",
       css:
-        "display:block;top:auto;bottom:0;left:0;right:0;margin:0 auto;width:min(720px,100%);height:min(680px,100%);" +
+        // Room for the tallest answer (720px) plus its edge and glow; the clip-path leaves the rest of
+        // the page clickable. Inside, innerHeight is this height: the page's, up to 840px.
+        "display:block;top:auto;bottom:0;left:0;right:0;margin:0 auto;width:min(720px,100%);height:min(840px,100%);" +
         `border:0;border-radius:0;background:none;box-shadow:none;color-scheme:normal;${motion}` +
         `clip-path:inset(calc(100% - ${box.h + bottom + GLOW}px) calc(50% - ${box.w / 2 + GLOW}px) ${Math.max(0, bottom - GLOW)}px)`,
     });
@@ -84,8 +86,27 @@ export function Island({ state, live, neon, onOpen, children }: { state: IslandS
     observer.observe(el);
     return () => observer.disconnect();
   }, [state]);
-  const h = state === "panel" ? panelHeight : measured;
+  // An answer grows to fit (a card and its sentence) up to 720px, leaving the top of the page in
+  // view; the panel's height when the screen is short. Only taller answers scroll.
+  const answerMax = Math.max(panelHeight, Math.min(720, viewport.h - edge(viewport.w) - GLOW - 48));
+  const h = state === "panel" ? panelHeight : state === "answer" ? Math.min(measured, answerMax) : measured;
   useIslandFrame({ w, h }, live);
+  // An answer taller than the panel scrolls inside: fade its bottom edge while there's more below.
+  useEffect(() => {
+    if (state !== "answer") return;
+    const body = content.current?.querySelector<HTMLElement>(".i-body");
+    if (!body) return;
+    const check = () => body.classList.toggle("i-more", body.scrollHeight - body.scrollTop - body.clientHeight > 4);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(body);
+    if (body.firstElementChild) observer.observe(body.firstElementChild);
+    body.addEventListener("scroll", check, { passive: true });
+    return () => {
+      observer.disconnect();
+      body.removeEventListener("scroll", check);
+    };
+  }, [state]);
   return (
     <div className="i-root">
       {/* The box carries the size and its spring; the neon ring and glow sit on it, outside the clipped shell. */}
@@ -93,7 +114,7 @@ export function Island({ state, live, neon, onOpen, children }: { state: IslandS
         {neon && <div className="i-glow" aria-hidden="true" />}
         {neon && <div className="i-ring" aria-hidden="true" />}
         <div className="i-shell" role="region" aria-label="Chat">
-          <div key={state} className="i-view" ref={content} style={{ width: w, ...(state === "panel" ? { height: panelHeight } : {}) }}>
+          <div key={state} className="i-view" ref={content} style={{ width: w, ...(state === "panel" ? { height: panelHeight } : state === "answer" ? { maxHeight: answerMax } : {}) }}>
             {children}
           </div>
         </div>

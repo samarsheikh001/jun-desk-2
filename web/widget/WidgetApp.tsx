@@ -1009,6 +1009,7 @@ function WidgetThread({
                   onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
                   onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
                   renderAi={renderAnswer}
+                  follow="start"
                 />
               )}
               {error && <p className="i-error" role="alert">{error}</p>}

@@ -423,7 +423,12 @@ html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Des
 .i-answer, .i-panel { display: flex; flex-direction: column; }
 .i-panel { height: 100%; }
 .i-body { position: relative; overflow-y: auto; overscroll-behavior: contain; color: var(--text); font-size: 14px; line-height: 1.5; }
-.i-answer .i-body { max-height: min(340px, calc(100vh - 190px)); }
+/* An answer is as tall as it needs, up to the panel's height (the view's max-height, set by Island):
+   only taller ones scroll, from their start, with a fade at the bottom while there's more. */
+.i-answer { max-height: inherit; }
+.i-answer > :not(.i-body) { flex: none; }
+.i-answer .i-body { flex: 0 1 auto; min-height: 0; }
+.i-answer .i-body.i-more { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); }
 .i-panel .i-body { flex: 1; min-height: 0; }
 .i-body::-webkit-scrollbar { width: 10px; }
 .i-body::-webkit-scrollbar-track { background: transparent; }
