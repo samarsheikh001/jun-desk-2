@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
+import { PixelLoader } from "@/components/PixelLoader.tsx";
 
 interface Draft {
   title: string;
@@ -156,7 +157,7 @@ export function IssueDialog({ conversationId, trackers, onClose, onCreated }: { 
           error ? (
             <p className="error small">{error}</p>
           ) : (
-            <p className="muted issue-drafting" role="status"><span className="typing" aria-hidden="true"><span /><span /><span /></span> Drafting from the conversation and the visitor's browser…</p>
+            <p className="muted issue-drafting" role="status"><span className="typing" aria-hidden="true"><PixelLoader /></span> Drafting from the conversation and the visitor's browser…</p>
           )
         ) : (
           <>

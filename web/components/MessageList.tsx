@@ -6,6 +6,7 @@ import { parseMarkdown } from "../../shared/markdown.ts";
 import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
 import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
 import { Markdown } from "./Markdown.tsx";
+import { PixelLoader } from "./PixelLoader.tsx";
 import { formatSize, formatTime, isImage, type PendingMessage } from "../lib/thread.ts";
 
 function Attachments({ attachments }: { attachments: Attachment[] }) {
@@ -284,7 +285,7 @@ export function MessageList({
       <div key={streamKey} className={`msg ${aiSide} ai streaming`}>
         {lastVisitorSeq !== undefined && actionsFor(`ai:${lastVisitorSeq}`)}
         <div className="bubble typing" aria-label="The AI assistant is writing a reply">
-          <span /><span /><span />
+          <PixelLoader label="Working on it" />
         </div>
       </div>,
     );
@@ -296,7 +297,7 @@ export function MessageList({
       {typing && (
         <div className="msg other">
           <div className="bubble typing" aria-label={`${typing.name ?? "Someone"} is typing`}>
-            <span /><span /><span />
+            <PixelLoader />
           </div>
         </div>
       )}

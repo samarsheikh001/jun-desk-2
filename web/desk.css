@@ -595,10 +595,16 @@ mark.mention { background: color-mix(in oklch, var(--warning) 35%, transparent);
 .attachments { display: grid; gap: 4px; margin-top: 4px; justify-items: start; }
 .attachments img { max-width: 240px; max-height: 200px; border-radius: var(--radius); border: 1px solid var(--border); display: block; }
 .attachments .file { padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--foreground); text-decoration: none; font-size: 12px; }
-.typing { display: flex; gap: 4px; padding: 10px 0; }
-.typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted-foreground); animation: blink 1.2s infinite; }
-.typing span:nth-child(2) { animation-delay: 0.2s; }
-.typing span:nth-child(3) { animation-delay: 0.4s; }
+.typing { display: flex; align-items: center; gap: 4px; padding: 10px 0; }
+.typing { color: var(--muted-foreground); }
+.pixel-loader { display: grid; grid-template-columns: repeat(3, 4px); gap: 1.5px; flex-shrink: 0; }
+.pixel-loader > span { width: 4px; height: 4px; border-radius: 1px; background: currentColor; opacity: 0.15; animation: pixel-on 650ms ease-in-out infinite; }
+@keyframes pixel-on { 0%, 100% { opacity: 0.15; } 35% { opacity: 1; } }
+.pixel-status { display: inline-flex; align-items: center; gap: 10px; }
+.pixel-label { font-size: 13px; font-weight: 500; -webkit-text-fill-color: transparent; -webkit-background-clip: text; background-clip: text; background-image: linear-gradient(90deg, color-mix(in srgb, currentColor 55%, transparent) 35%, currentColor 50%, color-mix(in srgb, currentColor 55%, transparent) 65%); background-size: 200% 100%; animation: pixel-shimmer 1.4s linear infinite; }
+.pixel-time { font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; opacity: 0.7; }
+@keyframes pixel-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .pixel-loader > span, .pixel-label { animation: none; } }
 .system-msg { align-self: center; max-width: 85%; text-align: center; font-size: 12px; color: var(--muted-foreground); padding: 6px 10px; margin: 8px 0; display: grid; gap: 4px; justify-items: center; }
 .system-msg.internal { text-align: left; justify-items: start; background: var(--note); color: var(--note-foreground); border: 1px solid var(--note-border); border-radius: var(--radius); white-space: pre-wrap; }
 .system-msg .tag { background: var(--note-border); color: var(--note-foreground); }
