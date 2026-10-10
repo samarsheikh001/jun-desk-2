@@ -172,6 +172,21 @@ function showWidget(spec: ToolSpec, call: ToolCall, options: ToolRunOptions, id:
   }
 }
 
+/**
+ * W-17: runs a tool for a card's `tool:<name>` button, outside the model's loop (the press is the
+ * visitor's confirmation). Same request, secrets, identity, audit and widget as a model call.
+ */
+export async function runTool(spec: ToolSpec, input: Record<string, unknown>, options: ToolRunOptions, widgetId: string): Promise<{ action: ToolAction; widget: MessageWidget | null }> {
+  const missing = Object.entries(spec.input).filter(([name, i]) => i.required && input[name] === undefined).map(([name]) => name);
+  if (missing.length) {
+    return { action: { tool: spec.name, input, output: `Missing input: ${missing.join(", ")}.`, status: "error", httpStatus: null, durationMs: 0 }, widget: null };
+  }
+  const call = await callTool(spec, input, options);
+  const widget = showWidget(spec, call, options, widgetId);
+  const { raw: _raw, ...action } = call;
+  return { action, widget: widget ? { ...widget, id: widgetId } : null };
+}
+
 /** AI SDK tools for a config's HTTP tools. Failed calls return an error the model can explain. */
 export function httpTools(specs: ToolSpec[], options: ToolRunOptions): ToolSet {
   const tools: ToolSet = {};

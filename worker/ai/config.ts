@@ -1,7 +1,7 @@
 import { parse as parseYaml } from "yaml";
 import { INTENT_NAME, MAX_INTENT_EXIT, MAX_INTENT_OPENING, MAX_INTENT_REPLIES, MAX_INTENT_REPLY, type IntentSpec } from "../../shared/intents.ts";
 import { DONE_TOOL } from "../../shared/actions.ts";
-import { parseWidgetFile, renderWidget, type WidgetSpec } from "../../shared/widgets.ts";
+import { parseWidgetFile, renderWidget, TOOL_ACTION, widgetActions, type WidgetSpec } from "../../shared/widgets.ts";
 import { FLAG_TOOL, HANDOFF_TOOL } from "./agent.ts";
 
 /** The agent's own tools: a tools/<name>.yaml can't take their names. */
@@ -547,6 +547,20 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
       const file = paths.find((p) => TOOL_PATH.exec(p)?.[1] === tool.name) ?? `tools/${tool.name}.yaml`;
       issues.push({ path: file, message: `widget: there's no widgets/${tool.widget}.widget.` });
       delete tool.widget;
+    }
+  }
+  // W-17: a button with `tool:<name>` must name a tool (checked on the widget's sample data).
+  for (const widget of config.widgets) {
+    if (!widget.sample) continue;
+    let actions: string[] = [];
+    try {
+      actions = widgetActions(renderWidget(widget, widget.sample)).map((a) => a.action.type);
+    } catch {
+      continue; // reported when the file was parsed
+    }
+    for (const type of new Set(actions)) {
+      const name = TOOL_ACTION.exec(type)?.[1];
+      if (name && !config.tools.some((t) => t.name === name)) issues.push({ path: `widgets/${widget.name}.widget`, message: `${type}: there's no tools/${name}.yaml.` });
     }
   }
   return { config, issues };

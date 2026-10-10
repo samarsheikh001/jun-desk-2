@@ -45,6 +45,8 @@ export interface RunInput {
   pagePath?: string | null;
   /** AI-21: this turn follows a page action that just ran (or failed), with no new visitor message. */
   followUp?: { name: string; status: "ok" | "error"; result: string | null } | null;
+  /** W-17: cards already shown with this reply (a card button's tool ran before the turn), so no words is still an answer. */
+  shownWidgets?: number;
 }
 
 export interface RunResult {
@@ -249,7 +251,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   // Ending the chain with nothing to say is fine (the steps show what was done), not a handoff.
   if (done !== null && !raw.trim()) outcome = { kind: "answer", text: "", escalate: null };
   // W-09: a card with no words is still an answer (the card is what the customer asked for).
-  if (widgets.length && outcome.kind === "handoff" && decisions.handoff === null && decisions.flag === null) outcome = { kind: "answer", text: "", escalate: null };
+  if ((widgets.length || input.shownWidgets) && outcome.kind === "handoff" && decisions.handoff === null && decisions.flag === null) outcome = { kind: "answer", text: "", escalate: null };
   if (pageAction) {
     // A reply that only calls the action has no text; that's an answer (the action card), not a handoff.
     if (outcome.kind === "handoff") {

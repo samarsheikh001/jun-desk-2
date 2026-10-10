@@ -50,8 +50,21 @@ export interface MessageWidget {
   /** The widget file's name (`widgets/<name>.widget`); agents see it, the AI's history too. */
   name: string;
   root: WidgetNode;
-  /** Set once the visitor used one of its actions: the card shows as done and takes no more. */
+  /** Set once the visitor used one of the card's own actions (confirm, a form, a button outside a list): it takes no more. */
   used?: { label: string; at: number };
+  /** W-17: list items used one by one (by item id, `i<n>`): only that row is done, the rest still work. */
+  items?: Record<string, { label: string; at: number }>;
+}
+
+/** W-17: `tool:<name>` on a button runs that tool at once (the press is the visitor's yes); the AI then answers. */
+export const TOOL_ACTION = /^tool:([a-z][a-z0-9_]*)$/;
+/** W-17: `open_url` with `payload.url` opens an https link (checkout, invoice); handled in the browser, never sent. */
+export const OPEN_URL = "open_url";
+
+/** The https URL an `open_url` action opens, or null. */
+export function actionUrl(action: WidgetActionConfig): string | null {
+  if (action.type !== OPEN_URL || !isRecord(action.payload) || typeof action.payload.url !== "string") return null;
+  return /^https:\/\/[^\s]+$/i.test(action.payload.url) ? action.payload.url : null;
 }
 
 /** On the visitor message an action sends (its body is the action's label). */
@@ -62,6 +75,13 @@ export interface WidgetActionMeta {
   payload?: unknown;
   /** What the visitor entered in the card's fields, by field name. */
   values?: Record<string, string | boolean>;
+  /** W-17: the list item it was pressed in (only that row is used). */
+  item?: string;
+  /**
+   * W-17: a `tool:<name>` action ran that tool. `output` is never stored here (meta reaches the
+   * visitor): the Conversation object keeps it for the AI's history, agents see it in the audit log.
+   */
+  tool?: { name: string; status: "ok" | "error"; output?: string };
 }
 
 /** A parsed `widgets/<name>.widget`. */
@@ -140,7 +160,7 @@ export function starterWidget(title: string): string {
     '{"type":"Divider","flush":true},',
     '{"type":"Row","children":[{"type":"Caption","value":"Renews"},{"type":"Spacer"},{"type":"Text","value":{{ (renews_on) | tojson }},"size":"sm"}]},',
     '{"type":"Row","children":[{"type":"Caption","value":"Seats"},{"type":"Spacer"},{"type":"Text","value":{{ (seats_used ~ " of " ~ seats) | tojson }},"size":"sm"}]}',
-    '{% if invoice_url is defined %},{"type":"Button","label":"View invoice","onClickAction":{"type":"open_invoice","payload":{"url":{{ (invoice_url) | tojson }}}}}{% endif %}',
+    '{% if invoice_url is defined %},{"type":"Button","label":"View invoice","iconEnd":"external-link","onClickAction":{"type":"open_url","payload":{"url":{{ (invoice_url) | tojson }}}}}{% endif %}',
     "]}",
   ].join("");
   return `${JSON.stringify(
@@ -225,23 +245,45 @@ function actionOf(value: unknown): WidgetActionConfig | null {
   return isRecord(value) && typeof value.type === "string" && value.type.trim() ? { type: value.type, ...(value.payload !== undefined ? { payload: value.payload } : {}) } : null;
 }
 
-/** Every action a widget offers, with the label the visitor would see on it. */
-export function widgetActions(root: WidgetNode): { action: WidgetActionConfig; label: string }[] {
-  const out: { action: WidgetActionConfig; label: string }[] = [];
-  for (const node of walk(root)) {
+/**
+ * W-17: an id for every ListViewItem, in tree order (`i0`, `i1`, …). The server and the renderer
+ * walk the same saved tree, so they agree on which row is which.
+ */
+export function itemIds(root: WidgetNode): Map<WidgetNode, string> {
+  const ids = new Map<WidgetNode, string>();
+  for (const node of walk(root)) if (node.type === "ListViewItem") ids.set(node, `i${ids.size}`);
+  return ids;
+}
+
+/** One action a widget offers: the label the visitor sees on it, and the list item it's in (if any). */
+export interface OfferedAction {
+  action: WidgetActionConfig;
+  label: string;
+  item?: string;
+}
+
+/** Every action a widget offers. Actions inside a list item belong to that item (W-17); the rest to the card. */
+export function widgetActions(root: WidgetNode): OfferedAction[] {
+  const out: OfferedAction[] = [];
+  const ids = itemIds(root);
+  const visit = (node: WidgetNode, item: string | undefined) => {
+    const here = ids.get(node) ?? item;
+    const at = here ? { item: here } : {};
     const click = actionOf(node.onClickAction);
-    if (click) out.push({ action: click, label: typeof node.label === "string" && node.label ? node.label : nodeText(node) || click.type });
+    if (click) out.push({ action: click, label: typeof node.label === "string" && node.label ? node.label : nodeText(node) || click.type, ...at });
     const submit = actionOf(node.onSubmitAction);
     if (submit) {
       const button = [...walk(node)].find((n) => n.type === "Button" && n.submit === true && typeof n.label === "string");
-      out.push({ action: submit, label: (button?.label as string | undefined) ?? "Submit" });
+      out.push({ action: submit, label: (button?.label as string | undefined) ?? "Submit", ...at });
     }
     for (const key of ["confirm", "cancel"] as const) {
       const card = node[key];
       const action = isRecord(card) ? actionOf(card.action) : null;
-      if (action) out.push({ action, label: isRecord(card) && typeof card.label === "string" ? card.label : key === "confirm" ? "Confirm" : "Cancel" });
+      if (action) out.push({ action, label: isRecord(card) && typeof card.label === "string" ? card.label : key === "confirm" ? "Confirm" : "Cancel", ...at });
     }
-  }
+    for (const child of node.children ?? []) visit(child, here);
+  };
+  visit(root, undefined);
   return out;
 }
 
@@ -259,12 +301,20 @@ const sameJson = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.
 
 /**
  * Checks an action a visitor sent against the widget they saw: it must be one the widget offers
- * (same type and payload), and only its own fields' values are kept. Null when it isn't.
+ * (same type and payload, in the list item they say), and only its own fields' values are kept.
+ * Null when it isn't. `open_url` never comes here: the browser opens it.
  */
-export function matchWidgetAction(root: WidgetNode, sent: unknown, values: unknown): { label: string; action: WidgetActionConfig; values: Record<string, string | boolean> } | null {
+export function matchWidgetAction(
+  root: WidgetNode,
+  sent: unknown,
+  values: unknown,
+  item?: unknown,
+): { label: string; action: WidgetActionConfig; values: Record<string, string | boolean>; item?: string } | null {
   const want = actionOf(sent);
-  if (!want) return null;
-  const hit = widgetActions(root).find((a) => a.action.type === want.type && sameJson(a.action.payload, want.payload));
+  if (!want || want.type === OPEN_URL) return null;
+  const same = widgetActions(root).filter((a) => a.action.type === want.type && sameJson(a.action.payload, want.payload));
+  // The same action can sit in several rows ("Add" with the same payload): the row the visitor says, else the first.
+  const hit = same.find((a) => (a.item ?? null) === (typeof item === "string" ? item : null)) ?? same[0];
   if (!hit) return null;
   const fields = widgetFields(root);
   const kept: Record<string, string | boolean> = {};
@@ -275,7 +325,33 @@ export function matchWidgetAction(root: WidgetNode, sent: unknown, values: unkno
       else if (typeof value === "string" || typeof value === "number") kept[key] = String(value).slice(0, MAX_ACTION_VALUE);
     }
   }
-  return { label: hit.label.slice(0, 200), action: hit.action, values: kept };
+  return { label: hit.label.slice(0, 200), action: hit.action, values: kept, ...(hit.item ? { item: hit.item } : {}) };
+}
+
+/** Whether the action the visitor pressed is already used: the whole card, or (in a list) that row. */
+export function widgetActionUsed(widget: MessageWidget, item: string | undefined): boolean {
+  return Boolean(widget.used || (item && widget.items?.[item]));
+}
+
+/** The widget after a press: that row is used (W-17), or the whole card for its own actions. */
+export function markWidgetUsed(widget: MessageWidget, label: string, item: string | undefined, at: number): MessageWidget {
+  return item ? { ...widget, items: { ...widget.items, [item]: { label, at } } } : { ...widget, used: { label, at } };
+}
+
+/** W-17: a tool action's input: its payload's fields plus what was entered, only names the tool takes. */
+export function toolActionInput(action: WidgetActionConfig, values: Record<string, string | boolean>, inputs: Record<string, { type: string }>): Record<string, unknown> {
+  const raw: Record<string, unknown> = { ...(isRecord(action.payload) ? action.payload : {}), ...values };
+  const out: Record<string, unknown> = {};
+  for (const [name, spec] of Object.entries(inputs)) {
+    const v = raw[name];
+    if (v === undefined || v === null || v === "") continue;
+    if (spec.type === "number" || spec.type === "integer") {
+      const n = Number(v);
+      if (Number.isFinite(n)) out[name] = spec.type === "integer" ? Math.trunc(n) : n;
+    } else if (spec.type === "boolean") out[name] = v === true || v === "true" || v === "on";
+    else out[name] = typeof v === "string" ? v : JSON.stringify(v);
+  }
+  return out;
 }
 
 /** The visible words of a node and its children, in order (for previews and labels). */
@@ -297,7 +373,12 @@ export function widgetActionLine(label: string, meta: WidgetActionMeta): string 
   const details = [`action ${meta.type}`];
   if (meta.payload !== undefined) details.push(`payload ${JSON.stringify(meta.payload)}`);
   if (meta.values && Object.keys(meta.values).length) details.push(`entered ${JSON.stringify(meta.values)}`);
-  return `[On the ${meta.widget} card the customer pressed "${label}": ${details.join(", ")}]`;
+  const line = `[On the ${meta.widget} card the customer pressed "${label}": ${details.join(", ")}]`;
+  if (!meta.tool) return line;
+  // W-17: the button ran a tool already; the AI only says what happened (and what's next).
+  const output = meta.tool.output ?? "";
+  const out = output.length > 1500 ? `${output.slice(0, 1500)}…` : output;
+  return `${line}\n[That ran ${meta.tool.name}: ${meta.tool.status === "ok" ? "done" : "failed"}.${out ? ` Result: ${out}` : ""}]`;
 }
 
 /** The body of an AI message that only showed cards (the inbox preview; the widget hides it). */

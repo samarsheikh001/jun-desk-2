@@ -1,5 +1,5 @@
-import { createContext, Fragment, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { MessageWidget, WidgetActionConfig, WidgetNode } from "../../../shared/widgets.ts";
+import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { actionUrl, itemIds, OPEN_URL, type MessageWidget, type WidgetActionConfig, type WidgetNode } from "../../../shared/widgets.ts";
 import { WidgetChart } from "./chart.tsx";
 import { iconSize, WidgetIcon } from "./icons.tsx";
 import { background, block, box, color, imageSrc, insets, length, SEMANTIC, space, text, type Theme } from "./style.ts";
@@ -18,15 +18,25 @@ export interface WidgetActionEvent {
   action: WidgetActionConfig;
   label: string;
   values: Record<string, string | boolean>;
+  /** W-17: the list item it was pressed in. */
+  item?: string;
 }
 
 interface Ctx {
   theme: Theme;
+  /** The card's own actions are off (read-only, used, or one is being sent). */
   disabled: boolean;
-  fire: (action: unknown, label: string, check: boolean) => void;
+  /** Read-only (history, inbox, streaming): nothing can be sent, though links still open. */
+  readOnly: boolean;
+  fire: (action: unknown, label: string, check: boolean, item?: string) => void;
+  /** W-17: list item ids, and which items are used or being sent. */
+  items: Map<WidgetNode, string>;
+  itemState: (id: string) => { used: { label: string } | null; busy: boolean };
 }
 
-const WidgetCtx = createContext<Ctx>({ theme: "light", disabled: true, fire: () => {} });
+const WidgetCtx = createContext<Ctx>({ theme: "light", disabled: true, readOnly: true, fire: () => {}, items: new Map(), itemState: () => ({ used: null, busy: false }) });
+/** W-17: the list item a control sits in (its own used state). */
+const ItemCtx = createContext<{ id?: string; disabled: boolean }>({ disabled: false });
 
 function asAction(value: unknown): WidgetActionConfig | null {
   return value && typeof value === "object" && typeof (value as { type?: unknown }).type === "string" ? (value as WidgetActionConfig) : null;
@@ -81,8 +91,12 @@ function Markdown({ value }: { value: string }) {
 const CONTROL_SIZES = new Set(["3xs", "2xs", "xs", "sm", "md", "lg", "xl", "2xl", "3xl"]);
 
 function Button({ node }: { node: WidgetNode }) {
-  const { theme, disabled, fire } = useContext(WidgetCtx);
+  const { theme, disabled: cardOff, fire } = useContext(WidgetCtx);
+  const item = useContext(ItemCtx);
   const action = asAction(node.onClickAction);
+  // A link opens even on a used or read-only card; in a list, a row is off once it's used.
+  const link = action?.type === OPEN_URL;
+  const disabled = link ? false : item.id ? item.disabled : cardOff;
   const label = str(node.label);
   const style = node.style === "primary" ? "primary" : node.style === "secondary" ? "secondary" : null;
   const tone = str(node.color) || (style === "primary" ? "primary" : "secondary");
@@ -97,7 +111,7 @@ function Button({ node }: { node: WidgetNode }) {
       className={`ck-btn ck-btn-${variant} ck-size-${size}${node.pill === true ? " ck-pill" : ""}${node.block === true ? " ck-block" : ""}${!label ? " ck-btn-icon" : ""}`}
       style={{ "--ck-tone": c, "--ck-on-tone": tone === "primary" ? "var(--ck-accent-text)" : "#fff" } as CSSProperties}
       disabled={disabled || node.disabled === true || (!action && !submit)}
-      onClick={submit || !action ? undefined : () => fire(action, label || action.type, false)}
+      onClick={submit || !action ? undefined : () => fire(action, label || action.type, false, item.id)}
     >
       {node.iconStart ? <WidgetIcon name={node.iconStart} size={icons} /> : null}
       {label && <span>{label}</span>}
@@ -245,17 +259,50 @@ function ListView({ node }: { node: WidgetNode }) {
 }
 
 function ListViewItem({ node }: { node: WidgetNode }) {
-  const { disabled, fire } = useContext(WidgetCtx);
+  const { readOnly, disabled: cardOff, fire, items, itemState } = useContext(WidgetCtx);
+  const id = items.get(node);
+  const state = id ? itemState(id) : { used: null, busy: false };
+  // W-17: each row is used on its own; the card being used (or read-only) turns them all off.
+  const disabled = readOnly || cardOff || Boolean(state.used) || state.busy;
   const action = asAction(node.onClickAction);
   const style: CSSProperties = { gap: space(node.gap) ?? "12px" };
   if (typeof node.align === "string") style.alignItems = { start: "flex-start", end: "flex-end", center: "center", baseline: "baseline", stretch: "stretch" }[node.align] ?? "center";
   const children = (node.children ?? []).map((c, i) => <Node key={str(c.key) || i} node={c} />);
-  if (!action) return <div className="ck-item" style={style}>{children}</div>;
-  const label = (node.children ?? []).map((c) => str(c.value)).filter(Boolean)[0] ?? action.type;
-  return (
-    <button type="button" className="ck-item ck-item-btn" style={style} disabled={disabled} onClick={() => fire(action, label, false)}>
+  const done = state.used ? (
+    <span className="ck-item-done">
+      <WidgetIcon name="check" size={13} />
+      <span>{state.used.label}</span>
+    </span>
+  ) : null;
+  const body = (
+    <ItemCtx.Provider value={{ ...(id ? { id } : {}), disabled }}>
       {children}
-    </button>
+      {done}
+    </ItemCtx.Provider>
+  );
+  if (!action) return <div className={`ck-item${state.used ? " ck-item-used" : ""}`} style={style}>{body}</div>;
+  const label = (node.children ?? []).map((c) => str(c.value)).filter(Boolean)[0] ?? action.type;
+  const link = action.type === OPEN_URL;
+  return (
+    <div
+      className={`ck-item ck-item-btn${state.used ? " ck-item-used" : ""}`}
+      style={style}
+      role="button"
+      tabIndex={disabled && !link ? -1 : 0}
+      aria-disabled={disabled && !link}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("button, input, select, textarea, label")) return; // its own controls
+        if (link || !disabled) fire(action, label, false, id);
+      }}
+      onKeyDown={(e) => {
+        if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget && (link || !disabled)) {
+          e.preventDefault();
+          fire(action, label, false, id);
+        }
+      }}
+    >
+      {body}
+    </div>
   );
 }
 
@@ -289,7 +336,9 @@ function Table({ node }: { node: WidgetNode }) {
 }
 
 function Container({ node, dir, className = "" }: { node: WidgetNode; dir: "row" | "col"; className?: string }) {
-  const { theme, disabled, fire } = useContext(WidgetCtx);
+  const { theme, disabled: cardOff, fire } = useContext(WidgetCtx);
+  const item = useContext(ItemCtx);
+  const disabled = item.id ? item.disabled : cardOff;
   const style = box(node, theme);
   const click = asAction(node.onClickAction);
   const children = (node.children ?? []).map((c, i) => <Node key={str(c.key) || i} node={c} />);
@@ -306,7 +355,7 @@ function Container({ node, dir, className = "" }: { node: WidgetNode; dir: "row"
           const btn = target.closest("button[type=submit]") as HTMLButtonElement | null;
           if (!btn || !submit) return;
           e.preventDefault();
-          fire(submit, btn.textContent?.trim() || "Submit", true);
+          fire(submit, btn.textContent?.trim() || "Submit", true, item.id);
         }}
       >
         {children}
@@ -315,7 +364,7 @@ function Container({ node, dir, className = "" }: { node: WidgetNode; dir: "row"
   }
   if (click) {
     return (
-      <div className={`${cls} ck-clickable`} style={style} role="button" tabIndex={disabled ? -1 : 0} aria-disabled={disabled} onClick={() => !disabled && fire(click, click.type, false)}>
+      <div className={`${cls} ck-clickable`} style={style} role="button" tabIndex={disabled ? -1 : 0} aria-disabled={disabled} onClick={() => !disabled && fire(click, click.type, false, item.id)}>
         {children}
       </div>
     );
@@ -495,24 +544,38 @@ export function WidgetCard({
   desk?: boolean;
 }) {
   const form = useRef<HTMLFormElement>(null);
-  const [sent, setSent] = useState<string | null>(null);
-  // A failed send (the card was used elsewhere, or the socket dropped) lets the visitor try again.
+  // What's being sent: "card", or a list item's id. A failed send (used elsewhere, socket dropped) can be retried.
+  const [sending, setSending] = useState<Set<string>>(() => new Set());
   useEffect(() => {
-    if (!sent) return;
-    const t = setTimeout(() => setSent(null), 8000);
+    if (!sending.size) return;
+    const t = setTimeout(() => setSending(new Set()), 8000);
     return () => clearTimeout(t);
-  }, [sent]);
+  }, [sending]);
+  // The server's answer (the card or row marked used) ends the wait.
+  useEffect(() => setSending(new Set()), [widget.used, widget.items]);
   const used = widget.used ?? null;
-  const disabled = !interactive || !onAction || Boolean(used) || sent !== null;
+  const readOnly = !interactive || !onAction;
+  const disabled = readOnly || Boolean(used) || sending.has("card");
+  const ids = useMemo(() => itemIds(widget.root), [widget.root]);
   const ctx: Ctx = {
     theme,
     disabled,
-    fire: (action, label, check) => {
+    readOnly,
+    items: ids,
+    itemState: (id) => ({ used: widget.items?.[id] ?? null, busy: sending.has(id) }),
+    fire: (action, label, check, item) => {
       const a = asAction(action);
-      if (!a || disabled || !form.current) return;
+      if (!a || !form.current) return;
+      // W-17: a link opens here; nothing is sent and nothing is used.
+      if (a.type === OPEN_URL) {
+        const url = actionUrl(a);
+        if (url) window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (readOnly || used || sending.has(item ?? "card") || (item && widget.items?.[item])) return;
       if (check && !form.current.reportValidity()) return;
-      setSent(label);
-      onAction?.({ action: { type: a.type, ...(a.payload !== undefined ? { payload: a.payload } : {}) }, label, values: collect(form.current) });
+      setSending((s) => new Set(s).add(item ?? "card"));
+      onAction?.({ action: { type: a.type, ...(a.payload !== undefined ? { payload: a.payload } : {}) }, label, values: collect(form.current), ...(item ? { item } : {}) });
     },
   };
   const root = widget.root;

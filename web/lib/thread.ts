@@ -147,7 +147,7 @@ export function useThread(options: {
 
   /** W-09: a card's button, sent as the visitor's message (its label) with which card and what they entered. */
   const sendWidgetAction = useCallback(
-    (label: string, widgetAction: { messageId: string; widgetId: string; action: unknown; values: Record<string, string | boolean> }, context?: unknown, actions?: unknown) => {
+    (label: string, widgetAction: { messageId: string; widgetId: string; action: unknown; values: Record<string, string | boolean>; item?: string }, context?: unknown, actions?: unknown) => {
       const clientMsgId = crypto.randomUUID();
       setPending((p) => [...p, { clientMsgId, body: label, attachments: [] }]);
       const sent = sendEvent({ type: "send", clientMsgId, body: label, attachments: [], widgetAction, ...(context !== undefined ? { context } : {}), ...(actions !== undefined ? { actions } : {}) });

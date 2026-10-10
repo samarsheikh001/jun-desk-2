@@ -766,7 +766,7 @@ function WidgetThread({
           // W-09: in order with anything typed before it, with the page's context like a typed message.
           flushing.current = flushing.current.then(async () => {
             const { context, actions } = await hostContext();
-            thread.sendWidgetAction(event.label, { messageId, widgetId: widget.id, action: event.action, values: event.values }, context, actions);
+            thread.sendWidgetAction(event.label, { messageId, widgetId: widget.id, action: event.action, values: event.values, ...(event.item ? { item: event.item } : {}) }, context, actions);
           });
         }}
         {...(action

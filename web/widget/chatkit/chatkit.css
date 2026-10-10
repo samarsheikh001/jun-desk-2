@@ -206,8 +206,12 @@
 .ck-item { display: flex; align-items: center; min-width: 0; padding: 8px 12px; border-radius: 12px; background: transparent; border: 0; color: inherit; font: inherit; text-align: left; }
 .ck-item + .ck-item { border-top: 1px solid var(--ck-border-soft); border-radius: 0; }
 .ck-item-btn { width: 100%; cursor: pointer; }
-.ck-item-btn:not(:disabled):hover { background: var(--ck-surface-3); }
-.ck-item-btn:disabled { cursor: default; }
+.ck-item-btn:not([aria-disabled="true"]):hover { background: var(--ck-surface-3); }
+.ck-item-btn[aria-disabled="true"] { cursor: default; }
+.ck-item-btn[aria-disabled="true"]:hover { background: transparent; }
+.ck-item-btn:focus-visible { outline: 2px solid var(--ck-accent); outline-offset: -2px; }
+.ck-item-used > :not(.ck-item-done) { opacity: 0.6; }
+.ck-item-done { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex-shrink: 0; color: var(--ck-success); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
 .ck-more { margin: 4px 12px 8px; padding: 0; border: 0; background: none; color: var(--ck-text-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
 .ck-more:hover { color: var(--ck-text); }
 .ck-table-wrap { overflow-x: auto; }

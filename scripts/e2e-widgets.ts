@@ -134,4 +134,96 @@ await step("agents see the card and what was entered in the conversation", async
   socket.close();
 });
 
+// ---------- W-17: a list with an action per row (a tool button), links, and a card the tool returns ----------
+
+// httpbin echoes a POST body back as `json`: the product list, and the cart after an add.
+const dresses = [
+  '{"type":"ListView","children":[',
+  '{%- for p in json.products -%}{% if not loop.first %},{% endif %}',
+  '{"type":"ListViewItem","children":[{"type":"Col","flex":"auto","children":[{"type":"Text","value":{{ p.name | tojson }},"weight":"semibold"},{"type":"Caption","value":{{ p.price | tojson }}}]},',
+  '{"type":"Button","label":"View","size":"sm","variant":"ghost","onClickAction":{"type":"open_url","payload":{"url":{{ ("https://shop.example.com/p/" ~ p.sku) | tojson }}}}},',
+  '{"type":"Button","label":"Add","size":"sm","onClickAction":{"type":"tool:add_to_cart","payload":{"sku":{{ p.sku | tojson }}}}}]}',
+  "{%- endfor -%}]}",
+].join("");
+const cart = '{"type":"Card","size":"sm","children":[{"type":"Row","children":[{"type":"Icon","name":"check-circle-filled","color":"success"},{"type":"Text","value":{{ ("Added " ~ json.sku ~ " to your cart") | tojson }}}]}]}';
+const shopFiles = {
+  ...files,
+  "AGENTS.md": `${files["AGENTS.md"]}- When the customer asks to see dresses or products, call find_dresses.\n`,
+  "tools/find_dresses.yaml": [
+    "description: The dresses in the shop, with prices.",
+    "status: Finding dresses",
+    "method: POST",
+    "url: https://httpbin.org/anything",
+    "body:",
+    "  products:",
+    "    - { sku: R1, name: Red linen dress, price: $89 }",
+    "    - { sku: B2, name: Blue midi dress, price: $120 }",
+    "    - { sku: G3, name: Green wrap dress, price: $99 }",
+    "pick: [json]",
+    "widget: dresses",
+    "",
+  ].join("\n"),
+  "tools/add_to_cart.yaml": ["description: Add a product to the customer's cart.", "status: Adding to your cart", "method: POST", "url: https://httpbin.org/anything", "input:", "  sku: { type: string }", "pick: [json]", "widget: cart", ""].join("\n"),
+  "widgets/dresses.widget": JSON.stringify({ version: "1.0", name: "Dresses", template: dresses, sample: { json: { products: [{ sku: "R1", name: "Red", price: "$1" }] } } }),
+  "widgets/cart.widget": JSON.stringify({ version: "1.0", name: "Cart", template: cart, sample: { json: { sku: "R1" } } }),
+};
+
+let shopSocket: TestSocket;
+let list: any;
+
+await step("W-17: a product list; each row's Add button names a tool, which must exist", async () => {
+  const bad = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: { ...shopFiles, "tools/add_to_cart.yaml": undefined }, base: null, force: true, message: "x" } });
+  assert.equal(bad.status, 400);
+  assert.match(JSON.stringify(bad.json), /tool:add_to_cart: there's no tools\/add_to_cart\.yaml/);
+  const res = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: shopFiles, base: null, force: true, message: "shop" } });
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+
+  const visitor = new Client();
+  const token = (await visitor.call(`/widget/${widgetKey}/visitor`, { body: {} })).json.token as string;
+  const started = await visitor.call(`/widget/${widgetKey}/conversations`, { body: { clientMsgId: crypto.randomUUID(), body: "Can you show me your dresses?" }, headers: { "X-Visitor-Token": token } });
+  assert.equal(started.status, 200, JSON.stringify(started.json));
+  shopSocket = new TestSocket(`/api/widget/${widgetKey}/conversations/${started.json.conversation.id}/ws?since=1`, { protocols: [token] });
+  await shopSocket.opened;
+  list = (await shopSocket.next((e) => e.type === "message" && e.message.authorType === "ai", AI_TIMEOUT)).message;
+  console.log(`    AI: ${list.body.replace(/\s+/g, " ").slice(0, 120)}`);
+  assert.equal(list.meta.widgets?.[0]?.name, "dresses", JSON.stringify(list.meta));
+  assert.equal(list.meta.widgets[0].root.children.length, 3);
+});
+
+await step("W-17: Add on one row runs the tool at once; only that row is used; the AI answers with the tool's cart card", async () => {
+  const card = list.meta.widgets[0];
+  const press = (sku: string, item: string) => {
+    const clientMsgId = crypto.randomUUID();
+    shopSocket.send({ type: "send", clientMsgId, body: "Add", attachments: [], widgetAction: { messageId: list.id, widgetId: card.id, action: { type: "tool:add_to_cart", payload: { sku } }, values: {}, item } });
+    return clientMsgId;
+  };
+  // A link is never sent: the browser opens it.
+  const link = crypto.randomUUID();
+  shopSocket.send({ type: "send", clientMsgId: link, body: "View", attachments: [], widgetAction: { messageId: list.id, widgetId: card.id, action: { type: "open_url", payload: { url: "https://shop.example.com/p/R1" } }, item: "i0" } });
+  assert.equal((await shopSocket.next((e) => e.type === "error" && e.clientMsgId === link)).code, "bad_widget_action");
+
+  const first = press("B2", "i1");
+  const used = await shopSocket.next((e) => e.type === "message" && e.message.id === list.id && e.message.meta.widgets?.[0]?.items?.i1);
+  assert.equal(used.message.meta.widgets[0].used, undefined, "the card itself stays usable");
+  const sent = (await shopSocket.next((e) => e.type === "message" && e.message.clientMsgId === first)).message;
+  assert.equal(sent.body, "Add");
+  assert.deepEqual(sent.meta.widgetAction.tool, { name: "add_to_cart", status: "ok" }, "the tool ran; its output isn't in the visitor's copy");
+  assert.equal(sent.meta.widgetAction.item, "i1");
+
+  const again = press("B2", "i1");
+  assert.equal((await shopSocket.next((e) => e.type === "error" && e.clientMsgId === again)).code, "widget_used");
+
+  const reply = (await shopSocket.next((e) => e.type === "message" && (e.message.authorType === "ai" || e.message.authorType === "system") && e.message.seq > sent.seq, AI_TIMEOUT)).message;
+  console.log(`    ${reply.authorType}: ${reply.body.replace(/\s+/g, " ").slice(0, 140)}`);
+  assert.equal(reply.authorType, "ai");
+  assert.equal(reply.meta.widgets?.[0]?.name, "cart", JSON.stringify(reply.meta));
+  assert.match(JSON.stringify(reply.meta.widgets[0].root), /Added B2 to your cart/);
+
+  // Another row still works.
+  const second = press("R1", "i0");
+  const ok = (await shopSocket.next((e) => e.type === "message" && e.message.clientMsgId === second)).message;
+  assert.equal(ok.meta.widgetAction.item, "i0");
+  shopSocket.close();
+});
+
 summary();

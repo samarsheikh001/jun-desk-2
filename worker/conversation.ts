@@ -21,13 +21,14 @@ import { AiUnavailableError, completeText, createModel, loadAiSettings, type Age
 import type { SearchHit } from "./ai/query.ts";
 import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
-import type { ToolAction } from "./ai/tools.ts";
+import { DEFAULT_TOOL_STATUS } from "./ai/config.ts";
+import { runTool, secretsFromEnv, type ToolAction } from "./ai/tools.ts";
 import { ACTION_ONLY_BODY, ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_CHAIN, MAX_ACTION_RESULT, rankActions, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
 import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { findMentions } from "../shared/inbox.ts";
-import { matchWidgetAction, WIDGET_ONLY_BODY, type WidgetActionMeta } from "../shared/widgets.ts";
+import { markWidgetUsed, matchWidgetAction, TOOL_ACTION, toolActionInput, WIDGET_ONLY_BODY, widgetActionUsed, type MessageWidget, type WidgetActionMeta } from "../shared/widgets.ts";
 import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
 import { newId } from "./lib/crypto.ts";
 import { notifyTeam } from "./lib/notify.ts";
@@ -54,7 +55,7 @@ export interface SendInput {
   /** An agent's internal note (I-05). Ignored for visitors. */
   internal?: boolean | undefined;
   /** W-09: the visitor pressed a card's button; checked against the card, then the body is its label. */
-  widgetAction?: { messageId: string; widgetId: string; action: unknown; values?: unknown } | undefined;
+  widgetAction?: { messageId: string; widgetId: string; action: unknown; values?: unknown; item?: unknown } | undefined;
 }
 
 export type SendResult = { ok: true; message: Message } | { ok: false; code: string; message: string };
@@ -76,6 +77,9 @@ export const FORWARD_HEADERS = {
 
 /** AI-21: the latest page-action list from the visitor's loader, in this object's storage (never D1). */
 const PAGE_ACTIONS_KEY = "pageActions";
+/** W-17: a card tool's output for the AI (by visitor message id), and a card it returned to show with the next answer (by seq). */
+const TOOL_OUTPUT_KEY = "widgetToolOutput:";
+const PENDING_WIDGETS_KEY = "pendingWidgets:";
 
 interface NewMessage {
   authorType: AuthorType;
@@ -250,6 +254,9 @@ export class Conversation extends DurableObject<Env> {
     // W-09: a card's button. The card must offer that action and not have been used; the message
     // reads as the button's label (from the card, not the client) and carries what was entered.
     const used = participant.role === "visitor" && input.widgetAction ? await this.#useWidget(ref, input.clientMsgId, input.widgetAction) : null;
+    // W-17: a `tool:<name>` button runs the tool now; the AI's turn then says what happened.
+    const toolRun = used?.meta ? await this.#runWidgetTool(ref, used.meta) : null;
+    if (toolRun && used?.meta) used.meta.tool = { name: toolRun.action.tool, status: toolRun.action.status };
     const body = used ? used.label : typeof input.body === "string" ? input.body.trim() : "";
     const attachments = await this.#checkAttachments(ref, participant, input.attachments ?? []);
     if (!body && attachments.length === 0) throw new SendError("empty", "Message is empty.");
@@ -288,6 +295,12 @@ export class Conversation extends DurableObject<Env> {
       ...(used?.meta ? { meta: { widgetAction: used.meta } } : {}),
     });
     if (participant.role === "agent" && mentions.length) await this.#notifyMentions(ref, participant, message);
+    if (toolRun && created) {
+      await this.#recordAction(ref, message.seq, toolRun.configVersion, toolRun.action);
+      // For the AI's history only (meta goes to the visitor); a card the tool shows comes with the AI's answer.
+      await this.ctx.storage.put(`${TOOL_OUTPUT_KEY}${message.id}`, toolRun.action.output.slice(0, 4000));
+      if (toolRun.widget) await this.ctx.storage.put(`${PENDING_WIDGETS_KEY}${message.seq}`, [{ label: toolRun.label, widget: toolRun.widget }]);
+    }
 
     if (participant.role === "visitor" && input.context !== undefined) await this.#storeContext(ref, message.seq, input.context);
     // AI-21: the page's actions travel with each message; the AI turn (an alarm) reads the latest list.
@@ -316,11 +329,12 @@ export class Conversation extends DurableObject<Env> {
     const message = row ? toMessage(row) : null;
     const widget = message?.meta.widgets?.find((w) => w.id === sent.widgetId);
     if (!message || !widget) throw new SendError("widget_gone", "That card is no longer available.");
-    if (widget.used) throw new SendError("widget_used", "That card was already used.");
-    const match = matchWidgetAction(widget.root, sent.action, sent.values);
+    const match = matchWidgetAction(widget.root, sent.action, sent.values, sent.item);
     if (!match) throw new SendError("bad_widget_action", "That card doesn't offer this action.");
+    // A list item's button uses only that row (W-17); the card's own actions use the whole card.
+    if (widgetActionUsed(widget, match.item)) throw new SendError("widget_used", "That card was already used.");
     const at = Date.now();
-    const meta = { ...message.meta, widgets: message.meta.widgets!.map((w) => (w.id === widget.id ? { ...w, used: { label: match.label, at } } : w)) };
+    const meta = { ...message.meta, widgets: message.meta.widgets!.map((w) => (w.id === widget.id ? markWidgetUsed(w, match.label, match.item, at) : w)) };
     await this.env.DB.prepare("UPDATE messages SET meta = ? WHERE id = ?").bind(JSON.stringify(meta), message.id).run();
     this.#broadcast({ type: "message", message: { ...message, meta } });
     return {
@@ -331,8 +345,37 @@ export class Conversation extends DurableObject<Env> {
         type: match.action.type,
         ...(match.action.payload !== undefined ? { payload: match.action.payload } : {}),
         ...(Object.keys(match.values).length ? { values: match.values } : {}),
+        ...(match.item ? { item: match.item } : {}),
       },
     };
+  }
+
+  /**
+   * W-17: runs the tool a card's `tool:<name>` button names, with the button's payload and what was
+   * entered (only the tool's own inputs), as the verified customer. Null for other actions.
+   */
+  async #runWidgetTool(ref: ConversationRef, meta: WidgetActionMeta): Promise<{ action: ToolAction; widget: MessageWidget | null; label: string; configVersion: number | null } | null> {
+    const name = TOOL_ACTION.exec(meta.type)?.[1];
+    if (!name) return null;
+    const [config, user] = await Promise.all([loadAgentConfig(this.env, ref.workspaceId), this.#verifiedCustomer(ref)]);
+    const spec = config.tools.find((t) => t.name === name);
+    if (!spec) {
+      return { action: { tool: name, input: {}, output: `There's no tool called ${name}.`, status: "error", httpStatus: null, durationMs: 0 }, widget: null, label: DEFAULT_TOOL_STATUS, configVersion: config.version };
+    }
+    const input = toolActionInput({ type: meta.type, ...(meta.payload !== undefined ? { payload: meta.payload } : {}) }, meta.values ?? {}, spec.input);
+    const { action, widget } = await runTool(spec, input, { secrets: secretsFromEnv(this.env), user, widgets: config.widgets }, `wb${Date.now().toString(36)}`);
+    return { action, widget, label: spec.status ?? DEFAULT_TOOL_STATUS, configVersion: config.version };
+  }
+
+  /** W-17: the AI's history gets each card tool's result back (kept out of the visitor's copy of the message). */
+  async #withToolOutputs(history: Message[]): Promise<Message[]> {
+    const ran = history.filter((m) => m.meta.widgetAction?.tool);
+    if (!ran.length) return history;
+    const outputs = await this.ctx.storage.get<string>(ran.map((m) => `${TOOL_OUTPUT_KEY}${m.id}`));
+    return history.map((m) => {
+      const output = m.meta.widgetAction?.tool ? outputs.get(`${TOOL_OUTPUT_KEY}${m.id}`) : undefined;
+      return output === undefined ? m : { ...m, meta: { ...m.meta, widgetAction: { ...m.meta.widgetAction!, tool: { ...m.meta.widgetAction!.tool!, output } } } };
+    });
   }
 
   /** I-14: "Ana replied" to the assignee of a chat the team is handling. */
@@ -601,6 +644,13 @@ export class Conversation extends DurableObject<Env> {
     this.#thinking = true;
     this.#turn = turnId;
     this.#broadcast({ type: "ai_status", state: "thinking", turn: turnId });
+    // W-17: a card the visitor's button's tool returned shows with this answer, from the start.
+    const pendingKey = `${PENDING_WIDGETS_KEY}${visitor.seq}`;
+    const pending = chain === 0 ? ((await this.ctx.storage.get<{ label: string; widget: MessageWidget }[]>(pendingKey)) ?? []) : [];
+    if (pending.length) {
+      this.#steps = { turn: turnId, steps: pending.map((p, i) => ({ id: `p${i}`, label: p.label, state: "done" as const, widget: p.widget })) };
+      for (const step of this.#steps.steps) this.#broadcast({ type: "ai_step", turn: turnId, step });
+    }
     try {
       let model: AgentModel;
       try {
@@ -634,7 +684,7 @@ export class Conversation extends DurableObject<Env> {
         workspaceName: workspace?.name ?? "this company",
         model,
         config,
-        history,
+        history: await this.#withToolOutputs(history),
         technical: technical.lines,
         ...(technical.timezone ? { timezone: technical.timezone } : {}),
         user,
@@ -642,6 +692,7 @@ export class Conversation extends DurableObject<Env> {
         pageActions: rankActions(pageActions ?? [], visitor.body),
         pagePath: technical.pagePath,
         followUp: followUp ? { name: followUp.name, status: followUp.status as "ok" | "error", result: followUp.result } : null,
+        shownWidgets: pending.length,
         // Citations stream already resolved (numbered by first use, with their sources).
         onVisible: (visible, hits) => {
           const { text, sources } = streamCitations(visible, hits);
@@ -669,6 +720,7 @@ export class Conversation extends DurableObject<Env> {
       });
       await Promise.all([...actions, this.#recordUsage(ref.workspaceId, month, result.usage)]);
       const { outcome, hits } = result;
+      const shownWidgets = [...pending.map((p) => p.widget), ...result.widgets];
 
       // A teammate may have taken over while we were writing: drop the answer.
       if ((await this.#handling(ref)) !== "ai") return false;
@@ -676,7 +728,7 @@ export class Conversation extends DurableObject<Env> {
       if (outcome.kind === "handoff") {
         // What it said (and showed) before handing off stays as its message, then the notice.
         const said = outcome.text ? resolveCitations(outcome.text, hits) : null;
-        const before = said?.text || result.widgets.length
+        const before = said?.text || shownWidgets.length
           ? await this.#insert(ref, {
               authorType: "ai",
               authorId: null,
@@ -686,10 +738,11 @@ export class Conversation extends DurableObject<Env> {
               meta: {
                 ...(said?.sources.length ? { sources: said.sources } : {}),
                 ...(config.version !== null ? { configVersion: config.version } : {}),
-                ...(result.widgets.length ? { widgets: result.widgets } : {}),
+                ...(shownWidgets.length ? { widgets: shownWidgets } : {}),
               },
             })
           : null;
+        if (pending.length) await this.ctx.storage.delete(pendingKey);
         await this.#handoff(ref, outcome.reason, HANDOFF_MESSAGES.default, settings, before ? [...history, before] : history, technical.lines);
         return false;
       }
@@ -703,7 +756,7 @@ export class Conversation extends DurableObject<Env> {
       if (repeat) return false; // its text would say "I'll do X now" about something already done; the card shows Done
       const action = result.pageAction ? this.#proposeAction(result.pageAction.action, result.pageAction.input) : null;
       const { text, sources } = resolveCitations(outcome.text, hits);
-      const widgets = result.widgets;
+      const widgets = shownWidgets;
       if (!text && !action && !widgets.length) {
         // Nothing to say: fine after an action (the card shows what happened); otherwise the team takes it.
         if (followUp) return false;
@@ -724,6 +777,7 @@ export class Conversation extends DurableObject<Env> {
           ...(widgets.length ? { widgets } : {}),
         },
       });
+      if (pending.length) await this.ctx.storage.delete(pendingKey);
       this.#streaming = undefined;
       this.#steps = undefined;
       this.#thinking = false;

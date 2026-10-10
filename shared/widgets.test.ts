@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { checkWidget, matchWidgetAction, nodeText, parseWidgetFile, renderWidget, widgetActionLine, widgetData, WidgetError } from "./widgets.ts";
+import { actionUrl, checkWidget, itemIds, markWidgetUsed, matchWidgetAction, nodeText, parseWidgetFile, renderWidget, TOOL_ACTION, toolActionInput, widgetActionLine, widgetActionUsed, widgetData, WidgetError } from "./widgets.ts";
 
 // A widget exported from ChatKit Studio's Download (2026-10-10), with the Studio's own render of its
 // default state as `outputJsonPreview`: our interpreter must produce the same tree.
@@ -68,5 +68,47 @@ test("text of a card, and the history line for an action", () => {
   assert.equal(
     widgetActionLine("Save", { widgetId: "w1", widget: "event", type: "note.save", values: { note: "hi" } }),
     '[On the event card the customer pressed "Save": action note.save, entered {"note":"hi"}]',
+  );
+});
+
+// W-17: a product list: one "Add" per row (a tool action), a link per row, and a card-level checkout.
+const shop = checkWidget({
+  type: "ListView",
+  children: [
+    { type: "ListViewItem", children: [{ type: "Text", value: "Red dress" }, { type: "Button", label: "Add", onClickAction: { type: "tool:add_to_cart", payload: { sku: "R1" } } }, { type: "Button", label: "View", onClickAction: { type: "open_url", payload: { url: "https://shop.test/r1" } } }] },
+    { type: "ListViewItem", children: [{ type: "Text", value: "Blue dress" }, { type: "Button", label: "Add", onClickAction: { type: "tool:add_to_cart", payload: { sku: "B2" } } }] },
+    { type: "ListViewItem", onClickAction: { type: "pick" }, children: [{ type: "Text", value: "Same action" }] },
+    { type: "ListViewItem", onClickAction: { type: "pick" }, children: [{ type: "Text", value: "Same action again" }] },
+  ],
+});
+
+test("W-17: list items have ids and their own actions; used one by one", () => {
+  assert.deepEqual([...itemIds(shop).values()], ["i0", "i1", "i2", "i3"]);
+  const blue = matchWidgetAction(shop, { type: "tool:add_to_cart", payload: { sku: "B2" } }, {}, "i1");
+  assert.equal(blue?.item, "i1");
+  // The same action in two rows: the row the visitor names.
+  assert.equal(matchWidgetAction(shop, { type: "pick" }, {}, "i3")?.item, "i3");
+  assert.equal(matchWidgetAction(shop, { type: "pick" }, {})?.item, "i2");
+  const widget = { id: "w1", name: "shop", root: shop };
+  const after = markWidgetUsed(widget, "Add", "i1", 1);
+  assert.equal(widgetActionUsed(after, "i1"), true);
+  assert.equal(widgetActionUsed(after, "i0"), false, "other rows still work");
+  assert.equal(widgetActionUsed(markWidgetUsed(widget, "Checkout", undefined, 1), "i0"), true, "a used card turns every row off");
+});
+
+test("W-17: links open in the browser (https only) and are never sent", () => {
+  assert.equal(actionUrl({ type: "open_url", payload: { url: "https://shop.test/r1" } }), "https://shop.test/r1");
+  assert.equal(actionUrl({ type: "open_url", payload: { url: "javascript:alert(1)" } }), null);
+  assert.equal(actionUrl({ type: "open_url", payload: { url: "http://shop.test" } }), null);
+  assert.equal(matchWidgetAction(shop, { type: "open_url", payload: { url: "https://shop.test/r1" } }, {}, "i0"), null);
+});
+
+test("W-17: a tool action's input is its payload plus what was entered, only the tool's own inputs, typed", () => {
+  const input = toolActionInput({ type: "tool:add_to_cart", payload: { sku: "R1", admin: true } }, { size: "M", qty: "2", gift: true }, { sku: { type: "string" }, size: { type: "string" }, qty: { type: "integer" }, gift: { type: "boolean" } });
+  assert.deepEqual(input, { sku: "R1", size: "M", qty: 2, gift: true });
+  assert.equal(TOOL_ACTION.exec("tool:add_to_cart")?.[1], "add_to_cart");
+  assert.equal(
+    widgetActionLine("Add", { widgetId: "w1", widget: "shop", type: "tool:add_to_cart", payload: { sku: "R1" }, item: "i0", tool: { name: "add_to_cart", status: "ok", output: '{"items":1}' } }),
+    '[On the shop card the customer pressed "Add": action tool:add_to_cart, payload {"sku":"R1"}]\n[That ran add_to_cart: done. Result: {"items":1}]',
   );
 });

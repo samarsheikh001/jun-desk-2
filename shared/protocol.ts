@@ -117,7 +117,7 @@ export type ClientEvent =
   /** `internal`: an agent's note (I-05), never shown to the visitor or the AI. */
   /** `actions`: AI-21, the page actions on the visitor's page right now (visitors only; see shared/actions.ts). */
   /** `widgetAction`: W-09, the visitor pressed a card's button: which card, which action, what they entered (visitors only). */
-  | { type: "send"; clientMsgId: string; body: string; attachments?: Attachment[]; context?: unknown; internal?: boolean; actions?: unknown; widgetAction?: { messageId: string; widgetId: string; action: unknown; values?: unknown } }
+  | { type: "send"; clientMsgId: string; body: string; attachments?: Attachment[]; context?: unknown; internal?: boolean; actions?: unknown; widgetAction?: { messageId: string; widgetId: string; action: unknown; values?: unknown; item?: string } }
   | { type: "typing"; typing: boolean }
   | { type: "read"; seq: number }
   /** Visitor asks for a person (W-07). */

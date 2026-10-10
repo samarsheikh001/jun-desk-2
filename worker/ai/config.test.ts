@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { systemPrompt } from "./agent.ts";
 import { DEFAULT_MAX_REPLIES, defaultFiles, fillTemplate, intentSkill, parseConfig, splitFrontmatter } from "./config.ts";
 import { TEMPLATE } from "../../packages/cli/src/template.ts";
-import { buildRequest, httpTools, shapeOutput, WIDGET_SHOWN_NOTE } from "./tools.ts";
+import { buildRequest, httpTools, runTool, shapeOutput, WIDGET_SHOWN_NOTE } from "./tools.ts";
 import { starterWidget } from "../../shared/widgets.ts";
 import { dedupeSse } from "./workers-ai.ts";
 
@@ -347,4 +347,32 @@ test("W-09: a tool with a widget shows its result as a card (step, onWidget) and
   const notJson = httpTools(config.tools, { secrets: () => undefined, fetch: (async () => new Response("plain text", { status: 200 })) as typeof fetch, widgets: config.widgets, onAction: (a) => actions.push(a) });
   assert.equal(await notJson.plan!.execute!({}, { toolCallId: "2", messages: [] } as never), "plain text");
   assert.deepEqual(actions[1]!.widget, { name: "subscription", error: "the response isn't JSON" });
+});
+
+test("W-17: a widget's `tool:<name>` button must name a tool; runTool runs one for a card", async () => {
+  const widget = JSON.stringify({
+    version: "1.0",
+    template: '{"type":"Card","children":[{"type":"Button","label":"Add","onClickAction":{"type":"tool:add_to_cart","payload":{"sku":{{ sku | tojson }}}}}]}',
+    sample: { sku: "R1" },
+  });
+  const tool = "description: Add to the cart\nmethod: POST\nurl: https://shop.test/cart\ninput:\n  sku: { type: string }\n  size: { type: string, required: false }\n";
+  assert.match(parseConfig({ "AGENTS.md": "x", "widgets/shop.widget": widget }).issues.map((i) => i.message).join("\n"), /tool:add_to_cart: there's no tools\/add_to_cart\.yaml/);
+  const { config, issues } = parseConfig({ "AGENTS.md": "x", "widgets/shop.widget": widget, "tools/add_to_cart.yaml": tool });
+  assert.deepEqual(issues, []);
+
+  let sent: unknown;
+  const { action } = await runTool(config.tools[0]!, { sku: "R1", size: "M" }, {
+    secrets: () => undefined,
+    fetch: (async (req: Request) => {
+      sent = await req.json();
+      return new Response('{"items":1}', { status: 200 });
+    }) as typeof fetch,
+  }, "wb1");
+  assert.deepEqual(sent, { sku: "R1", size: "M" });
+  assert.equal(action.status, "ok");
+  assert.equal(action.output, '{"items":1}');
+  // A required input the card didn't give: no call.
+  const missing = await runTool(config.tools[0]!, {}, { secrets: () => undefined, fetch: (() => assert.fail("no call")) as typeof fetch }, "wb2");
+  assert.equal(missing.action.status, "error");
+  assert.match(missing.action.output, /Missing input: sku/);
 });
