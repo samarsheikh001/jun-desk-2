@@ -71,7 +71,7 @@ function answer(ctx: EvalContext, config: AgentConfig, history: Message[], techn
   if (asksForHuman(history.at(-1)?.body ?? "")) {
     return Promise.resolve({
       raw: "",
-      outcome: { kind: "handoff", reason: "The customer asked for a person." },
+      outcome: { kind: "handoff", reason: "The customer asked for a person.", text: "" },
       hits: [],
       actions: [],
       pageAction: null,

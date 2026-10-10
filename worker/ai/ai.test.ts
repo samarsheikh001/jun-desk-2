@@ -97,7 +97,10 @@ test("model input replays a page action as a tool call and its result", () => {
 test("system prompt numbers sources and keeps the handoff rule", () => {
   const prompt = systemPrompt({ workspaceName: "Acme", persona: "Be brief.", hits: [hit("Refunds", "https://acme.dev/refunds")] });
   assert.match(prompt, /\[1\] Refunds \(https:\/\/acme\.dev\/refunds\)/);
-  assert.match(prompt, /HANDOFF: <short reason>/);
+  assert.match(prompt, /Call the handoff tool/);
+  // Follow-up questions are offered only when there are sources to ask about.
+  assert.match(prompt, /suggest_followups/);
+  assert.doesNotMatch(systemPrompt({ workspaceName: "Acme", persona: "", hits: [] }), /suggest_followups/);
   assert.match(prompt, /Be brief\./);
 });
 
@@ -106,40 +109,40 @@ test("FTS query quotes terms and drops stopwords", () => {
   assert.equal(ftsQuery("is it the"), null);
 });
 
-test("parseReply: answers, handoffs and escalations", async () => {
-  const { parseReply } = await import("./agent.ts");
-  assert.deepEqual(parseReply("HANDOFF: needs a refund"), { kind: "handoff", reason: "needs a refund" });
-  assert.deepEqual(parseReply("  "), { kind: "handoff", reason: "The AI couldn't answer from the knowledge base." });
-  assert.deepEqual(parseReply("Refunds take 14 days [1]."), { kind: "answer", text: "Refunds take 14 days [1].", escalate: null, followUps: [] });
-  assert.deepEqual(parseReply("Your payment request failed with a 500 at 14:02. I've flagged it.\nESCALATE: POST /api/billing returns 500"), {
+test("replyOutcome: the reply's words plus what it decided with tools", async () => {
+  const { replyOutcome } = await import("./agent.ts");
+  const none = { handoff: null, flag: null, followUps: null };
+  assert.deepEqual(replyOutcome("Refunds take 14 days [1].", none), { kind: "answer", text: "Refunds take 14 days [1].", escalate: null, followUps: [] });
+  // A handoff wins over everything, and keeps what was said before it.
+  assert.deepEqual(replyOutcome("I can't change billing myself.", { ...none, handoff: "needs a refund", followUps: ["Why?"] }), { kind: "handoff", reason: "needs a refund", text: "I can't change billing myself." });
+  assert.deepEqual(replyOutcome("", { ...none, handoff: "  " }), { kind: "handoff", reason: "The AI handed the chat to the team.", text: "" });
+  // No words and no decision: the team takes it.
+  assert.deepEqual(replyOutcome("  ", none), { kind: "handoff", reason: "The AI couldn't answer from the knowledge base.", text: "" });
+  // A flagged problem: the answer stands, follow-ups go.
+  assert.deepEqual(replyOutcome("Your payment request failed with a 500 at 14:02. I've flagged it.", { ...none, flag: "POST /api/billing returns 500", followUps: ["Why did it fail?"] }), {
     kind: "answer",
     text: "Your payment request failed with a 500 at 14:02. I've flagged it.",
     escalate: "POST /api/billing returns 500",
     followUps: [],
   });
+  // Flagged with nothing said to the customer: hand it over with the flag as the reason.
+  assert.deepEqual(replyOutcome("", { ...none, flag: "POST /api/billing returns 500" }), { kind: "handoff", reason: "Bug flagged by the AI: POST /api/billing returns 500", text: "" });
+  // The words "HANDOFF:" in the text are just text now.
+  assert.equal(replyOutcome("HANDOFF: you need staff.", none).kind, "answer");
 });
 
-test("streamVisible never shows HANDOFF or ESCALATE lines, even mid-stream", async () => {
-  const { streamVisible } = await import("./agent.ts");
-  assert.equal(streamVisible("HAND"), "");
-  assert.equal(streamVisible("HANDOFF: refund"), "");
-  assert.equal(streamVisible("Hello"), "Hello");
-  assert.equal(streamVisible("It failed.\nES"), "It failed.");
-  assert.equal(streamVisible("It failed.\nESCALATE: POST /api/billing 500"), "It failed.");
-  assert.equal(streamVisible("It failed.\nEspecially"), "It failed.\nEspecially");
-  // Mid-line, as some models write it.
-  assert.equal(streamVisible("I've flagged it. ESCAL"), "I've flagged it.");
-  assert.equal(streamVisible("I've flagged it. ESCALATE: POST /api/billing 500"), "I've flagged it.");
-  assert.equal(streamVisible("Ends with E"), "Ends with");
-});
-
-test("parseReply finds ESCALATE mid-line too", async () => {
-  const { parseReply } = await import("./agent.ts");
-  assert.deepEqual(parseReply("It failed with a 500 at 17:06. I've flagged this to the team. ESCALATE: POST /api/billing returns 500"), {
+test("follow-up questions are cleaned: unnumbered, unquoted, uncited, deduped, capped", async () => {
+  const { replyOutcome, cleanFollowUps } = await import("./agent.ts");
+  assert.deepEqual(cleanFollowUps(["How do I request one?", '2. "Can I get credit instead?"', "how do i request one?", "Is it free [1]?", "ok", 7, "Fourth one?"]), [
+    "How do I request one?",
+    "Can I get credit instead?",
+    "Is it free?",
+  ]);
+  assert.deepEqual(replyOutcome("Refunds take 14 days [1].", { handoff: null, flag: null, followUps: ["How do I request one?"] }), {
     kind: "answer",
-    text: "It failed with a 500 at 17:06. I've flagged this to the team.",
-    escalate: "POST /api/billing returns 500",
-    followUps: [],
+    text: "Refunds take 14 days [1].",
+    escalate: null,
+    followUps: ["How do I request one?"],
   });
 });
 
@@ -223,29 +226,6 @@ test("P-01 page opener: facts from title, path and hint; technical or alarming l
   assert.equal(cleanOpener("Check https://acme.com for prices."), null);
   assert.equal(cleanOpener(`${"Very long ".repeat(15)}line.`), null);
   assert.equal(cleanOpener("  "), null);
-});
-
-test("parseReply takes a FOLLOWUPS line off the answer, and drops it when escalating", async () => {
-  const { parseReply } = await import("./agent.ts");
-  assert.deepEqual(parseReply("Refunds take 14 days [1].\nFOLLOWUPS: How do I request one? | 2. \"Can I get credit instead?\" | how do i request one? | Is it free [1]?"), {
-    kind: "answer",
-    text: "Refunds take 14 days [1].",
-    escalate: null,
-    followUps: ["How do I request one?", "Can I get credit instead?", "Is it free?"],
-  });
-  assert.deepEqual(parseReply("It failed at 14:02. FOLLOWUPS: Why did it fail?\nESCALATE: POST /api/billing 500"), {
-    kind: "answer",
-    text: "It failed at 14:02.",
-    escalate: "POST /api/billing 500",
-    followUps: [],
-  });
-});
-
-test("streamVisible holds back FOLLOWUPS lines and their fragments", async () => {
-  const { streamVisible } = await import("./agent.ts");
-  assert.equal(streamVisible("Refunds take 14 days.\nFOLL"), "Refunds take 14 days.");
-  assert.equal(streamVisible("Refunds take 14 days.\nFOLLOWUPS: How do I"), "Refunds take 14 days.");
-  assert.equal(streamVisible("Refunds take 14 days.\nFollow the steps"), "Refunds take 14 days.\nFollow the steps");
 });
 
 test("streamCitations resolves citations so far and holds back an open bracket", async () => {

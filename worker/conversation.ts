@@ -580,7 +580,7 @@ export class Conversation extends DurableObject<Env> {
         this.ctx.storage.get<PageAction[]>(PAGE_ACTIONS_KEY),
       ]);
 
-      // Stream what the visitor may see: nothing that could be a HANDOFF line, never an ESCALATE line.
+      // Stream the reply as it comes (its decisions are tool calls, nothing to hold back).
       const streamId = newId("str");
       let shown = "";
       let cited = 0;
@@ -631,7 +631,19 @@ export class Conversation extends DurableObject<Env> {
       if ((await this.#handling(ref)) !== "ai") return false;
 
       if (outcome.kind === "handoff") {
-        await this.#handoff(ref, outcome.reason, HANDOFF_MESSAGES.default, settings, history, technical.lines);
+        // What it said before handing off (it already streamed) stays as its message, then the notice.
+        const said = outcome.text ? resolveCitations(outcome.text, hits) : null;
+        const before = said?.text
+          ? await this.#insert(ref, {
+              authorType: "ai",
+              authorId: null,
+              authorName: null,
+              body: said.text,
+              clientMsgId: turnId,
+              meta: { ...(said.sources.length ? { sources: said.sources } : {}), ...(config.version !== null ? { configVersion: config.version } : {}) },
+            })
+          : null;
+        await this.#handoff(ref, outcome.reason, HANDOFF_MESSAGES.default, settings, before ? [...history, before] : history, technical.lines);
         return false;
       }
       // AI-21: a `human` action is a request for the team, not something the page should do.

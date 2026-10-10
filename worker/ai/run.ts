@@ -1,7 +1,7 @@
 import { isStepCount, jsonSchema, streamText, tool, type ToolSet } from "ai";
 import { actionInputSchema, DONE_TOOL, matchesPage, type PageAction } from "../../shared/actions.ts";
 import type { AiStep, Message } from "../../shared/protocol.ts";
-import { INLINE_SKILLS_MAX_CHARS, parseReply, searchQuery, streamVisible, systemPrompt, toChatMessages, type ReplyOutcome } from "./agent.ts";
+import { FLAG_TOOL, FOLLOWUPS_TOOL, HANDOFF_TOOL, INLINE_SKILLS_MAX_CHARS, MAX_FOLLOWUPS, replyOutcome, searchQuery, systemPrompt, toChatMessages, type ReplyDecisions, type ReplyOutcome } from "./agent.ts";
 import { intentSkill, type AgentConfig, type ToolUser } from "./config.ts";
 import type { AgentModel } from "./providers.ts";
 import { ReplyText } from "./reply-text.ts";
@@ -55,6 +55,23 @@ export interface RunResult {
   pageAction: { action: PageAction; input: Record<string, unknown> } | null;
   usage: { inputTokens: number; outputTokens: number };
 }
+
+/** A tool call's arguments as an object (some providers hand them over as a JSON string). */
+function callArgs(input: unknown): Record<string, unknown> {
+  let args = input;
+  if (typeof args === "string") {
+    try {
+      args = JSON.parse(args);
+    } catch {
+      args = {};
+    }
+  }
+  return typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+}
+
+/** A JSON schema for one string parameter. */
+const oneString = (name: string, description: string) =>
+  jsonSchema<Record<string, string>>({ type: "object", properties: { [name]: { type: "string", description } }, required: [name], additionalProperties: false });
 
 function today(timezone = "UTC"): string {
   try {
@@ -121,6 +138,30 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     });
   }
 
+  // The model's decisions about the conversation (see HANDOFF_TOOL in agent.ts), read from its
+  // tool calls, never searched for in the text. Handoff and follow-ups have no execute: calling one
+  // ends the turn. Flagging runs, so the model can flag first and then explain in the next step:
+  // some models (Workers AI's Mistral) don't write text and call a tool in the same response.
+  const decisions: ReplyDecisions = { handoff: null, flag: null, followUps: null };
+  tools[HANDOFF_TOOL] = tool({ description: "Hand this chat to a person on the team. The customer is told a teammate will reply.", inputSchema: oneString("reason", "Why, in a few words, for the team.") });
+  if (input.technical?.length) {
+    tools[FLAG_TOOL] = tool({
+      description: "Flag a problem seen in the customer's browser (an error or failed request) to the engineers. Call it first, then tell the customer what failed.",
+      inputSchema: oneString("summary", "One line for engineers: what failed, where, when."),
+      execute: async ({ summary }) => {
+        decisions.flag = typeof summary === "string" ? summary : "";
+        onAction({ tool: FLAG_TOOL, input: { summary: decisions.flag }, output: "flagged", status: "ok", httpStatus: null, durationMs: 0 });
+        return "Flagged for the engineers. Now tell the customer plainly what failed and when, and that the team has it. Don't repeat anything you already said.";
+      },
+    });
+  }
+  if (hits.length) {
+    tools[FOLLOWUPS_TOOL] = tool({
+      description: `Offer up to ${MAX_FOLLOWUPS} short questions the customer might ask next, shown as buttons under your answer.`,
+      inputSchema: jsonSchema<{ questions: string[] }>({ type: "object", properties: { questions: { type: "array", items: { type: "string" } } }, required: ["questions"], additionalProperties: false }),
+    });
+  }
+
   const system = systemPrompt({
     workspaceName: input.workspaceName,
     persona: config.persona,
@@ -141,7 +182,16 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     model: input.model.model,
     ...input.model.prompt(system),
     messages: toChatMessages(input.history),
-    ...(Object.keys(tools).length ? { tools, stopWhen: isStepCount(MAX_TOOL_STEPS) } : {}),
+    tools,
+    stopWhen: [
+      isStepCount(MAX_TOOL_STEPS),
+      // Flagging runs so a model can flag first and explain next; one that already explained in the
+      // same step is done (given the tool's result, Mistral wrote its whole reply again).
+      ({ steps }) => {
+        const last = steps.at(-1);
+        return Boolean(last?.text.trim() && last.toolCalls.some((call) => call.toolName === FLAG_TOOL));
+      },
+    ],
     ...(decide ? { toolChoice: "required" as const } : {}),
     maxOutputTokens: 1200,
     ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
@@ -160,34 +210,22 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
       if (reply.startItem(part.id)) console.warn("[ai] a second message item in one step replaced the first", JSON.stringify(part.providerMetadata ?? {}));
     } else if (part.type === "tool-call" && pageActionByTool.has(part.toolName)) {
       // One action per reply: the first call counts, the rest are ignored (the turn ends anyway).
-      if (!pageAction) {
-        let args: unknown = part.input;
-        if (typeof args === "string") {
-          try {
-            args = JSON.parse(args);
-          } catch {
-            args = {};
-          }
-        }
-        pageAction = { action: pageActionByTool.get(part.toolName)!, input: typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {} };
-      }
+      if (!pageAction) pageAction = { action: pageActionByTool.get(part.toolName)!, input: callArgs(part.input) };
     } else if (part.type === "tool-call" && part.toolName === DONE_TOOL) {
-      let args: unknown = part.input;
-      if (typeof args === "string") {
-        try {
-          args = JSON.parse(args);
-        } catch {
-          args = {};
-        }
-      }
-      const message = args && typeof args === "object" ? (args as { message?: unknown }).message : undefined;
+      const message = callArgs(part.input).message;
       done = typeof message === "string" ? message.trim() : "";
+    } else if (part.type === "tool-call" && part.toolName === HANDOFF_TOOL) {
+      const reason = callArgs(part.input).reason;
+      decisions.handoff = typeof reason === "string" ? reason : "";
+    } else if (part.type === "tool-call" && part.toolName === FOLLOWUPS_TOOL) {
+      const questions = callArgs(part.input).questions;
+      decisions.followUps = Array.isArray(questions) ? questions : [];
     } else if (part.type === "text-delta") {
+      // Every word is the reply's: the model's decisions come as tool calls, so nothing is held back.
       raw = reply.delta(part.id, part.text);
-      const visible = streamVisible(raw);
-      if (visible && visible !== shown) {
-        shown = visible;
-        input.onVisible?.(visible, hits);
+      if (raw.trim() && raw !== shown) {
+        shown = raw;
+        input.onVisible?.(raw, hits);
       }
     } else if (part.type === "error") {
       throw part.error instanceof Error ? part.error : new Error(String(part.error));
@@ -202,16 +240,15 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   // DONE_TOOL's message is the reply when the model wrote none (text it did write already streamed).
   if (done !== null && !raw.trim() && done) {
     raw = done;
-    const visible = streamVisible(raw);
-    if (visible) input.onVisible?.(visible, hits);
+    input.onVisible?.(raw, hits);
   }
-  let outcome = parseReply(raw);
+  let outcome = replyOutcome(raw, decisions);
   // Ending the chain with nothing to say is fine (the steps show what was done), not a handoff.
   if (done !== null && !raw.trim()) outcome = { kind: "answer", text: "", escalate: null, followUps: [] };
   if (pageAction) {
     // A reply that only calls the action has no text; that's an answer (the action card), not a handoff.
     if (outcome.kind === "handoff") {
-      if (raw.trim()) pageAction = null; // an explicit HANDOFF line wins over the call
+      if (decisions.handoff !== null) pageAction = null; // handing off wins over the call
       else outcome = { kind: "answer", text: "", escalate: null, followUps: [] };
     } else {
       outcome = { ...outcome, followUps: [] }; // the card is the follow-up

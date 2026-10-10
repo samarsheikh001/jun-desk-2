@@ -65,9 +65,11 @@ test("config errors name the file and the problem", () => {
     "skills/refund/SKILL.md": "---\nname: refunds\n---\nsteps",
     "tools/lookup.yaml": "url: ftp://x\ninput:\n  id: string\nheaders:\n  X: '{token}'",
     "tools/leaky.yaml": "description: d\nurl: https://x.test/?key={secrets.KEY}",
+    "tools/handoff.yaml": "description: d\nurl: https://x.test/",
     "notes.txt": "hello",
   });
   const text = issues.map((i) => `${i.path}: ${i.message}`).join("\n");
+  assert.match(text, /tools\/handoff\.yaml: "handoff" is a built-in tool name/);
   assert.match(text, /AGENTS\.md: Unknown key "maxReplys"/);
   assert.match(text, /skills\/refund\/SKILL\.md: name must match the folder name/);
   assert.match(text, /skills\/refund\/SKILL\.md: description is required/);
