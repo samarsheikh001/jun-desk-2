@@ -13,16 +13,27 @@ export interface PageTab {
   content: ReactNode;
 }
 
-export function PageTabs({ title, tabs, value, className }: { title: string; tabs: PageTab[]; value: string; className?: string }) {
+export function PageTabs({ title, tabs, value, className, actions, tabsHidden }: {
+  title: string;
+  tabs: PageTab[];
+  value: string;
+  className?: string;
+  actions?: ReactNode;
+  /** The sidebar lists the parts (the Agent page): only the title shows, and the panels keep their URLs. */
+  tabsHidden?: boolean;
+}) {
   return (
     <Tabs value={value} onValueChange={(v) => { const tab = tabs.find((t) => t.value === v); if (tab) navigate(tab.path, { replace: true }); }} className={`page-tabs${className ? ` ${className}` : ""}`}>
       <div className="page-tabs-head">
         <h1>{title}</h1>
-        <TabsList className="kb-tabs page-tabs-list">
-          {tabs.map((t) => (
-            <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
-          ))}
-        </TabsList>
+        {!tabsHidden && (
+          <TabsList className="kb-tabs page-tabs-list">
+            {tabs.map((t) => (
+              <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
+            ))}
+          </TabsList>
+        )}
+        {actions && <div className="page-tabs-actions">{actions}</div>}
       </div>
       {tabs.map((t) => (
         <TabsContent key={t.value} value={t.value} keepMounted className="page-tabs-panel">{t.content}</TabsContent>

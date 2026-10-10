@@ -32,6 +32,10 @@ const NAVIGATION: { label: string; path: string; hint?: string }[] = [
   { label: "Visitors", path: "/visitors", hint: "g v" },
   { label: "Knowledge", path: "/knowledge" },
   { label: "Agent", path: "/agent" },
+  { label: "Agent: Procedures", path: "/agent/procedures" },
+  { label: "Agent: Actions", path: "/agent/actions" },
+  { label: "Agent: Widgets", path: "/agent/widgets" },
+  { label: "Agent: Tests", path: "/agent/tests" },
   { label: "Widget", path: "/appearance" },
   { label: "Settings", path: "/settings", hint: "g s" },
 ];

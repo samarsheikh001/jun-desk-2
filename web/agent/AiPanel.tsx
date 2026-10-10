@@ -185,8 +185,8 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
           </div>
         </details>
         <p className="small muted">
-          Tone, rules, procedures and tools are on the{" "}
-          <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent", { replace: true }); }}>Files</a> tab, as files you can also keep in git.
+          How it talks and when it hands over are under{" "}
+          <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent", { replace: true }); }}>Instructions</a>; procedures, actions and tests are under Agent in the sidebar.
         </p>
         {error && <p className="error">{error}</p>}
         {canEdit && <div className="row"><Button disabled={busy}>Save</Button>{saved && <span className="muted small">Saved ✓</span>}</div>}

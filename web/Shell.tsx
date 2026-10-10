@@ -4,7 +4,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuBadge,
-  SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
+  SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarProvider, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar.tsx";
 import { DeskIcon } from "./components/DeskIcon.tsx";
 import { PageErrorBoundary } from "./components/PageErrorBoundary.tsx";
@@ -13,7 +13,7 @@ import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../sh
 import { api, type Me } from "./api.ts";
 import { InboxPage } from "./inbox/InboxPage.tsx";
 import { WidgetPage } from "./appearance/AppearancePage.tsx";
-import { AgentPage } from "./agent/AgentPage.tsx";
+import { AGENT_SECTIONS, AgentPage, agentSection, movedFromAgentCode } from "./agent/AgentPage.tsx";
 import { CommandPalette, ShortcutsHelp } from "./components/CommandPalette.tsx";
 import { bridge, isControlTarget, isTypingTarget, modKey } from "./lib/bridge.ts";
 import { dispatchShortcut, INITIAL_SHORTCUT_STATE, type ShortcutCommand } from "./lib/commands.ts";
@@ -49,11 +49,11 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   // address is replaced before paint.
   useState(() => {
     const { pathname, search, hash } = window.location;
-    const target = movedFromSettings(pathname, search, hash);
+    const target = movedFromSettings(pathname, search, hash) ?? movedFromAgentCode(pathname);
     if (target) window.history.replaceState(null, "", target);
   });
   const urlPath = usePath();
-  const moved = movedFromSettings(urlPath, window.location.search, window.location.hash);
+  const moved = movedFromSettings(urlPath, window.location.search, window.location.hash) ?? movedFromAgentCode(urlPath);
   const path = moved ? moved.split("?")[0]! : urlPath;
   useLayoutEffect(() => {
     if (moved) navigate(moved, { replace: true });
@@ -261,6 +261,26 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                     <span>{label}</span>
                   </SidebarMenuButton>
                   {id === "visitors" && visitors.length > 0 && <SidebarMenuBadge className="nav-count">{visitors.length}</SidebarMenuBadge>}
+                  {/* The Agent's parts open under it while you're there (Chatbase's "Build"); the icon rail shows only Agent. */}
+                  {id === "agent" && section === "agent" && !settingsOpen && (
+                    <SidebarMenuSub aria-label="Agent">
+                      {AGENT_SECTIONS.map((a) => {
+                        const active = agentSection(pagePath) === a.id;
+                        return (
+                          <SidebarMenuSubItem key={a.id}>
+                            <SidebarMenuSubButton
+                              isActive={active}
+                              href={a.path}
+                              aria-current={active ? "page" : undefined}
+                              onClick={(e) => { e.preventDefault(); navigate(a.path); }}
+                            >
+                              <span>{a.label}</span>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        );
+                      })}
+                    </SidebarMenuSub>
+                  )}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
@@ -358,7 +378,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       ) : section === "appearance" ? (
         <WidgetPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} tab={pagePath.startsWith("/appearance/install") ? "install" : "look"} />
       ) : section === "agent" ? (
-        <AgentPage workspaceId={workspace.workspaceId} canEdit={canEdit} tab={pagePath.startsWith("/agent/settings") ? "settings" : "files"} />
+        <AgentPage workspaceId={workspace.workspaceId} canEdit={canEdit} path={pagePath} />
       ) : (
         <InboxPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} me={me.user} hub={hub} conversationId={conversationId} />
       )}
