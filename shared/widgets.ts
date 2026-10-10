@@ -24,6 +24,9 @@ export const MAX_WIDGET_NODES = 400;
 export const MAX_WIDGET_DEPTH = 24;
 export const MAX_WIDGET_JSON = 48 * 1024;
 const MAX_STRING = 4000;
+/** D-47: a `summary` template's length, and the rendered line's. */
+export const MAX_SUMMARY_TEMPLATE = 200;
+export const MAX_SUMMARY = 80;
 /** Values the visitor sends with an action: fields, and characters per field. */
 export const MAX_ACTION_VALUES = 30;
 export const MAX_ACTION_VALUE = 2000;
@@ -50,6 +53,11 @@ export interface MessageWidget {
   /** The widget file's name (`widgets/<name>.widget`); agents see it, the AI's history too. */
   name: string;
   root: WidgetNode;
+  /**
+   * D-47: the file's own one-line summary (its `summary` template rendered with the same data;
+   * plain text, ≤ 80 chars). The island's folded pill shows it before guessing with `widgetSummary`.
+   */
+  summary?: string;
   /** Set once the visitor used one of the card's own actions (confirm, a form, a button outside a list): it takes no more. */
   used?: { label: string; at: number };
   /** W-17: list items used one by one (by item id, `i<n>`): only that row is done, the rest still work. */
@@ -90,6 +98,8 @@ export interface WidgetSpec {
   /** The widget's own title in the file ("Order status"). */
   title: string;
   template: Template;
+  /** D-47: optional `summary`, a Jinja template for one plain-text line ("{{ high }} · {{ city }}"). */
+  summary?: Template;
   /** The data the widget was designed with (ChatKit Studio's default state), when the file has it. */
   sample?: Record<string, unknown>;
 }
@@ -125,6 +135,19 @@ export function parseWidgetFile(name: string, text: string): WidgetSpec {
   } catch (error) {
     throw new WidgetError(`template: ${(error as Error).message}`);
   }
+  // `summary` (ours, D-47): one line for the island's folded pill, from the same data as the card.
+  let summary: Template | undefined;
+  if (file.summary !== undefined && file.summary !== null) {
+    if (typeof file.summary !== "string") throw new WidgetError('summary is a Jinja template string, like "{{ plan }} · {{ status }}".');
+    if (file.summary.length > MAX_SUMMARY_TEMPLATE) throw new WidgetError(`summary is longer than ${MAX_SUMMARY_TEMPLATE} characters.`);
+    if (file.summary.trim()) {
+      try {
+        summary = compileTemplate(file.summary);
+      } catch (error) {
+        throw new WidgetError(`summary: ${(error as Error).message}`);
+      }
+    }
+  }
   // `sample`: data to preview and check it with (ours; ChatKit ignores it). Else ChatKit Studio's default state.
   let sample: Record<string, unknown> | undefined = isRecord(file.sample) ? file.sample : undefined;
   if (!sample && typeof file.encodedWidget === "string") {
@@ -135,7 +158,45 @@ export function parseWidgetFile(name: string, text: string): WidgetSpec {
       // not ours to judge: the sample is only for checking
     }
   }
-  return { name, title: typeof file.name === "string" && file.name.trim() ? file.name.trim() : name, template, ...(sample ? { sample } : {}) };
+  return { name, title: typeof file.name === "string" && file.name.trim() ? file.name.trim() : name, template, ...(summary ? { summary } : {}), ...(sample ? { sample } : {}) };
+}
+
+/**
+ * D-47: a widget's `summary` line for this data: whitespace collapsed, cut at `MAX_SUMMARY` with
+ * "…"; "" when there's no summary or it renders empty (or only punctuation). Throws WidgetError when the template fails.
+ */
+export function renderSummary(spec: Pick<WidgetSpec, "summary">, data: unknown): string {
+  if (!spec.summary) return "";
+  let text: string;
+  try {
+    text = spec.summary.render(widgetData(data));
+  } catch (error) {
+    throw new WidgetError(`summary: ${(error as Error).message}`);
+  }
+  const line = text.replace(/\s+/g, " ").trim();
+  // Only separators left (" · " with the data missing) says nothing: no line.
+  if (!/[\p{L}\p{N}]/u.test(line)) return "";
+  return line.length > MAX_SUMMARY ? `${line.slice(0, MAX_SUMMARY - 1).trimEnd()}…` : line;
+}
+
+/** `renderSummary` for a card being shown: a failing summary never fails the card, it's just left out. */
+export function summaryFor(spec: Pick<WidgetSpec, "summary">, data: unknown): { summary?: string } {
+  try {
+    const summary = renderSummary(spec, data);
+    return summary ? { summary } : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The summary line the dashboard's preview shows (rendered with the sample), or "". */
+export function previewSummary(name: string, text: string): string {
+  try {
+    const spec = parseWidgetFile(name, text);
+    return spec.sample ? renderSummary(spec, spec.sample) : "";
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -168,6 +229,8 @@ export function starterWidget(title: string): string {
       version: "1.0",
       name: title,
       template,
+      // One line for the chat's folded pill (optional; plain text from the same data).
+      summary: "{{ plan }} plan · {{ status }}",
       sample: { plan: "Pro", status: "active", renews_on: "Nov 3, 2026", seats: 10, seats_used: 7 },
     },
     null,

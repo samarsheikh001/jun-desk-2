@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog.tsx";
 import { PlusIcon, TrashIcon } from "../components/icons.tsx";
-import { previewWidget, starterWidget, type WidgetNode } from "../../shared/widgets.ts";
+import { previewSummary, previewWidget, starterWidget, type WidgetNode } from "../../shared/widgets.ts";
 import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
 
 // Support agent as code (AI-18): the dashboard edits the same files as `jun pull` / `jun push`.
@@ -70,7 +70,7 @@ const KINDS: Record<Kind, { group: string; one: string; what: string; placeholde
   widget: {
     group: "Widgets",
     one: "widget",
-    what: "A card a tool's result is shown as, like a plan summary or an order's status. Design one in ChatKit Studio (widgets.chatkit.studio), download the .widget file and paste it here; then add `widget: <name>` to the tool.",
+    what: "A card a tool's result is shown as, like a plan summary or an order's status. Design one in ChatKit Studio (widgets.chatkit.studio), download the .widget file and paste it here; then add `widget: <name>` to the tool. Optional `\"summary\"`: a one-line template from the same data (\"{{ plan }} · {{ status }}\"), shown when the chat folds the card into a pill.",
     placeholder: "subscription",
     path: (name) => `widgets/${name}.widget`,
     starter: (name) => starterWidget(name.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase())),
@@ -111,10 +111,12 @@ function WidgetPreview({ path, text }: { path: string; text: string }) {
   } catch (error) {
     problem = (error as Error).message;
   }
+  const summary = root ? previewSummary(name, text) : "";
   return (
     <div className="agent-widget-preview">
       <div className="muted small strong">Preview</div>
       {root ? <WidgetCard widget={{ id: "preview", name, root }} interactive={false} desk /> : <p className="muted small">{problem}</p>}
+      {summary ? <p className="muted small">Summary: {summary}</p> : null}
     </div>
   );
 }

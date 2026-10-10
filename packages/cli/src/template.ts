@@ -120,6 +120,7 @@ mock: { status: delivered, orderedOn: "2026-09-02", total: "$49.00" }   # used b
   "version": "1.0",
   "name": "Order",
   "template": "{\\"type\\":\\"Card\\",\\"size\\":\\"sm\\",\\"children\\":[{\\"type\\":\\"Row\\",\\"children\\":[{\\"type\\":\\"Title\\",\\"value\\":{{ (\\"Order \\" ~ number) | tojson }},\\"size\\":\\"sm\\"},{\\"type\\":\\"Spacer\\"},{\\"type\\":\\"Badge\\",\\"label\\":{{ (status) | tojson }},\\"color\\":{% if status == \\"delivered\\" %}\\"success\\"{% else %}\\"info\\"{% endif %}}]},{\\"type\\":\\"Divider\\",\\"flush\\":true},{\\"type\\":\\"Row\\",\\"children\\":[{\\"type\\":\\"Caption\\",\\"value\\":\\"Ordered\\"},{\\"type\\":\\"Spacer\\"},{\\"type\\":\\"Text\\",\\"value\\":{{ (orderedOn) | tojson }},\\"size\\":\\"sm\\"}]},{\\"type\\":\\"Row\\",\\"children\\":[{\\"type\\":\\"Caption\\",\\"value\\":\\"Total\\"},{\\"type\\":\\"Spacer\\"},{\\"type\\":\\"Text\\",\\"value\\":{{ (total) | tojson }},\\"size\\":\\"sm\\",\\"weight\\":\\"semibold\\"}]}]}",
+  "summary": "Order {{ number }} · {{ status }}",
   "sample": {
     "number": "A-1042",
     "status": "delivered",

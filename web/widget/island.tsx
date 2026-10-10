@@ -57,15 +57,28 @@ function useIslandFrame(box: { w: number; h: number }, live: boolean): void {
   }, [box.w, box.h, live]);
 }
 
-/** How long a finished answer stays open, untouched, before the island folds itself. */
+/**
+ * How long a finished answer stays open, untouched, before the island folds itself: AUTO_FOLD_MS
+ * plus the time to read what's on screen (READ_WORDS_PER_S), at most AUTO_FOLD_MAX_MS.
+ */
 export const AUTO_FOLD_MS = 8_000;
+export const AUTO_FOLD_MAX_MS = 30_000;
+const READ_WORDS_PER_S = 4;
+
+/** The wait for the answer on screen: the reply's words and its card's text (not the question). */
+function foldDelay(el: HTMLElement): number {
+  let words = 0;
+  for (const msg of el.querySelectorAll(".i-body .msg:not(.own)")) words += (msg.textContent ?? "").split(/\s+/).filter(Boolean).length;
+  return Math.min(AUTO_FOLD_MAX_MS, AUTO_FOLD_MS + (words / READ_WORDS_PER_S) * 1000);
+}
 
 /**
- * Folds the island AUTO_FOLD_MS after `fold` becomes set (the caller sets it only once an answer
+ * Folds the island foldDelay() after `fold` becomes set (the caller sets it only once an answer
  * is finished and nothing waits on the visitor), unless it's in use: the pointer over it, focus
  * on something in it other than the empty question box (which keeps the focus after sending),
- * text in the box, the "+" menu or a screenshot open. Any pointer, key, scroll or focus inside
- * starts the wait again. Reduced motion still folds (the shapes just don't animate).
+ * text in the box, the "+" menu or a screenshot open, or the answer scrolled away from its top
+ * (the visitor is reading further down). Any pointer, key, scroll or focus inside starts the wait
+ * again. Reduced motion still folds (the shapes just don't animate).
  */
 function useAutoFold(box: RefObject<HTMLDivElement | null>, fold: (() => void) | null): void {
   const latest = useRef(fold);
@@ -82,11 +95,12 @@ function useAutoFold(box: RefObject<HTMLDivElement | null>, fold: (() => void) |
       const field = el.querySelector<HTMLTextAreaElement>(".i-row textarea");
       if (field?.value.trim()) return true;
       if (el.querySelector(".composer-menu, .composer-shot, .composer-files")) return true;
+      if ((el.querySelector<HTMLElement>(".i-body")?.scrollTop ?? 0) > 4) return true;
       return Boolean(active && active !== document.body && el.contains(active) && active !== field);
     };
     const arm = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => (inUse() ? arm() : latest.current?.()), AUTO_FOLD_MS);
+      timer = setTimeout(() => (inUse() ? arm() : latest.current?.()), foldDelay(el));
     };
     const enter = () => {
       over = true;

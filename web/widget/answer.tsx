@@ -233,7 +233,8 @@ export function AiAnswer({
   /**
    * The island's answer view (D-39): a card is the answer. The open card draws bare (the island is
    * its frame), the reply's words go under it as a caption, and further cards are one-line peeks
-   * that open in its place. Off (the default) for the bar, the chat window and the island's panel.
+   * that open in its place; finished tool steps leave once the card or the words are there. Off (the
+   * default) for the bar, the chat window and the island's panel.
    */
   cardFirst?: boolean;
 }) {
@@ -250,7 +251,10 @@ export function AiAnswer({
   }, [action?.status, controls?.undoError]);
   const actionRunning = Boolean(action && action.status === "pending" && controls?.running);
   const actionStep: StepLine | null = action && (actionRunning || action.status !== "pending") ? actionLine(action, actionRunning, controls, undoing, () => { setUndoing(true); controls?.onUndo(); }) : null;
-  const steps: StepLine[] = actionStep ? [...toolSteps, actionStep] : toolSteps;
+  // cardFirst: finished tool steps ("✓ Checking your plan") go once the card is there or the words
+  // have started; running ones stay. A page action's row always stays (it carries Undo, or its error).
+  const toolRows = cardFirst && (widgets.length > 0 || body) ? toolSteps.filter((s) => s.state === "running") : toolSteps;
+  const steps: StepLine[] = actionStep ? [...toolRows, actionStep] : toolRows;
   // Server tools ran before the words; a page action is called after them ("I'll set your pickup"),
   // so its step goes under the text.
   const after = Boolean(actionStep && body);
@@ -284,7 +288,7 @@ export function AiAnswer({
 
   return (
     <div className="w-answer">
-      {after ? toolSteps.length > 0 && <Steps steps={toolSteps} working={working && !actionRunning} /> : steps.length > 0 && <Steps steps={steps} working={working} />}
+      {after ? toolRows.length > 0 && <Steps steps={toolRows} working={working && !actionRunning} /> : steps.length > 0 && <Steps steps={steps} working={working} />}
       {shownCard ? (
         <div key={shownCard.id} className="w-card-open">{card(shownCard, true)}</div>
       ) : (

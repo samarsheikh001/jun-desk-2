@@ -1,7 +1,7 @@
 import { parse as parseYaml } from "yaml";
 import { INTENT_NAME, MAX_INTENT_EXIT, MAX_INTENT_OPENING, MAX_INTENT_REPLIES, MAX_INTENT_REPLY, type IntentSpec } from "../../shared/intents.ts";
 import { DONE_TOOL } from "../../shared/actions.ts";
-import { parseWidgetFile, renderWidget, TOOL_ACTION, widgetActions, type WidgetSpec } from "../../shared/widgets.ts";
+import { parseWidgetFile, renderSummary, renderWidget, TOOL_ACTION, widgetActions, type WidgetSpec } from "../../shared/widgets.ts";
 import { FLAG_TOOL, HANDOFF_TOOL } from "./agent.ts";
 
 /** The agent's own tools: a tools/<name>.yaml can't take their names. */
@@ -381,7 +381,10 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
 function parseWidget(path: string, name: string, text: string, issues: ConfigIssue[]): WidgetSpec | null {
   try {
     const spec = parseWidgetFile(name, text);
-    if (spec.sample) renderWidget(spec, spec.sample);
+    if (spec.sample) {
+      renderWidget(spec, spec.sample);
+      renderSummary(spec, spec.sample);
+    }
     return spec;
   } catch (error) {
     issues.push({ path, message: (error as Error).message });

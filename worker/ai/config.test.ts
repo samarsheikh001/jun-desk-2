@@ -336,8 +336,9 @@ test("W-09: a tool with a widget shows its result as a card (step, onWidget) and
   // The model gets the picked fields and the note; the card is built from the whole response.
   assert.equal(out, `{"plan":"Team"}\n\n${WIDGET_SHOWN_NOTE}`);
   assert.equal(shown.length, 1);
-  const card = shown[0] as { id: string; name: string; root: { type: string } };
+  const card = shown[0] as { id: string; name: string; root: { type: string }; summary?: string };
   assert.equal(card.name, "subscription");
+  assert.equal(card.summary, "Team plan · past_due"); // D-47: the starter's `summary`, rendered with the same data
   assert.equal(card.root.type, "Card");
   assert.match(JSON.stringify(card.root), /"Team".*"past_due".*"5 of 5"/);
   assert.deepEqual((steps[1] as { widget?: unknown }).widget, card);

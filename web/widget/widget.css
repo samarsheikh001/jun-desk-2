@@ -508,11 +508,21 @@ html.island.island-dark {
 .i-answer > .i-body, .i-panel > .i-body { padding-top: 14px; }
 .i-top + .i-body { padding-top: 8px; }
 /* In the answer state the question is the answer's title: bold, at the top, left-aligned (clear of the corner controls). */
-.i-answer .i-body .msg.own { margin-left: 0; padding-right: 48px; align-self: flex-start; justify-items: start; text-align: left; }
+.i-answer .i-body .msg.own { margin-left: 0; padding-right: 72px; align-self: flex-start; justify-items: start; text-align: left; }
 .i-answer .i-top + .i-body .msg.own { padding-right: 0; }
 .i-answer .i-body .msg.own .bubble { float: none; max-width: 100%; padding: 0 0 4px; background: none; color: var(--text); font-size: 15.5px; font-weight: 600; line-height: 1.4; letter-spacing: -0.005em; }
 .i-answer .i-body .msg.own.pending .bubble { opacity: 0.7; }
 .i-answer .i-body .msg.own > :not(.bubble) { text-align: left; }
+/* The panel (a teammate's chat, or Earlier): calm, in the island's style, not a chat window. The
+   visitor's own words small, muted and to the right without a bubble; the team's as plain text
+   with the teammate's name once per run (MessageList's author line, which carries the time too);
+   system notices small and centred. */
+.i-panel .i-body .msg.own .bubble { max-width: 80%; padding: 0; background: none; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.i-panel .i-body .msg.own { padding-bottom: 10px; }
+.i-panel .i-body .msg.other:not(.ai) > .author { display: block; margin: 0 0 2px; color: var(--muted); font-size: 11.5px; font-weight: 500; line-height: 1.4; }
+.i-panel .i-body .msg.other:not(.ai) .bubble { color: var(--text); }
+/* A new speaker gets a little more room above. */
+.i-panel .i-body .msg.own + .msg.other, .i-panel .i-body .msg.other + .msg.own { margin-top: 4px; }
 /* The island's answer: a card is the answer (bare, full width), its words a caption under it, more cards as peeks. */
 .i-body .w-card-open { animation: i-card 0.28s cubic-bezier(0.23, 1, 0.32, 1) both; }
 @keyframes i-card { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
@@ -561,6 +571,25 @@ html.island.island-dark {
 .i-view .composer-shot-actions button { padding: 5px 9px; font-size: 12px; }
 .i-view .composer-shot-actions button:not(.ghost) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 @media (hover: none) and (pointer: coarse) { .i-view .composer.pill textarea { font-size: 16px; } }
+/* Touch screens: the corner controls are always shown (.i-ctl, 64px wide at 14px from the edge), so
+   the answer's title and the top row keep clear of them instead of running under their backing. */
+@media (hover: none) {
+  .i-answer .i-body .msg.own { padding-right: 62px; }
+  .i-top { padding-right: 84px; }
+}
+/* Phones (the island is the viewport minus 24px): a little less side padding, so cards, peeks and
+   chips get the width; list rows still have their 10px to pull out into. */
+@media (max-width: 639px) {
+  .i-body .messages { padding-left: 16px; padding-right: 16px; }
+  .i-top { padding-left: 16px; }
+  .i-body .w-opener { margin-left: 16px; margin-right: 16px; }
+  .i-body .w-csat, .i-body .w-email { margin-left: 16px; margin-right: 16px; }
+  .i-chips { padding: 12px 12px 2px; }
+  .i-chip { white-space: normal; overflow-wrap: anywhere; }
+  .i-foot { padding-left: 12px; }
+  .i-row { padding-left: 14px; }
+  .i-ctl { right: 10px; }
+}
 /* Reduce motion: no spring, bounce, blur or shimmer; states cross-fade. */
 @media (prefers-reduced-motion: reduce) {
   .i-box { transition: none; }

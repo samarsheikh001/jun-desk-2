@@ -1,6 +1,6 @@
 import { jsonSchema, tool, type ToolSet } from "ai";
 import type { AiStep } from "../../shared/protocol.ts";
-import { renderWidget, type MessageWidget, type WidgetSpec } from "../../shared/widgets.ts";
+import { renderWidget, summaryFor, type MessageWidget, type WidgetSpec } from "../../shared/widgets.ts";
 import { DEFAULT_TOOL_STATUS, fillTemplate, type ToolSpec, type ToolUser } from "./config.ts";
 
 // HTTP tools (AI-05): each tools/<name>.yaml becomes a tool the model can call.
@@ -164,7 +164,8 @@ function showWidget(spec: ToolSpec, call: ToolCall, options: ToolRunOptions, id:
     }
     const root = renderWidget(widget, data);
     call.widget = { name: widget.name };
-    return { id: `w${id.slice(1)}`, name: widget.name, root };
+    // D-47: the file's own one-line summary, if it has one (a failing summary only drops the line).
+    return { id: `w${id.slice(1)}`, name: widget.name, root, ...summaryFor(widget, data) };
   } catch (error) {
     call.widget = { name: spec.widget, error: (error as Error).message };
     console.warn(`[ai] widget ${spec.widget} for ${spec.name}: ${(error as Error).message}`);

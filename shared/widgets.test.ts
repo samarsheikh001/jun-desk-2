@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { actionUrl, checkWidget, itemIds, markWidgetUsed, matchWidgetAction, nodeText, parseWidgetFile, renderWidget, TOOL_ACTION, toolActionInput, widgetActionLine, widgetActionUsed, widgetData, WidgetError, widgetSummary } from "./widgets.ts";
+import { actionUrl, checkWidget, itemIds, markWidgetUsed, matchWidgetAction, nodeText, parseWidgetFile, renderSummary, renderWidget, summaryFor, TOOL_ACTION, toolActionInput, widgetActionLine, widgetActionUsed, widgetData, WidgetError, widgetSummary } from "./widgets.ts";
 
 // A widget exported from ChatKit Studio's Download (2026-10-10), with the Studio's own render of its
 // default state as `outputJsonPreview`: our interpreter must produce the same tree.
@@ -33,6 +33,32 @@ test("widget files: clear errors", () => {
   assert.throws(() => parseWidgetFile("x", JSON.stringify({ version: "1.0", template: "{{ f() }}" })), /template:/);
   const spec = parseWidgetFile("x", JSON.stringify({ version: "1.0", name: "X", template: '{"type":"Card","children":[{"type":"Text","value":{{ v }}}]}' }));
   assert.throws(() => renderWidget(spec, { v: "unquoted" }), /valid JSON/);
+});
+
+test("D-47: a widget file's own summary line", () => {
+  const card = '{"type":"Card","children":[{"type":"Title","value":{{ json.lowTemperature | tojson }}}]}';
+  const file = (summary: unknown) => JSON.stringify({ version: "1.0", name: "Weather", template: card, summary });
+  const weather = parseWidgetFile("weather", file("{{ json.highTemperature }}  ·\n {{ json.location }}"));
+  assert.ok(weather.summary);
+  const data = { json: { highTemperature: "69°", lowTemperature: "47°", location: "Pune" } };
+  assert.equal(renderSummary(weather, data), "69° · Pune");
+  assert.deepEqual(summaryFor(weather, data), { summary: "69° · Pune" });
+  // Long lines are cut; empty renders and files without one give nothing.
+  const long = renderSummary(weather, { json: { highTemperature: "x".repeat(100), location: "Pune" } });
+  assert.equal(long.length, 80);
+  assert.ok(long.endsWith("…"));
+  assert.deepEqual(summaryFor(weather, {}), {});
+  assert.deepEqual(summaryFor(parseWidgetFile("w", file(undefined)), data), {});
+  assert.equal(parseWidgetFile("w", file("  ")).summary, undefined);
+  // Parsing: a string, at most 200 characters, a template that compiles.
+  assert.throws(() => parseWidgetFile("w", file(42)), /summary is a Jinja template string/);
+  assert.throws(() => parseWidgetFile("w", file("x".repeat(201))), /longer than 200/);
+  assert.throws(() => parseWidgetFile("w", file("{{ f() }}")), /summary:/);
+  // A summary that fails to render is dropped; the card still renders.
+  const failing = { ...weather, summary: { render: () => { throw new Error("boom"); } } };
+  assert.throws(() => renderSummary(failing, data), /summary: boom/);
+  assert.deepEqual(summaryFor(failing, data), {});
+  assert.equal(renderWidget(failing, data).type, "Card");
 });
 
 test("trees: known components, a root container, limits; nulls dropped", () => {

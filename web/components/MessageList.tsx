@@ -105,6 +105,7 @@ export function MessageList({
   aiActions,
   aiSteps,
   follow = "end",
+  ownText,
 }: {
   messages: Message[];
   pending: PendingMessage[];
@@ -137,6 +138,11 @@ export function MessageList({
    * question, then the answer and its card), and the visitor scrolls down.
    */
   follow?: "end" | "start";
+  /**
+   * The island's answer view: the text shown for one of my saved messages (its title), e.g. a card
+   * press with what it was about; null (or no function, the default) shows the stored body.
+   */
+  ownText?: (m: Message) => string | null;
 }) {
   const list = useRef<HTMLDivElement>(null);
   // Scroll the list's own box, never scrollIntoView: in the widget that also scrolls the host page
@@ -218,7 +224,7 @@ export function MessageList({
             <WidgetCard widget={w} interactive={false} desk />
           </div>
         ))}
-        {m.body && !(m.meta.widgets?.length && m.body === WIDGET_ONLY_BODY) && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : m.body}</div>}
+        {m.body && !(m.meta.widgets?.length && m.body === WIDGET_ONLY_BODY) && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : ((own && ownText?.(m)) || m.body)}</div>}
         {m.meta.widgetAction && m.meta.widgetAction.values && Object.keys(m.meta.widgetAction.values).length > 0 && (
           <div className="widget-values small muted" title={`Card ${m.meta.widgetAction.widget} · action ${m.meta.widgetAction.type}`}>
             {Object.entries(m.meta.widgetAction.values).map(([k, v]) => `${k}: ${typeof v === "boolean" ? (v ? "yes" : "no") : v}`).join(" · ")}

@@ -92,6 +92,12 @@ function markEnded(key: string, id: string): void {
   if (!ids.includes(id)) writeEnded(key, [...ids, id]);
 }
 
+/** The team replied in a chat the visitor ended: it's theirs again (the widget goes back into it). */
+function unEnd(key: string, id: string): void {
+  const ids = readEnded(key);
+  if (ids.includes(id)) writeEnded(key, ids.filter((x) => x !== id));
+}
+
 /** An opening message shown before the conversation exists: a proactive nudge or an agent's invite (V-07). */
 interface Opener {
   text: string;
@@ -282,9 +288,12 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       (r) => {
         setConversations(r.conversations);
         // Go straight back into an ongoing conversation.
-        // (Not one the visitor ended with the island's ×, D-46.)
+        // (Not one the visitor ended with the island's ×, D-46, unless the team has replied there
+        // since: that one is un-ended and opened, so the pill says "New reply from …".)
         const ended = readEnded(api.key);
-        const active = r.conversations.find((c) => c.status !== "resolved" && !ended.includes(c.id));
+        const replied = r.conversations.filter((c) => ended.includes(c.id) && unread(c));
+        for (const c of replied) unEnd(api.key, c.id);
+        const active = replied[0] ?? r.conversations.find((c) => c.status !== "resolved" && !ended.includes(c.id));
         setView((v) => (active && !(v.kind === "thread" && (v.id || v.opener || v.intent || v.first || v.human)) ? { kind: "thread", id: active.id } : v));
         // AI-20 hard rule (D-37): an intent's exit button stays for the whole conversation, so after a
         // reload the chat gets its intent back (the host's onExit can't come back: the button then
@@ -401,6 +410,26 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const upsert = useCallback((c: ConversationSummary) => {
     setConversations((list) => [c, ...list.filter((x) => x.id !== c.id)].sort((a, b) => b.lastMessageAt - a.lastMessageAt));
   }, []);
+
+  // D-46: when the list refreshes with a new team reply in a chat the visitor ended (×), it's
+  // un-ended, and opened if nothing else is on screen (a fresh chat), as on load. Only for a reply
+  // that arrived since the list last had that conversation (lastSeq grew), so a chat ended just now
+  // whose read receipt hasn't come back yet doesn't bounce back.
+  const seenSeq = useRef(new Map<string, number>());
+  useEffect(() => {
+    const ended = readEnded(api.key);
+    let back: string | null = null;
+    for (const c of conversations) {
+      const before = seenSeq.current.get(c.id);
+      seenSeq.current.set(c.id, c.lastSeq);
+      if (before === undefined || c.lastSeq <= before || !ended.includes(c.id) || !unread(c)) continue;
+      unEnd(api.key, c.id);
+      back ??= c.id;
+    }
+    if (!back) return;
+    const id = back;
+    setView((v) => (v.kind === "thread" && !(v.id || v.opener || v.intent || v.first || v.human) ? { kind: "thread", id } : v));
+  }, [api, conversations]);
 
   // W-04 card launcher (D-34): the frame draws the closed card itself, and sizes itself to it.
   const cardLauncher = Boolean(config && config.launcher === "card" && window.parent !== window);
@@ -1074,8 +1103,9 @@ function WidgetThread({
     const answered = thread.messages.some((m) => (m.authorType === "ai" || m.authorType === "agent") && !m.internal);
     const widgetTurn = pressed || Boolean(lastMessage?.authorType === "visitor" && lastMessage.meta.widgetAction);
     const shown: IslandState = state === "answer" && thinking && !loading && (!answered || widgetTurn) && !exitLabel ? "thinking" : state;
-    // It folds itself a few seconds after an answer is done, never while anything waits on the
-    // visitor or the AI, nor in an intent's or a teammate's chat (useAutoFold has the rest).
+    // It folds itself once an answer is done and has had time to be read (8 s plus its reading
+    // time, at most 30 s), never while anything waits on the visitor or the AI, nor in an intent's
+    // or a teammate's chat (useAutoFold has the rest: in use, or scrolled down).
     const actionWaiting = thread.messages.some((m) => m.authorType === "ai" && m.meta.action?.status === "pending");
     const settled = !thinking && !awaitingAi && !thread.aiThinking && !thread.aiStream && !sending && !running && !actionWaiting && !loading && !error;
     const autoFold = open && shown === "answer" && conversationId && !intent && handling === "ai" && answered && settled ? close : null;
@@ -1113,6 +1143,7 @@ function WidgetThread({
                   onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
                   renderAi={(answer) => renderAnswer(answer, true)}
                   follow="start"
+                  ownText={pressTitle}
                 />
               )}
               {error && <p className="i-error" role="alert">{error}</p>}
@@ -1275,20 +1306,41 @@ function useIslandState({ island, open, hasChat, conversationId, opener, intent,
 
 /**
  * D-39: the folded island's line for its chat, like a live activity: the last reply's first card
- * in a few words ("Team plan · active"), else the reply's first sentence without its [n] markers;
- * at most 60 characters. Null when there's no reply to sum up.
+ * in a few words (the widget file's own `summary` line, D-47, else a guess from the card: "Team
+ * plan · active"), else the reply's first sentence without its [n] markers; at most 60
+ * characters. Null when there's no reply to sum up.
  */
 function restSummary(messages: Message[], max = 60): string | null {
   const last = messages.findLast((m) => (m.authorType === "ai" || m.authorType === "agent") && !m.internal);
   if (!last) return null;
+  const clip = (line: string) => (line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line);
   const card = last.meta.widgets?.[0];
+  const own = card?.summary?.replace(/\s+/g, " ").trim();
+  if (own) return clip(own);
   const fromCard = card ? widgetSummary(card.root, max) : "";
   if (fromCard) return fromCard;
   if (last.body === ACTION_ONLY_BODY || last.body === WIDGET_ONLY_BODY) return null;
   const text = last.body.replace(/\s*\[\d{1,2}\]/g, "").replace(/[*_`#>]+/g, "").replace(/\s+/g, " ").trim();
   const sentence = /^.+?[.!?](?=\s|$)/.exec(text)?.[0] ?? text;
   if (!sentence) return null;
-  return sentence.length > max ? `${sentence.slice(0, max - 1).trimEnd()}…` : sentence;
+  return clip(sentence);
+}
+
+/**
+ * The island's title for a card's button press: the stored body is only the button's label
+ * ("Email"), so add the first short string or number of its payload ("Email · INV-1043"). Null
+ * (the body as stored) for anything else. Display only: the message itself is unchanged.
+ */
+function pressTitle(m: Message): string | null {
+  const meta = m.meta.widgetAction;
+  if (!meta || meta.payload === undefined || meta.payload === null) return null;
+  const values = typeof meta.payload === "object" ? Object.values(meta.payload) : [meta.payload];
+  for (const v of values) {
+    if (typeof v !== "string" && !(typeof v === "number" && Number.isFinite(v))) continue;
+    const s = String(v).replace(/\s+/g, " ").trim();
+    if (s && s.length <= 40 && s !== m.body.trim()) return `${m.body.trim()} · ${s}`;
+  }
+  return null;
 }
 
 /** How long the island's one-line offer of help stays before it rests again. */
