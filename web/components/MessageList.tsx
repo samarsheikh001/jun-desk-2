@@ -2,8 +2,10 @@ import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { AiStep, Attachment, Message, Source } from "../../shared/protocol.ts";
 import { actionStatusText, actionSummary, visibleResult, type MessageAction } from "../../shared/actions.ts";
 import { mentionParts } from "../../shared/inbox.ts";
+import { parseMarkdown } from "../../shared/markdown.ts";
 import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
 import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
+import { Markdown } from "./Markdown.tsx";
 import { formatSize, formatTime, isImage, type PendingMessage } from "../lib/thread.ts";
 
 function Attachments({ attachments }: { attachments: Attachment[] }) {
@@ -25,25 +27,18 @@ function Attachments({ attachments }: { attachments: Attachment[] }) {
   );
 }
 
-/** `inline code` spans (AI replies often quote paths like `/api/billing`). */
-function withCode(text: string, key: number): ReactNode {
-  return text.split(/(`[^`\n]+`)/g).map((part, i) =>
-    part.length > 2 && part.startsWith("`") && part.endsWith("`") ? <code key={`${key}-${i}`}>{part.slice(1, -1)}</code> : <Fragment key={`${key}-${i}`}>{part}</Fragment>,
-  );
-}
-
-/** Renders [1]-style citations as small superscript links to the cited source. */
-function withCitations(body: string, sources: Source[] | undefined): ReactNode {
-  return body.split(/(\[\d{1,2}\])/g).map((part, i) => {
-    const n = /^\[(\d{1,2})\]$/.exec(part)?.[1];
-    const source = n ? sources?.[Number(n) - 1] : undefined;
-    if (!source) return <Fragment key={i}>{withCode(part, i)}</Fragment>;
+/** An AI reply's Markdown (shared/markdown.ts), its [1]-style citations as small superscript links to the cited source. */
+function aiBody(body: string, sources: Source[] | undefined, streaming = false): ReactNode {
+  const cite = (n: number) => {
+    const source = sources?.[n - 1];
+    if (!source) return `[${n}]`;
     return source.url ? (
-      <a key={i} className="cite" href={source.url} target="_blank" rel="noreferrer" title={source.title}>{n}</a>
+      <a className="cite" href={source.url} target="_blank" rel="noreferrer" title={source.title}>{n}</a>
     ) : (
-      <sup key={i} className="cite" title={source.title}>{n}</sup>
+      <sup className="cite" title={source.title}>{n}</sup>
     );
-  });
+  };
+  return <Markdown blocks={parseMarkdown(body, { streaming })} cite={cite} />;
 }
 
 /** A note's @mentions, highlighted. */
@@ -224,7 +219,7 @@ export function MessageList({
             <WidgetCard widget={w} interactive={false} desk />
           </div>
         ))}
-        {m.body && !(m.meta.widgets?.length && m.body === WIDGET_ONLY_BODY) && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : ((own && ownText?.(m)) || m.body)}</div>}
+        {m.body && !(m.meta.widgets?.length && m.body === WIDGET_ONLY_BODY) && <div className={`bubble${m.authorType === "ai" ? " md" : ""}`}>{m.authorType === "ai" ? aiBody(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : ((own && ownText?.(m)) || m.body)}</div>}
         {m.meta.widgetAction && m.meta.widgetAction.values && Object.keys(m.meta.widgetAction.values).length > 0 && (
           <div className="widget-values small muted" title={`Card ${m.meta.widgetAction.widget} · action ${m.meta.widgetAction.type}`}>
             {Object.entries(m.meta.widgetAction.values).map(([k, v]) => `${k}: ${typeof v === "boolean" ? (v ? "yes" : "no") : v}`).join(" · ")}
@@ -272,7 +267,7 @@ export function MessageList({
         <div key={streamKey} className={`msg ${aiSide} ai streaming`}>
           <div className="author muted small">AI assistant · writing…</div>
           {actionsFor(streamKey)}
-          <div className="bubble">{withCitations(aiStream.text, aiStream.sources)}</div>
+          <div className="bubble md">{aiBody(aiStream.text, aiStream.sources, true)}</div>
         </div>
       ),
     );

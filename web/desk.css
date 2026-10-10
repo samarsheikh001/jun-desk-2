@@ -569,6 +569,25 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 .note-tag { background: var(--note-border); color: var(--note-foreground); }
 mark.mention { background: color-mix(in oklch, var(--warning) 35%, transparent); color: inherit; border-radius: 4px; padding: 0 2px; font-weight: 665; }
 .bubble code { padding: 1px 4px; border-radius: 4px; background: var(--muted); }
+/* An AI reply's Markdown (web/components/Markdown.tsx): blocks, not pre-wrap lines. */
+.bubble.md { white-space: normal; }
+.bubble.md > * { margin: 0; }
+.bubble.md > * + * { margin-top: 0.5em; }
+.md strong, .md .md-h { font-weight: 600; }
+.md .md-list { padding: 0; list-style: none; }
+.md .md-li { display: flex; gap: 0.45em; }
+.md .md-li + .md-li { margin-top: 0.15em; }
+.md .md-d1 { padding-left: 1.15em; }
+.md .md-d2 { padding-left: 2.3em; }
+.md .md-d3 { padding-left: 3.45em; }
+.md .md-mark { flex: none; min-width: 0.8em; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.md ol > .md-li > .md-mark { min-width: 1.2em; }
+.md .md-li-body { flex: 1; min-width: 0; }
+.md .md-quote { padding-left: 0.75em; border-left: 2px solid var(--border); color: var(--muted-foreground); }
+.md .md-pre { padding: 8px 10px; border-radius: var(--radius); background: var(--muted); font-family: var(--font-mono, monospace); font-size: 0.86em; white-space: pre; overflow-x: auto; }
+.md .md-pre code { padding: 0; background: none; }
+.md .md-hr { border: 0; border-top: 1px solid var(--border); }
+.md a.md-a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .cite { font-size: 0.7em; vertical-align: super; margin: 0 1px; padding: 0 4px; border-radius: 6px; background: var(--muted); text-decoration: none; }
 .sources { margin: 4px 0 0; padding-left: 18px; color: var(--muted-foreground); font-size: 12px; }
 .sources a { color: var(--muted-foreground); }

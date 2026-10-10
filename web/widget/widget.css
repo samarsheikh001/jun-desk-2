@@ -613,6 +613,30 @@ html.island.island-dark {
 @keyframes w-resolve { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: blur(0); } }
 .w-answer .w-caret { display: inline-block; width: 2px; height: 0.95em; margin-left: 2px; border-radius: 1px; background: var(--a-ink); vertical-align: -0.12em; animation: w-fade 150ms ease-out both; }
 @keyframes w-fade { from { opacity: 0; } to { opacity: 1; } }
+/* The answer's Markdown (web/components/Markdown.tsx, shared/markdown.ts): blocks, not pre-wrap
+   lines. Lists draw their own markers, so indents and spacing match on every surface. */
+.w-answer .bubble.md { white-space: normal; }
+.w-answer .md > * { margin: 0; }
+.w-answer .md > * + * { margin-top: 0.6em; }
+.w-answer .md strong, .w-answer .md .md-h { color: var(--a-ink); font-weight: 600; }
+.w-answer .md .md-list { padding: 0; list-style: none; }
+.w-answer .md .md-li { display: flex; gap: 0.45em; }
+.w-answer .md .md-li + .md-li { margin-top: 0.25em; }
+.w-answer .md .md-d1 { padding-left: 1.15em; }
+.w-answer .md .md-d2 { padding-left: 2.3em; }
+.w-answer .md .md-d3 { padding-left: 3.45em; }
+.w-answer .md .md-mark { flex: none; min-width: 0.8em; color: var(--a-ink-3); font-variant-numeric: tabular-nums; }
+.w-answer .md ol > .md-li > .md-mark { min-width: 1.2em; }
+.w-answer .md .md-li-body { flex: 1; min-width: 0; }
+.w-answer .md .md-quote { padding-left: 0.75em; box-shadow: inset 2px 0 0 var(--a-line); color: var(--a-ink-3); }
+.w-answer .md .md-pre { padding: 8px 10px; border-radius: 8px; background: var(--a-inset); color: var(--a-ink-2); font: 0.86em/1.5 "Jun Desk Mono", monospace; white-space: pre; overflow-x: auto; }
+.w-answer .md .md-pre code { padding: 0; background: none; font: inherit; }
+.w-answer .md .md-hr { height: 0; border: 0; border-top: 1px solid var(--a-line); }
+.w-answer .md a.md-a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+.b-log .w-answer .md a.md-a { color: inherit; }
+/* The island's caption under a card: tighter. */
+.w-answer .md.w-caption > * + * { margin-top: 0.35em; }
+.w-answer .md.w-caption .md-li + .md-li { margin-top: 0.1em; }
 
 /* Inline source chip */
 .w-answer .w-cite-wrap.w-anim { animation: w-pop 250ms cubic-bezier(0.23, 1, 0.32, 1) both; }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
 import type { ConversationSummary } from "../../shared/protocol.ts";
 import { contactLabel } from "../../shared/notifications.ts";
+import { markdownToPlain } from "../../shared/markdown.ts";
 import { formatTime } from "../lib/thread.ts";
 import { ColumnsIcon, SearchIcon, XIcon } from "@/components/icons";
 
@@ -282,7 +283,7 @@ export function ConversationRows({ rows, columns, selected, cursor, empty, membe
                 <span className="cv-clamp">
                   {c.lastMessageAuthor === "agent" && <span className="muted">You: </span>}
                   {c.lastMessageAuthor === "ai" && <span className="muted">AI: </span>}
-                  {c.lastMessagePreview || dash}
+                  {(c.lastMessageAuthor === "ai" && c.lastMessagePreview ? markdownToPlain(c.lastMessagePreview).replace(/\s+/g, " ") : c.lastMessagePreview) || dash}
                 </span>
               </td>
             )}

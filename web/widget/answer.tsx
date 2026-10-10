@@ -1,32 +1,20 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { markdownToPlain, parseMarkdown, tokenCount } from "../../shared/markdown.ts";
 import { ACTION_ONLY_BODY, actionChip, actionStatusText, actionSummary, actionTitle, visibleResult, type MessageAction } from "../../shared/actions.ts";
 import type { AiStep, Source } from "../../shared/protocol.ts";
 import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
+import { Markdown } from "../components/Markdown.tsx";
 import type { AiAnswerView } from "../components/MessageList.tsx";
 import { ActionCard } from "./action.tsx";
 import { WidgetCard, WidgetPeek, type WidgetActionEvent } from "./chatkit/WidgetCard.tsx";
 
 // An AI answer in the widget: words resolve out of a blur as they stream, citations become
-// inline source chips, then copy, the cited sources and follow-up questions appear.
+// inline source chips, then copy, the cited sources and follow-up questions appear. The body is
+// a small Markdown subset (shared/markdown.ts): each word token carries its bold, italic, code
+// or link, and its block (paragraph, list item, heading, quote).
 
 /** One reveal step; the step grows with the backlog so a fast stream never falls far behind. */
 const TICK_MS = 45;
-
-type Token = { kind: "word"; text: string } | { kind: "code"; text: string; space: string } | { kind: "cite"; n: number; space: string };
-
-// A word, `code`, or [n] citation, each with the whitespace after it (or whitespace alone).
-const TOKEN = /(?:\[(\d{1,2})\]|`([^`\n]+)`|[^\s[`]+|[[`]|(?=\s))(\s*)/g;
-
-function tokenize(body: string): Token[] {
-  const tokens: Token[] = [];
-  for (const m of body.matchAll(TOKEN)) {
-    const space = m[3] ?? "";
-    if (m[1]) tokens.push({ kind: "cite", n: Number(m[1]), space });
-    else if (m[2]) tokens.push({ kind: "code", text: m[2], space });
-    else tokens.push({ kind: "word", text: m[0] });
-  }
-  return tokens;
-}
 
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -261,11 +249,12 @@ export function AiAnswer({
   const waiting = Boolean(action && action.status === "pending" && !actionRunning && controls);
   // Working (the label shimmers) while tools run before (or between) the words.
   const working = (streaming && (!body || steps.some((s) => s.state === "running"))) || actionRunning;
-  const tokens = useMemo(() => tokenize(body), [body]);
+  const blocks = useMemo(() => parseMarkdown(body, { streaming }), [body, streaming]);
+  const total = tokenCount(blocks);
   // Animate a reply that started streaming here; history shows as it is.
   const [live] = useState(streaming);
-  const shown = useReveal(tokens.length, live);
-  const done = !streaming && shown >= tokens.length;
+  const shown = useReveal(total, live);
+  const done = !streaming && shown >= total;
   const [open, setOpen] = useState(false);
   // cardFirst: which card is open (the first until the visitor picks a peek).
   const [openCard, setOpenCard] = useState<string | null>(null);
@@ -284,7 +273,7 @@ export function AiAnswer({
 
   // Distinct sites for the avatar stack.
   const stack = sources.filter((s, i) => sources.findIndex((o) => sourceLabel(o) === sourceLabel(s)) === i).slice(0, 3);
-  const plain = body.replace(/\s*\[\d{1,2}\]/g, "");
+  const plain = useMemo(() => markdownToPlain(body), [body]);
 
   return (
     <div className="w-answer">
@@ -294,20 +283,17 @@ export function AiAnswer({
       ) : (
         widgets.map((w) => card(w, false))
       )}
-      {(body || (!steps.length && !action && !widgets.length)) && <div className={`bubble${asCards ? " w-caption" : ""}`}>
-        {tokens.slice(0, shown).map((t, i) => {
-          const anim = live ? " w-anim" : "";
-          if (t.kind === "word") return <span key={i} className={`w-word${anim}`}>{t.text}</span>;
-          if (t.kind === "code") return <span key={i} className={`w-word${anim}`}><code>{t.text}</code>{t.space}</span>;
-          const source = sources[t.n - 1];
-          return (
-            <Fragment key={i}>
-              {source && <span className={`w-cite-wrap${anim}`}><SourceChip source={source} /></span>}
-              {t.space}
-            </Fragment>
-          );
-        })}
-        {!done && <span className="w-caret" aria-hidden="true" />}
+      {(body || (!steps.length && !action && !widgets.length)) && <div className={`bubble md${asCards ? " w-caption" : ""}`}>
+        <Markdown
+          blocks={blocks}
+          shown={shown}
+          wordClass={`w-word${live ? " w-anim" : ""}`}
+          cite={(n) => {
+            const source = sources[n - 1];
+            return source ? <span className={`w-cite-wrap${live ? " w-anim" : ""}`}><SourceChip source={source} /></span> : null;
+          }}
+          tail={!done && <span className="w-caret" aria-hidden="true" />}
+        />
       </div>}
       {shownCard && widgets.length > 1 && (
         <div className="w-peeks" role="group" aria-label="More cards">
