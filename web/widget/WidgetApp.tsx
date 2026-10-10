@@ -761,8 +761,8 @@ function WidgetThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latest, open, thread.state]);
 
-  // W-20: a soft chime for a new public reply (AI or teammate) while the visitor isn't looking: the
-  // widget folded or closed, or the tab hidden. Messages the thread loaded with it (history) only set
+  // W-20: a soft chime for a new public reply: a teammate's always, the AI's while the visitor isn't
+  // looking (the widget folded or closed, or the tab hidden). Messages the thread loaded with it (history) only set
   // where "new" starts; a reply updated in place keeps its seq, so it never chimes twice.
   useEffect(() => {
     if (sound) unlockSoundOnInteraction();
@@ -780,8 +780,12 @@ function WidgetThread({
     const since = heardSeq.current;
     if (top <= since) return;
     heardSeq.current = top;
-    const reply = thread.messages.some((m) => m.seq > since && (m.authorType === "ai" || m.authorType === "agent") && !m.internal);
-    if (sound && reply && (!openRef.current || document.visibilityState === "hidden")) playChime();
+    const fresh = thread.messages.filter((m) => m.seq > since && !m.internal);
+    // A teammate's reply chimes even with the chat open: it comes minutes later, when the visitor has
+    // looked away. An AI reply only while they aren't looking (it streams in front of them).
+    const teammate = fresh.some((m) => m.authorType === "agent");
+    const ai = fresh.some((m) => m.authorType === "ai");
+    if (sound && (teammate || (ai && (!openRef.current || document.visibilityState === "hidden")))) playChime();
   }, [thread.messages, initial, sound]);
 
   const startingId = useRef("");

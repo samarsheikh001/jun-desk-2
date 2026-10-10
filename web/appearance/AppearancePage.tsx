@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
+import { previewChime } from "../lib/sound.ts";
 
 // The Widget page: Look (/appearance) and Install (/appearance/install). /widget itself is the chat
 // iframe the Worker serves, so the page keeps its old address.
@@ -236,8 +237,12 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
             )}
             <label className="appear-switch">
               <Switch checked={draft.sound !== false} disabled={off} onCheckedChange={(checked) => edit({ sound: checked })} />
-              <span>Play a sound for new replies (a soft chime while the chat is closed or the visitor is on another tab)</span>
+              <span>Play a sound for new replies (a soft chime for a teammate's reply, and for the AI's while the chat is closed or the visitor is on another tab)</span>
             </label>
+            {/* Hear it here: the same chime the widget plays. Type "button": this sits in the settings form. */}
+            <div>
+              <Button type="button" variant="outline" size="sm" onClick={previewChime}>Test sound</Button>
+            </div>
           </section>
 
           <section className="appear-group">

@@ -6,6 +6,7 @@ import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { SettingRow, SettingsCard } from "./layout.tsx";
+import { previewChime } from "../lib/sound.ts";
 
 const TRIGGERS: { key: keyof NotificationPrefs; label: string; hint: string }[] = [
   { key: "needsPerson", label: "A chat needs a person", hint: "Handed to the team and nobody has it yet (or round robin gave it to you)." },
@@ -114,7 +115,10 @@ export function NotificationsPanel({ workspaceId }: { workspaceId: string }) {
         </SettingRow>
       ))}
       <SettingRow label="Play a sound" description="A soft chime in the open desk for the events above, not while you're looking at that conversation.">
-        <Switch checked={prefs?.sound ?? true} disabled={!prefs || busy} onCheckedChange={(value) => toggle("sound", value)} aria-label="Play a sound" />
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={previewChime}>Test sound</Button>
+          <Switch checked={prefs?.sound ?? true} disabled={!prefs || busy} onCheckedChange={(value) => toggle("sound", value)} aria-label="Play a sound" />
+        </div>
       </SettingRow>
     </SettingsCard>
 
