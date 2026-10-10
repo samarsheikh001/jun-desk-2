@@ -931,6 +931,9 @@ function WidgetThread({
             thread.sendWidgetAction(event.label, { messageId, widgetId: widget.id, action: event.action, values: event.values, ...(event.item ? { item: event.item } : {}) }, context, actions);
           });
         }}
+        // D-51: ChatKit's handler "client" goes to the host page (the loader's widgetAction event).
+        onWidgetClient={(event) => postToHost({ type: "jun:widget", action: { ...event.action, values: event.values, widget: event.widget } })}
+        onWidgetChange={(messageId, widget, event) => thread.sendWidgetChange({ messageId, widgetId: widget.id, field: event.field, action: event.action, values: event.values })}
         {...(action
           ? {
               controls: {
@@ -1078,6 +1081,7 @@ function WidgetThread({
           onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
           onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
           renderAi={renderAnswer}
+          follow="anchor"
         />
   );
   const extras = (

@@ -45,6 +45,8 @@ export function useThread(options: {
   const onConversation = useRef(options.onConversation);
   onConversation.current = options.onConversation;
   const onAiAction = useRef(options.onAiAction);
+  /** D-51: field changes sent, waiting for `widget_change_done`. */
+  const changes = useRef(new Map<string, (result: { ok: boolean; message?: string }) => void>());
   onAiAction.current = options.onAiAction;
 
   const merge = useCallback((incoming: Message[]) => {
@@ -117,6 +119,9 @@ export function useThread(options: {
           onConversation.current?.(event.conversation);
         } else if (event.type === "ai_action") {
           onAiAction.current?.();
+        } else if (event.type === "widget_change_done") {
+          changes.current.get(event.requestId)?.({ ok: event.ok, ...(event.message ? { message: event.message } : {}) });
+          changes.current.delete(event.requestId);
         } else if (event.type === "error" && event.clientMsgId) {
           const { clientMsgId, message } = event;
           setPending((p) => p.map((m) => (m.clientMsgId === clientMsgId ? { ...m, failed: message } : m)));
@@ -157,6 +162,31 @@ export function useThread(options: {
     [sendEvent],
   );
 
+  /**
+   * D-51: a card field's `onChangeAction`, sent quietly (no message). Resolves when the server is
+   * done (the updated card arrives as a message), or with why not; offline or no answer in 20 s: not ok.
+   */
+  const sendWidgetChange = useCallback(
+    (change: { messageId: string; widgetId: string; field: string; action: unknown; values: Record<string, string | boolean> }) =>
+      new Promise<{ ok: boolean; message?: string }>((resolve) => {
+        const requestId = crypto.randomUUID();
+        const timer = setTimeout(() => {
+          changes.current.delete(requestId);
+          resolve({ ok: false, message: "No answer. Try again." });
+        }, 20_000);
+        changes.current.set(requestId, (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        });
+        if (!sendEvent({ type: "widget_change", requestId, ...change })) {
+          clearTimeout(timer);
+          changes.current.delete(requestId);
+          resolve({ ok: false, message: "Not connected." });
+        }
+      }),
+    [sendEvent],
+  );
+
   return {
     messages,
     pending,
@@ -177,6 +207,7 @@ export function useThread(options: {
     merge,
     send,
     sendWidgetAction,
+    sendWidgetChange,
     setTyping: (isTyping: boolean) => sendEvent({ type: "typing", typing: isTyping }),
     markRead: (seq: number) => seq > 0 && sendEvent({ type: "read", seq }),
     dismissPending: (clientMsgId: string) => setPending((p) => p.filter((m) => m.clientMsgId !== clientMsgId)),

@@ -1,7 +1,11 @@
-import type { ReactNode } from "react";
+import { createElement, useEffect, useState, type ReactNode } from "react";
+import type { IconNode } from "lucide";
 
-// W-09: ChatKit's icon names (`Icon name=…`, a Button's iconStart/iconEnd), drawn as our own simple
-// 24×24 stroke icons. An unknown name draws nothing, as in ChatKit.
+// W-09: ChatKit's icon names (`Icon name=…`, a Button's iconStart/iconEnd). The documented ones
+// are drawn as our own simple 24×24 stroke icons (below). The rest of ChatKit's icon set, and
+// ChatKit's `lucide:<name>`, are drawn with Lucide icons (D-51), fetched on demand so a card that
+// doesn't use them costs nothing: `icon-set.ts` maps ChatKit's names, `lucide`'s full set serves
+// `lucide:` names. A name with no icon draws nothing, as in ChatKit.
 
 const P: Record<string, string> = {
   agent: "M12 3v3M8 9h8a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-4a3 3 0 0 1 3-3ZM9.5 14h.01M14.5 14h.01M12 6a1 1 0 1 0 0-2",
@@ -81,9 +85,50 @@ export function iconSize(size: unknown, fallback = 16): number {
   return (typeof size === "string" && SIZES[size]) || fallback;
 }
 
+type IconSet = Record<string, IconNode>;
+let chatkitSet: Promise<IconSet> | null = null;
+let lucideSet: Promise<IconSet> | null = null;
+const loaded = new Map<string, IconNode | null>();
+
+/** The Lucide drawing for a ChatKit name we don't draw ourselves, or a `lucide:<name>`. */
+function loadIcon(name: string): Promise<IconNode | null> {
+  if (name.startsWith("lucide:")) {
+    const pascal = name.slice(7).replace(/(^|-)([a-z0-9])/g, (_, __, c: string) => c.toUpperCase());
+    lucideSet ??= import("lucide").then((m) => m.icons as IconSet);
+    return lucideSet.then((set) => set[pascal] ?? null);
+  }
+  chatkitSet ??= import("./icon-set.ts").then((m) => m.CHATKIT_ICONS);
+  return chatkitSet.then((set) => (Object.hasOwn(set, name) ? set[name]! : null));
+}
+
+function LucideIcon({ name, size, color }: { name: string; size: number; color?: string | undefined }): ReactNode {
+  const [node, setNode] = useState<IconNode | null | undefined>(() => loaded.get(name));
+  useEffect(() => {
+    if (node !== undefined) return;
+    let live = true;
+    loadIcon(name)
+      .catch(() => null)
+      .then((n) => {
+        loaded.set(name, n);
+        if (live) setNode(n);
+      });
+    return () => {
+      live = false;
+    };
+  }, [name, node]);
+  // While it loads, hold its place so the row doesn't shift.
+  if (node === undefined) return <span className="ck-icon" style={{ display: "inline-block", width: size, height: size }} aria-hidden="true" />;
+  if (!node) return null;
+  return (
+    <svg className="ck-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={color ? { color } : undefined}>
+      {node.map(([tag, attrs], i) => createElement(tag, { key: i, ...attrs }))}
+    </svg>
+  );
+}
+
 export function WidgetIcon({ name, size = 16, color }: { name: unknown; size?: number; color?: string | undefined }): ReactNode {
   const d = typeof name === "string" ? P[name] : undefined;
-  if (!d) return null;
+  if (!d) return typeof name === "string" && /^(lucide:)?[a-z0-9][a-z0-9-]{0,60}$/.test(name) ? <LucideIcon name={name} size={size} color={color} /> : null;
   const filled = FILLED.has(name as string);
   if (name === "check-circle-filled") {
     return (

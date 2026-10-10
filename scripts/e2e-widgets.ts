@@ -226,4 +226,58 @@ await step("W-17: Add on one row runs the tool at once; only that row is used; t
   shopSocket.close();
 });
 
+// ---------- D-51: ChatKit's onChangeAction (a tool, run quietly) and handler: "client" ----------
+
+// httpbin echoes the POST body as `json`: the quote for the seats asked, re-rendered when the picker changes.
+const quote = [
+  '{"type":"Card","size":"sm","children":[',
+  '{"type":"Title","value":{{ ("$" ~ (((json.seats | default(5)) | int) * 12) ~ " / month") | tojson }}},',
+  '{"type":"Select","name":"seats","defaultValue":{{ ((json.seats | default(5)) | string) | tojson }},"options":[{"label":"1","value":"1"},{"label":"5","value":"5"},{"label":"10","value":"10"}],"onChangeAction":{"type":"tool:seat_quote"}},',
+  '{"type":"Button","label":"See pricing","onClickAction":{"type":"pricing.open","handler":"client"}}',
+  "]}",
+].join("");
+const quoteFiles = {
+  ...files,
+  "AGENTS.md": `${files["AGENTS.md"]}- When the customer asks what seats cost, call seat_quote.\n`,
+  "tools/seat_quote.yaml": ["description: A price quote for a number of seats.", "status: Getting a quote", "method: POST", "url: https://httpbin.org/anything", "input:", "  seats: { type: integer }", "pick: [json]", "widget: seat_quote", ""].join("\n"),
+  "widgets/seat_quote.widget": JSON.stringify({ version: "1.0", name: "Seat quote", template: quote, sample: { json: { seats: 5 } } }),
+};
+
+await step("D-51: a field's onChangeAction runs its tool quietly and the card is replaced in place; forged changes and client actions are refused", async () => {
+  const res = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: quoteFiles, base: null, force: true, message: "quote" } });
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+  const visitor = new Client();
+  const token = (await visitor.call(`/widget/${widgetKey}/visitor`, { body: {} })).json.token as string;
+  const started = await visitor.call(`/widget/${widgetKey}/conversations`, { body: { clientMsgId: crypto.randomUUID(), body: "What would 5 seats cost? Show me a quote." }, headers: { "X-Visitor-Token": token } });
+  assert.equal(started.status, 200, JSON.stringify(started.json));
+  const s = new TestSocket(`/api/widget/${widgetKey}/conversations/${started.json.conversation.id}/ws?since=1`, { protocols: [token] });
+  await s.opened;
+  const answer = (await s.next((e) => e.type === "message" && e.message.authorType === "ai", AI_TIMEOUT)).message;
+  const card = answer.meta.widgets?.[0];
+  assert.equal(card?.name, "seat_quote", JSON.stringify(answer.meta));
+  const change = (field: string, action: unknown, values: Record<string, string>) => {
+    const requestId = crypto.randomUUID();
+    s.send({ type: "widget_change", requestId, messageId: answer.id, widgetId: card.id, field, action, values });
+    return s.next((e) => e.type === "widget_change_done" && e.requestId === requestId);
+  };
+  // A change the card doesn't offer (wrong field, or a tool it doesn't name) is refused.
+  assert.equal((await change("plan", { type: "tool:seat_quote" }, { seats: "10" })).ok, false);
+  assert.equal((await change("seats", { type: "tool:add_to_cart" }, { seats: "10" })).ok, false);
+  // A client action never goes to the server: as a press it's refused.
+  const press = crypto.randomUUID();
+  s.send({ type: "send", clientMsgId: press, body: "See pricing", attachments: [], widgetAction: { messageId: answer.id, widgetId: card.id, action: { type: "pricing.open" } } });
+  assert.equal((await s.next((e) => e.type === "error" && e.clientMsgId === press)).code, "bad_widget_action");
+
+  await new Promise((r) => setTimeout(r, 500)); // the per-card gap between change runs
+  const updated = s.next((e) => e.type === "message" && e.message.id === answer.id && JSON.stringify(e.message.meta.widgets?.[0]?.root ?? {}).includes("$120 / month"), 60_000);
+  const done = await change("seats", { type: "tool:seat_quote" }, { seats: "10", admin: "x" });
+  assert.equal(done.ok, true, done.message);
+  const msg = (await updated).message;
+  assert.equal(msg.meta.widgets[0].id, card.id, "the card keeps its id");
+  assert.equal(msg.meta.widgets[0].used, undefined, "a change doesn't use the card");
+  // No new message (visitor's or the AI's) came of it.
+  await assert.rejects(s.next((e) => e.type === "message" && e.message.seq > answer.seq, 3000), /Timed out/);
+  s.close();
+});
+
 summary();

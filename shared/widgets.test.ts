@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { actionUrl, checkWidget, itemIds, markWidgetUsed, matchWidgetAction, nodeText, parseWidgetFile, renderSummary, renderWidget, summaryFor, TOOL_ACTION, toolActionInput, widgetActionLine, widgetActionUsed, widgetData, WidgetError, widgetSummary } from "./widgets.ts";
+import { actionUrl, checkWidget, isClientAction, itemIds, markWidgetUsed, matchWidgetAction, matchWidgetChange, nodeText, parseWidgetFile, renderSummary, renderWidget, summaryFor, TOOL_ACTION, toolActionInput, widgetActionLine, widgetActionUsed, widgetData, WidgetError, widgetSummary } from "./widgets.ts";
 
 // A widget exported from ChatKit Studio's Download (2026-10-10), with the Studio's own render of its
 // default state as `outputJsonPreview`: our interpreter must produce the same tree.
@@ -159,4 +159,32 @@ test("a one-line summary of a card for the folded island", () => {
   const long = widgetSummary({ type: "Card", children: [{ type: "Title", value: "A very long title that goes on and on well past the limit" }, { type: "Badge", label: "new" }] }, 30);
   assert.equal(long.length, 30);
   assert.ok(long.endsWith("…"));
+});
+
+test("D-51: client actions never reach the server; field changes match only their own tool action", () => {
+  const card = {
+    type: "Card",
+    confirm: { label: "Buy", action: { type: "cart.add", handler: "client" } },
+    children: [
+      { type: "Button", label: "Open tour", onClickAction: { type: "tour.start", handler: "client" } },
+      { type: "Button", label: "Ask", onClickAction: { type: "ask", loadingBehavior: "self" } },
+      { type: "Select", name: "seats", options: [], onChangeAction: { type: "tool:quote", payload: { plan: "team" } } },
+      { type: "Checkbox", name: "annual", onChangeAction: { type: "recalc" } },
+      { type: "Input", name: "note" },
+      { type: "ListView", children: [{ type: "ListViewItem", children: [{ type: "RadioGroup", name: "size", options: [], onChangeAction: { type: "tool:pick_size" } }] }] },
+    ],
+  };
+  assert.equal(isClientAction(card.confirm.action), true);
+  assert.equal(isClientAction({ type: "ask" }), false);
+  assert.equal(matchWidgetAction(card, { type: "tour.start" }, {}), null, "a client action isn't offered to the server");
+  assert.equal(matchWidgetAction(card, { type: "cart.add" }, {}), null, "nor a client confirm");
+  assert.equal(matchWidgetAction(card, { type: "ask" }, {})?.label, "Ask");
+  // A change isn't a press: onChangeAction never matches as one.
+  assert.equal(matchWidgetAction(card, { type: "tool:quote", payload: { plan: "team" } }, {}), null);
+  const change = matchWidgetChange(card, "seats", { type: "tool:quote", payload: { plan: "team" } }, { seats: "5", note: "hi", admin: "x" });
+  assert.deepEqual(change, { action: { type: "tool:quote", payload: { plan: "team" } }, field: "seats", values: { seats: "5", note: "hi" } });
+  assert.equal(matchWidgetChange(card, "seats", { type: "tool:quote" }, {}), null, "payload must match");
+  assert.equal(matchWidgetChange(card, "note", { type: "tool:quote", payload: { plan: "team" } }, {}), null, "another field");
+  assert.equal(matchWidgetChange(card, "annual", { type: "recalc" }, {}), null, "only tool: actions run on a change");
+  assert.equal(matchWidgetChange(card, "size", { type: "tool:pick_size" }, {})?.item, "i0");
 });

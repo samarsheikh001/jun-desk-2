@@ -6,7 +6,7 @@ import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
 import { Markdown } from "../components/Markdown.tsx";
 import type { AiAnswerView } from "../components/MessageList.tsx";
 import { ActionCard } from "./action.tsx";
-import { WidgetCard, WidgetPeek, type WidgetActionEvent } from "./chatkit/WidgetCard.tsx";
+import { WidgetCard, WidgetPeek, type WidgetActionEvent, type WidgetChangeEvent, type WidgetClientEvent } from "./chatkit/WidgetCard.tsx";
 
 // An AI answer in the widget: words resolve out of a blur as they stream, citations become
 // inline source chips, then copy, the cited sources and follow-up questions appear. The body is
@@ -208,6 +208,8 @@ export function AiAnswer({
   onFollowUp,
   controls,
   onWidgetAction,
+  onWidgetClient,
+  onWidgetChange,
   cardTheme,
   cardFirst = false,
 }: {
@@ -216,6 +218,10 @@ export function AiAnswer({
   controls?: ActionControls;
   /** W-09: the visitor pressed one of a card's actions (saved answers only). */
   onWidgetAction?: (messageId: string, widget: MessageWidget, event: WidgetActionEvent) => void;
+  /** D-51: a card action with `handler: "client"`, for the host page. */
+  onWidgetClient?: (event: WidgetClientEvent) => void;
+  /** D-51: a card field's `tool:<name>` `onChangeAction` (saved answers only). */
+  onWidgetChange?: (messageId: string, widget: MessageWidget, event: WidgetChangeEvent) => Promise<{ ok: boolean; message?: string }>;
   /** The cards' palette (the island's dark surface, or the frame's theme); the card's default otherwise. */
   cardTheme?: "light" | "dark";
   /**
@@ -266,6 +272,8 @@ export function AiAnswer({
       widget={w}
       interactive={!streaming && Boolean(answer.messageId && onWidgetAction)}
       {...(answer.messageId && onWidgetAction ? { onAction: (event: WidgetActionEvent) => onWidgetAction(answer.messageId!, w, event) } : {})}
+      {...(onWidgetClient ? { onClientAction: onWidgetClient } : {})}
+      {...(answer.messageId && onWidgetChange ? { onChange: (event: WidgetChangeEvent) => onWidgetChange(answer.messageId!, w, event) } : {})}
       {...(cardTheme ? { theme: cardTheme } : {})}
       {...(bare ? { bare: true } : {})}
     />

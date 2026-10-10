@@ -10,6 +10,9 @@
  * desk's live visitor list (data-consent="required"
  * waits for JunDesk.consent(true) and stores nothing before it).
  * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt) / .logout() / .consent(bool) / .registerAction(tool)
+ * Card actions with ChatKit's handler: "client" (D-51) come to the page, never to the server:
+ *   JunDesk.onWidgetAction(function (a) { a.type; a.payload; a.values; a.widget; }) (returns a remover),
+ *   or the "jundesk:widget-action" window event (same object as event.detail).
  *      / .reportError({ message, code? }). With the island launcher, "/" on the page opens it.
  * identify() takes a JWT your backend signs with the desk's identity secret (data-user-token works too).
  * reportError() tells support what failed in your app's own words ("Row 42: missing email"); masked
@@ -403,6 +406,8 @@
       if (a) a.list(reply); else reply();
     }
     if ((type == "jun:run" || type == "jun:undo") && window.JunDesk._a) window.JunDesk._a.handle(e.data, post);
+    // D-51: a card action for the page (ChatKit's handler: "client").
+    if (type == "jun:widget") try { window.dispatchEvent(new CustomEvent("jundesk:widget-action", { detail: e.data.action })); } catch (x) {}
     if (type == "jun:unread") {
       var n = Number(e.data.count) || 0;
       badge.textContent = n > 9 ? "9+" : n;
@@ -454,6 +459,11 @@
     // AI-21: a WebMCP tool ({ name, description, inputSchema, execute, annotations }) plus extras
     // (pages, key, element, context, available, undo, risk); see widget-actions.js. Returns a remover.
     _q: actionQueue,
+    onWidgetAction: function (fn) {
+      var h = function (e) { fn(e.detail); };
+      window.addEventListener("jundesk:widget-action", h);
+      return function () { window.removeEventListener("jundesk:widget-action", h); };
+    },
     registerAction: function (t) {
       var r = { t: t, off: null, dead: false };
       if (window.JunDesk._a) r.off = window.JunDesk._a.register(t);

@@ -125,7 +125,13 @@ export type ClientEvent =
   /** AI-21: the visitor's answers for a proposed action's missing params (visitors only). */
   | { type: "action_input"; runId: string; input: Record<string, unknown> }
   /** AI-21: what happened when the page ran (or didn't run) the action (visitors only). */
-  | { type: "action_result"; runId: string; status: Exclude<ActionStatus, "pending">; result?: string; canUndo?: boolean };
+  | { type: "action_result"; runId: string; status: Exclude<ActionStatus, "pending">; result?: string; canUndo?: boolean }
+  /**
+   * D-51: a card field's ChatKit `onChangeAction` (`tool:<name>` only), sent quietly as the visitor
+   * changes it: no message, no AI turn. The tool runs; a card it returns replaces this one in place
+   * (the AI message is updated). Answered with `widget_change_done` (same `requestId`).
+   */
+  | { type: "widget_change"; requestId: string; messageId: string; widgetId: string; field: string; action: unknown; values?: unknown };
 
 /** One tool call as the visitor sees it (`ai_step`): a label and whether it's still running. */
 export interface AiStep {
@@ -165,6 +171,8 @@ export type ConversationEvent =
   | { type: "ai_step"; turn: string; step: AiStep }
   /** Agents only: the AI called a tool (AI-11). Details via GET /api/conversations/:id/actions. */
   | { type: "ai_action"; tool: string; status: "ok" | "error" }
+  /** D-51: to the visitor that sent a `widget_change`: done (the updated card arrives as a `message`) or why not. */
+  | { type: "widget_change_done"; requestId: string; ok: boolean; message?: string }
   | { type: "error"; code: string; message: string; clientMsgId?: string };
 
 /** V-01: a visitor on the customer's site right now (from the loader's live connection). */

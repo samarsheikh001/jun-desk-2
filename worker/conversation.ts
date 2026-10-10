@@ -28,7 +28,7 @@ import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } f
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { findMentions } from "../shared/inbox.ts";
-import { markWidgetUsed, matchWidgetAction, TOOL_ACTION, toolActionInput, WIDGET_ONLY_BODY, widgetActionUsed, type MessageWidget, type WidgetActionMeta } from "../shared/widgets.ts";
+import { markWidgetUsed, matchWidgetAction, matchWidgetChange, TOOL_ACTION, toolActionInput, WIDGET_ONLY_BODY, widgetActionUsed, type MessageWidget, type WidgetActionMeta } from "../shared/widgets.ts";
 import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
 import { newId } from "./lib/crypto.ts";
 import { notifyTeam } from "./lib/notify.ts";
@@ -80,6 +80,11 @@ const PAGE_ACTIONS_KEY = "pageActions";
 /** W-17: a card tool's output for the AI (by visitor message id), and a card it returned to show with the next answer (by seq). */
 const TOOL_OUTPUT_KEY = "widgetToolOutput:";
 const PENDING_WIDGETS_KEY = "pendingWidgets:";
+/** D-51: how many field changes may run a tool in one conversation (each can call the customer's API). */
+const WIDGET_CHANGES_KEY = "widgetChanges";
+const MAX_WIDGET_CHANGES = 200;
+/** D-51: at least this long between two change runs of one card. */
+const WIDGET_CHANGE_GAP_MS = 400;
 
 interface NewMessage {
   authorType: AuthorType;
@@ -110,6 +115,9 @@ export class Conversation extends DurableObject<Env> {
   #turn: string | undefined;
   /** Page-action runs whose result was taken: repeats (a looping or retrying page) stop here, before D1. */
   #settled = new Set<string>();
+  /** D-51: cards with a field change running, and when each last ran one. */
+  #changing = new Set<string>();
+  #changedAt = new Map<string, number>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -205,6 +213,58 @@ export class Conversation extends DurableObject<Env> {
       });
     } else if (event.type === "action_result" && participant.role === "visitor") {
       await this.#actionResult(ref, event);
+    } else if (event.type === "widget_change" && participant.role === "visitor") {
+      const requestId = String(event.requestId ?? "").slice(0, 100);
+      const done = (ok: boolean, message?: string) => this.#send(ws, { type: "widget_change_done", requestId, ok, ...(message ? { message } : {}) });
+      try {
+        await this.#widgetChange(ref, event);
+        done(true);
+      } catch (error) {
+        if (!(error instanceof SendError)) console.error("widget_change failed", error);
+        done(false, error instanceof SendError ? error.message : "That didn't work. Try again.");
+      }
+    }
+  }
+
+  /**
+   * D-51: a card field's `onChangeAction` (`tool:<name>`): checks it against the card (offered, not
+   * used), runs the tool as the verified customer (audit row on the AI message that showed the
+   * card), and puts the card the tool returns in this card's place, for everyone. No message and no
+   * AI turn. One run per card at a time, a short gap between runs, and a cap per conversation.
+   */
+  async #widgetChange(ref: ConversationRef, event: Extract<ClientEvent, { type: "widget_change" }>): Promise<void> {
+    const messageId = typeof event.messageId === "string" ? event.messageId : "";
+    const row = messageId
+      ? await this.env.DB.prepare(`${MESSAGE_SELECT} WHERE m.conversation_id = ? AND m.id = ? AND m.author_type = 'ai'`).bind(ref.conversationId, messageId).first<MessageRow>()
+      : null;
+    const message = row ? toMessage(row) : null;
+    const widget = message?.meta.widgets?.find((w) => w.id === event.widgetId);
+    if (!message || !widget) throw new SendError("widget_gone", "That card is no longer available.");
+    if (widget.used) throw new SendError("widget_used", "That card was already used.");
+    const match = matchWidgetChange(widget.root, event.field, event.action, event.values);
+    if (!match) throw new SendError("bad_widget_action", "That card doesn't offer this action.");
+    if (match.item && widget.items?.[match.item]) throw new SendError("widget_used", "That row was already used.");
+    const key = `${message.id}:${widget.id}`;
+    if (this.#changing.has(key) || Date.now() - (this.#changedAt.get(key) ?? 0) < WIDGET_CHANGE_GAP_MS) throw new SendError("busy", "Still updating. Try again in a moment.");
+    const count = (await this.ctx.storage.get<number>(WIDGET_CHANGES_KEY)) ?? 0;
+    if (count >= MAX_WIDGET_CHANGES) throw new SendError("too_many", "This card can't update any more in this chat.");
+    this.#changing.add(key);
+    try {
+      await this.ctx.storage.put(WIDGET_CHANGES_KEY, count + 1);
+      const run = await this.#runWidgetTool(ref, { widgetId: widget.id, widget: widget.name, type: match.action.type, ...(match.action.payload !== undefined ? { payload: match.action.payload } : {}), values: match.values });
+      if (!run) return;
+      await this.#recordAction(ref, message.seq, run.configVersion, run.action);
+      if (!run.widget) return;
+      // The latest copy (another change may have landed meanwhile): swap only this card, keep its id.
+      const fresh = await this.env.DB.prepare(`${MESSAGE_SELECT} WHERE m.id = ?`).bind(message.id).first<MessageRow>();
+      const latest = fresh ? toMessage(fresh) : message;
+      const next = run.widget;
+      const meta = { ...latest.meta, widgets: (latest.meta.widgets ?? []).map((w) => (w.id === widget.id ? { ...next, id: widget.id } : w)) };
+      await this.env.DB.prepare("UPDATE messages SET meta = ? WHERE id = ?").bind(JSON.stringify(meta), message.id).run();
+      this.#broadcast({ type: "message", message: { ...latest, meta } });
+    } finally {
+      this.#changing.delete(key);
+      this.#changedAt.set(key, Date.now());
     }
   }
 

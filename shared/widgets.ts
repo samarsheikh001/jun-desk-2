@@ -44,6 +44,18 @@ export interface WidgetNode {
 export interface WidgetActionConfig {
   type: string;
   payload?: unknown;
+  /**
+   * ChatKit: "client" hands the action to the host page (the loader's `widgetAction` event), never
+   * to the server; "server" (the default) sends it. Read only in the browser.
+   */
+  handler?: "server" | "client";
+  /** ChatKit: what shows as busy while it's sent ("auto": the pressed control; a card's confirm: the card). */
+  loadingBehavior?: "auto" | "none" | "self" | "container";
+}
+
+/** ChatKit's `handler: "client"`: the action goes to the host page, never to the server. */
+export function isClientAction(value: unknown): boolean {
+  return isRecord(value) && value.handler === "client";
 }
 
 /** A widget the AI showed (in `meta.widgets` of its message, and live on the tool's step). */
@@ -332,16 +344,16 @@ export function widgetActions(root: WidgetNode): OfferedAction[] {
   const visit = (node: WidgetNode, item: string | undefined) => {
     const here = ids.get(node) ?? item;
     const at = here ? { item: here } : {};
-    const click = actionOf(node.onClickAction);
+    const click = isClientAction(node.onClickAction) ? null : actionOf(node.onClickAction);
     if (click) out.push({ action: click, label: typeof node.label === "string" && node.label ? node.label : nodeText(node) || click.type, ...at });
-    const submit = actionOf(node.onSubmitAction);
+    const submit = isClientAction(node.onSubmitAction) ? null : actionOf(node.onSubmitAction);
     if (submit) {
       const button = [...walk(node)].find((n) => n.type === "Button" && n.submit === true && typeof n.label === "string");
       out.push({ action: submit, label: (button?.label as string | undefined) ?? "Submit", ...at });
     }
     for (const key of ["confirm", "cancel"] as const) {
       const card = node[key];
-      const action = isRecord(card) ? actionOf(card.action) : null;
+      const action = isRecord(card) && !isClientAction(card.action) ? actionOf(card.action) : null;
       if (action) out.push({ action, label: isRecord(card) && typeof card.label === "string" ? card.label : key === "confirm" ? "Confirm" : "Cancel", ...at });
     }
     for (const child of node.children ?? []) visit(child, here);
@@ -379,6 +391,44 @@ export function matchWidgetAction(
   // The same action can sit in several rows ("Add" with the same payload): the row the visitor says, else the first.
   const hit = same.find((a) => (a.item ?? null) === (typeof item === "string" ? item : null)) ?? same[0];
   if (!hit) return null;
+  return { label: hit.label.slice(0, 200), action: hit.action, values: matchValues(root, values), ...(hit.item ? { item: hit.item } : {}) };
+}
+
+/** The fields whose ChatKit `onChangeAction` can run on the server: only `tool:<name>` ones (D-51). */
+const CHANGE_FIELDS = new Set(["Select", "Checkbox", "RadioGroup", "DatePicker"]);
+
+/**
+ * D-51: checks a field's `onChangeAction` a visitor's change sent. ChatKit sends it on every
+ * change; here only a `tool:<name>` action does anything (the tool runs quietly and the card it
+ * returns replaces this one), so only those match. `field` is the changed field's name; only the
+ * card's own fields' values are kept, as for a press. Null when the card doesn't offer it.
+ */
+export function matchWidgetChange(
+  root: WidgetNode,
+  field: unknown,
+  sent: unknown,
+  values: unknown,
+): { action: WidgetActionConfig; field: string; values: Record<string, string | boolean>; item?: string } | null {
+  const want = actionOf(sent);
+  if (!want || !TOOL_ACTION.test(want.type) || typeof field !== "string") return null;
+  const ids = itemIds(root);
+  let hit: { action: WidgetActionConfig; item?: string } | null = null;
+  const visit = (node: WidgetNode, item: string | undefined) => {
+    const here = ids.get(node) ?? item;
+    if (!hit && CHANGE_FIELDS.has(node.type) && node.name === field && !isClientAction(node.onChangeAction)) {
+      const action = actionOf(node.onChangeAction);
+      if (action && action.type === want.type && sameJson(action.payload, want.payload)) hit = { action, ...(here ? { item: here } : {}) };
+    }
+    for (const child of node.children ?? []) visit(child, here);
+  };
+  visit(root, undefined);
+  if (!hit) return null;
+  const found = hit as { action: WidgetActionConfig; item?: string };
+  const kept = matchValues(root, values);
+  return { action: found.action, field, values: kept, ...(found.item ? { item: found.item } : {}) };
+}
+
+function matchValues(root: WidgetNode, values: unknown): Record<string, string | boolean> {
   const fields = widgetFields(root);
   const kept: Record<string, string | boolean> = {};
   if (isRecord(values)) {
@@ -388,7 +438,7 @@ export function matchWidgetAction(
       else if (typeof value === "string" || typeof value === "number") kept[key] = String(value).slice(0, MAX_ACTION_VALUE);
     }
   }
-  return { label: hit.label.slice(0, 200), action: hit.action, values: kept, ...(hit.item ? { item: hit.item } : {}) };
+  return kept;
 }
 
 /** Whether the action the visitor pressed is already used: the whole card, or (in a list) that row. */
