@@ -1,5 +1,6 @@
 import { jsonSchema, tool, type ToolSet } from "ai";
 import type { AiStep } from "../../shared/protocol.ts";
+import { renderWidget, type MessageWidget, type WidgetSpec } from "../../shared/widgets.ts";
 import { DEFAULT_TOOL_STATUS, fillTemplate, type ToolSpec, type ToolUser } from "./config.ts";
 
 // HTTP tools (AI-05): each tools/<name>.yaml becomes a tool the model can call.
@@ -16,7 +17,12 @@ export interface ToolAction {
   status: "ok" | "error";
   httpStatus: number | null;
   durationMs: number;
+  /** W-09: the widget the result was shown as, or why it couldn't be. */
+  widget?: { name: string; error?: string };
 }
+
+/** What the model reads after a result the customer sees as a card. */
+export const WIDGET_SHOWN_NOTE = "(The customer already sees this result in the chat, laid out as a card. Don't repeat its details and don't mention the card; answer their question in a short sentence and add only what helps.)";
 
 export interface ToolRunOptions {
   /** Worker env vars JUN_SECRET_<NAME>. */
@@ -32,6 +38,10 @@ export interface ToolRunOptions {
   onStep?: (step: AiStep) => void;
   /** The verified customer for {user.*}; null when they aren't signed in. */
   user?: ToolUser | null;
+  /** W-09: the config's widgets, for tools with `widget:`. */
+  widgets?: WidgetSpec[];
+  /** W-09: a tool's result became a card for the customer (also on its step, for live chats). */
+  onWidget?: (widget: MessageWidget) => void;
 }
 
 export function secretsFromEnv(env: object): (name: string) => string | undefined {
@@ -100,19 +110,24 @@ export function shapeOutput(text: string, pick?: string[]): string {
   return out.length > MAX_TOOL_OUTPUT ? `${out.slice(0, MAX_TOOL_OUTPUT)}… (truncated)` : out;
 }
 
-async function callTool(spec: ToolSpec, input: Record<string, unknown>, options: ToolRunOptions): Promise<ToolAction> {
+/** A call's outcome, plus the whole response for a widget (the model gets the shortened `output`). */
+type ToolCall = ToolAction & { raw?: string };
+
+async function callTool(spec: ToolSpec, input: Record<string, unknown>, options: ToolRunOptions): Promise<ToolCall> {
   const started = Date.now();
-  const action = (status: ToolAction["status"], output: string, httpStatus: number | null): ToolAction => ({
+  const action = (status: ToolAction["status"], output: string, httpStatus: number | null, raw?: string): ToolCall => ({
     tool: spec.name,
     input,
     output,
     status,
     httpStatus,
     durationMs: Date.now() - started,
+    ...(raw !== undefined ? { raw } : {}),
   });
   if (options.mock) {
     if (spec.mock === undefined) return action("error", "No mock response defined for this tool.", null);
-    return action("ok", shapeOutput(typeof spec.mock === "string" ? spec.mock : JSON.stringify(spec.mock), spec.pick), null);
+    const mock = typeof spec.mock === "string" ? spec.mock : JSON.stringify(spec.mock);
+    return action("ok", shapeOutput(mock, spec.pick), null, mock);
   }
   let request: Request;
   try {
@@ -124,10 +139,36 @@ async function callTool(spec: ToolSpec, input: Record<string, unknown>, options:
     const response = await (options.fetch ?? fetch)(request, { signal: AbortSignal.timeout(TOOL_TIMEOUT_MS) });
     const text = await response.text();
     const output = shapeOutput(text || `(empty response, HTTP ${response.status})`, response.ok ? spec.pick : undefined);
-    return action(response.ok ? "ok" : "error", output, response.status);
+    return action(response.ok ? "ok" : "error", output, response.status, response.ok ? text : undefined);
   } catch (error) {
     const timedOut = (error as Error).name === "TimeoutError";
     return action("error", timedOut ? `No response within ${TOOL_TIMEOUT_MS / 1000} s.` : `Request failed: ${(error as Error).message}`, null);
+  }
+}
+
+/**
+ * W-09: a successful result as the tool's widget. The whole JSON response fills the template (the
+ * model gets the `pick`ed, shortened output); a result that doesn't fit the widget is shown as text
+ * only, and the audit log says why.
+ */
+function showWidget(spec: ToolSpec, call: ToolCall, options: ToolRunOptions, id: string): MessageWidget | null {
+  if (!spec.widget || call.status !== "ok" || call.raw === undefined) return null;
+  const widget = options.widgets?.find((w) => w.name === spec.widget);
+  try {
+    if (!widget) throw new Error(`no widgets/${spec.widget}.widget`);
+    let data: unknown;
+    try {
+      data = JSON.parse(call.raw);
+    } catch {
+      throw new Error("the response isn't JSON");
+    }
+    const root = renderWidget(widget, data);
+    call.widget = { name: widget.name };
+    return { id: `w${id.slice(1)}`, name: widget.name, root };
+  } catch (error) {
+    call.widget = { name: spec.widget, error: (error as Error).message };
+    console.warn(`[ai] widget ${spec.widget} for ${spec.name}: ${(error as Error).message}`);
+    return null;
   }
 }
 
@@ -144,16 +185,20 @@ export function httpTools(specs: ToolSpec[], options: ToolRunOptions): ToolSet {
         // An opaque id per call: the model's toolCallId or the tool name would tell the visitor more.
         const id = `s${++calls}`;
         options.onStep?.({ id, label, state: "running" });
-        let action: ToolAction;
+        let call: ToolCall | undefined;
+        let widget: MessageWidget | null = null;
         try {
-          action = await callTool(spec, input, options);
+          call = await callTool(spec, input, options);
+          widget = showWidget(spec, call, options, id);
         } finally {
-          options.onStep?.({ id, label, state: "done" });
+          // The card travels with the finished step, so it shows as soon as the call is done.
+          options.onStep?.({ id, label, state: "done", ...(widget ? { widget } : {}) });
         }
+        if (widget) options.onWidget?.(widget);
+        const { raw: _raw, ...action } = call;
         options.onAction?.(action);
-        return action.status === "ok"
-          ? action.output
-          : `ERROR${action.httpStatus ? ` (HTTP ${action.httpStatus})` : ""}: ${action.output}`;
+        if (action.status !== "ok") return `ERROR${action.httpStatus ? ` (HTTP ${action.httpStatus})` : ""}: ${action.output}`;
+        return widget ? `${action.output}\n\n${WIDGET_SHOWN_NOTE}` : action.output;
       },
     });
   }

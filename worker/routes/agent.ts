@@ -67,6 +67,7 @@ function summary(files: ConfigFiles) {
     summary: {
       skills: config.skills.map((s) => s.name),
       tools: config.tools.map((t) => t.name),
+      widgets: config.widgets.map((w) => w.name),
       evals: config.evals.length,
       maxReplies: config.maxReplies,
       handoffTopics: config.handoffTopics,

@@ -11,6 +11,8 @@ import { Textarea } from "@/components/ui/textarea.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog.tsx";
 import { PlusIcon, TrashIcon } from "../components/icons.tsx";
+import { previewWidget, starterWidget, type WidgetNode } from "../../shared/widgets.ts";
+import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
 
 // Support agent as code (AI-18): the dashboard edits the same files as `jun pull` / `jun push`.
 
@@ -33,11 +35,11 @@ interface AgentState {
   version: number | null;
   files: Files;
   issues: Issue[];
-  summary: { skills: string[]; tools: string[]; evals: number; maxReplies: number; handoffTopics: string[] };
+  summary: { skills: string[]; tools: string[]; evals: number; maxReplies: number; handoffTopics: string[]; widgets: string[] };
   versions: Version[];
 }
 
-type Kind = "skill" | "tool" | "eval";
+type Kind = "skill" | "tool" | "eval" | "widget";
 
 // What each kind of file is, where it lives, and the starter it's created with (same shapes as `jun init`).
 const KINDS: Record<Kind, { group: string; one: string; what: string; placeholder: string; path: (name: string) => string; starter: (name: string) => string }> = {
@@ -65,12 +67,21 @@ const KINDS: Record<Kind, { group: string; one: string; what: string; placeholde
     path: (name) => `evals/${name}.yaml`,
     starter: () => `- name: example\n  message: A customer message\n  expect:\n    outcome: answer        # answer | handoff | escalate\n    criteria: What a good reply does\n`,
   },
+  widget: {
+    group: "Widgets",
+    one: "widget",
+    what: "A card a tool's result is shown as, like a plan summary or an order's status. Design one in ChatKit Studio (widgets.chatkit.studio), download the .widget file and paste it here; then add `widget: <name>` to the tool.",
+    placeholder: "subscription",
+    path: (name) => `widgets/${name}.widget`,
+    starter: (name) => starterWidget(name.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase())),
+  },
 };
 
 /** The file name a typed name becomes: lower-case, dashes (procedures, evals) or underscores (tools). */
 function slug(kind: Kind, raw: string): string {
-  const name = raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, kind === "tool" ? "_" : "-").replace(/^[-_]+|[-_]+$/g, "");
-  return kind === "tool" ? name.replace(/^[^a-z]+/, "") : name;
+  const underscores = kind === "tool" || kind === "widget";
+  const name = raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, underscores ? "_" : "-").replace(/^[-_]+|[-_]+$/g, "");
+  return underscores ? name.replace(/^[^a-z]+/, "") : name;
 }
 
 const ago = (ms: number) => {
@@ -82,12 +93,31 @@ function groupOf(path: string): string {
   if (path.startsWith("skills/")) return "Procedures";
   if (path.startsWith("tools/")) return "Tools";
   if (path.startsWith("evals/")) return "Evals";
+  if (path.startsWith("widgets/")) return "Widgets";
   return "Agent";
 }
 
-const kindOf = (path: string): Kind => (path.startsWith("tools/") ? "tool" : path.startsWith("evals/") ? "eval" : "skill");
+const kindOf = (path: string): Kind => (path.startsWith("tools/") ? "tool" : path.startsWith("evals/") ? "eval" : path.startsWith("widgets/") ? "widget" : "skill");
 
-const label = (path: string) => (path.startsWith("skills/") ? path.split("/")[1]! : path.startsWith("tools/") || path.startsWith("evals/") ? path.split("/")[1]! : path);
+const label = (path: string) => (path.startsWith("skills/") ? path.split("/")[1]! : /^(tools|evals|widgets)\//.test(path) ? path.split("/")[1]! : path);
+
+/** W-09: the selected widget file drawn with its sample data, as the customer would see it. */
+function WidgetPreview({ path, text }: { path: string; text: string }) {
+  const name = /^widgets\/(.+)\.widget$/.exec(path)?.[1] ?? "widget";
+  let root: WidgetNode | null = null;
+  let problem: string | null = null;
+  try {
+    root = previewWidget(name, text);
+  } catch (error) {
+    problem = (error as Error).message;
+  }
+  return (
+    <div className="agent-widget-preview">
+      <div className="muted small strong">Preview</div>
+      {root ? <WidgetCard widget={{ id: "preview", name, root }} interactive={false} desk /> : <p className="muted small">{problem}</p>}
+    </div>
+  );
+}
 
 // Files (/agent): the config. Settings (/agent/settings): provider, model, ChatGPT sign-in and the monthly cap.
 export function AgentPage({ workspaceId, canEdit, tab }: { workspaceId: string; canEdit: boolean; tab: "files" | "settings" }) {
@@ -158,7 +188,7 @@ function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: bool
 
   const removed = Object.keys(state.files).filter((p) => !(p in draft));
   const paths = [...Object.keys(draft), ...removed].sort((a, b) => (a === "AGENTS.md" ? -1 : b === "AGENTS.md" ? 1 : a.localeCompare(b)));
-  const groups = ["Agent", "Procedures", "Tools", "Evals"].map((g) => ({ name: g, paths: paths.filter((p) => groupOf(p) === g) }));
+  const groups = ["Agent", "Procedures", "Tools", "Widgets", "Evals"].map((g) => ({ name: g, paths: paths.filter((p) => groupOf(p) === g) }));
   const issuesFor = (path: string) => issues.filter((i) => i.path === path);
   const status = (p: string): "new" | "edited" | "removed" | null =>
     !(p in draft) ? "removed" : !(p in state.files) ? "new" : draft[p] !== state.files[p] ? "edited" : null;
@@ -310,6 +340,7 @@ function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: bool
           onKeyDown={onKeyDown}
           readOnly={!canEdit}
         />
+        {selected.startsWith("widgets/") && draft[selected] !== undefined && <WidgetPreview path={selected} text={draft[selected]} />}
         {issuesFor(selected).length > 0 && (
           <ul className="agent-issues">
             {issuesFor(selected).map((i, n) => <li key={n} className="error small">{i.message}</li>)}
@@ -352,6 +383,7 @@ function FilesTab({ workspaceId, canEdit }: { workspaceId: string; canEdit: bool
         <ul className="agent-summary small">
           <li>{state.summary.skills.length} procedure{state.summary.skills.length === 1 ? "" : "s"}</li>
           <li>{state.summary.tools.length} tool{state.summary.tools.length === 1 ? "" : "s"}</li>
+          {state.summary.widgets.length > 0 && <li>{state.summary.widgets.length} widget{state.summary.widgets.length === 1 ? "" : "s"}</li>}
           <li>{state.summary.evals} eval case{state.summary.evals === 1 ? "" : "s"}</li>
           <li>Hands off after {state.summary.maxReplies} AI replies</li>
         </ul>

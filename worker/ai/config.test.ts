@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { systemPrompt } from "./agent.ts";
 import { DEFAULT_MAX_REPLIES, defaultFiles, fillTemplate, intentSkill, parseConfig, splitFrontmatter } from "./config.ts";
 import { TEMPLATE } from "../../packages/cli/src/template.ts";
-import { buildRequest, httpTools, shapeOutput } from "./tools.ts";
+import { buildRequest, httpTools, shapeOutput, WIDGET_SHOWN_NOTE } from "./tools.ts";
+import { starterWidget } from "../../shared/widgets.ts";
 import { dedupeSse } from "./workers-ai.ts";
 
 const REFUND_SKILL = `---
@@ -295,4 +296,55 @@ test("Workers AI stream dedupe drops the legacy copies of each chunk", async () 
   const out = await new Response(input.pipeThrough(dedupeSse())).text();
   const events = out.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim());
   assert.deepEqual(events, ['{"choices":[{"delta":{"content":"Hi"}}]}', '{"choices":[{"delta":{"content":" there"}}]}', '{"response":"legacy only"}', "[DONE]"]);
+});
+
+test("W-09 widgets: widgets/<name>.widget files, `widget:` on a tool, checked against each other", () => {
+  const widget = starterWidget("Subscription");
+  const tool = "description: The customer's plan\nurl: https://api.example.com/plan\nwidget: subscription\n";
+  const ok = parseConfig({ "AGENTS.md": "x", "widgets/subscription.widget": widget, "tools/plan.yaml": tool });
+  assert.deepEqual(ok.issues, []);
+  assert.equal(ok.config.widgets[0]!.name, "subscription");
+  assert.equal(ok.config.tools[0]!.widget, "subscription");
+
+  const missing = parseConfig({ "AGENTS.md": "x", "tools/plan.yaml": tool });
+  assert.match(missing.issues.map((i) => `${i.path}: ${i.message}`).join("\n"), /tools\/plan\.yaml: widget: there's no widgets\/subscription\.widget/);
+  // A widget whose sample doesn't render is an error on its file.
+  const broken = parseConfig({ "AGENTS.md": "x", "widgets/x.widget": JSON.stringify({ version: "1.0", template: '{"type":"Text","value":"x"}', sample: {} }) });
+  assert.match(broken.issues[0]!.message, /root must be/);
+  assert.match(parseConfig({ "AGENTS.md": "x", "widgets/Bad Name.widget": widget }).issues[0]!.message, /Unknown file/);
+});
+
+test("W-09: a tool with a widget shows its result as a card (step, onWidget) and tells the model", async () => {
+  const { config } = parseConfig({
+    "AGENTS.md": "x",
+    "widgets/subscription.widget": starterWidget("Subscription"),
+    "tools/plan.yaml": "description: d\nurl: https://api.example.com/plan\npick: [plan]\nwidget: subscription\nstatus: Checking your plan\n",
+  });
+  const steps: unknown[] = [];
+  const shown: unknown[] = [];
+  const actions: { widget?: unknown }[] = [];
+  const body = { plan: "Team", status: "past_due", renews_on: "Dec 1", seats: 5, seats_used: 5, internal_id: 42 };
+  const tools = httpTools(config.tools, {
+    secrets: () => undefined,
+    fetch: (async () => new Response(JSON.stringify(body), { status: 200 })) as typeof fetch,
+    widgets: config.widgets,
+    onStep: (s) => steps.push(s),
+    onWidget: (w) => shown.push(w),
+    onAction: (a) => actions.push(a),
+  });
+  const out = await tools.plan!.execute!({}, { toolCallId: "1", messages: [] } as never);
+  // The model gets the picked fields and the note; the card is built from the whole response.
+  assert.equal(out, `{"plan":"Team"}\n\n${WIDGET_SHOWN_NOTE}`);
+  assert.equal(shown.length, 1);
+  const card = shown[0] as { id: string; name: string; root: { type: string } };
+  assert.equal(card.name, "subscription");
+  assert.equal(card.root.type, "Card");
+  assert.match(JSON.stringify(card.root), /"Team".*"past_due".*"5 of 5"/);
+  assert.deepEqual((steps[1] as { widget?: unknown }).widget, card);
+  assert.deepEqual(actions[0]!.widget, { name: "subscription" });
+
+  // A response that doesn't fit: no card, the answer goes on as text, the audit log says why.
+  const notJson = httpTools(config.tools, { secrets: () => undefined, fetch: (async () => new Response("plain text", { status: 200 })) as typeof fetch, widgets: config.widgets, onAction: (a) => actions.push(a) });
+  assert.equal(await notJson.plan!.execute!({}, { toolCallId: "2", messages: [] } as never), "plain text");
+  assert.deepEqual(actions[1]!.widget, { name: "subscription", error: "the response isn't JSON" });
 });

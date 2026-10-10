@@ -1,0 +1,239 @@
+/* W-09: ChatKit widgets in the chat (web/widget/chatkit/WidgetCard.tsx). Everything under .ck,
+   coloured by --ck-* tokens: the widget frame's palette by default, the dashboard's under .ck-desk.
+   A card with theme="dark" (or "light") redefines them for itself. */
+
+.ck {
+  --ck-text: var(--text);
+  --ck-text-2: var(--text-soft);
+  --ck-text-3: var(--muted);
+  --ck-surface: var(--surface);
+  --ck-surface-2: var(--bg);
+  --ck-surface-3: var(--hover);
+  --ck-border: var(--border);
+  --ck-border-soft: var(--border-soft);
+  --ck-accent: var(--accent);
+  --ck-accent-text: var(--accent-text);
+  --ck-info: oklch(0.58 0.19 262);
+  --ck-discovery: oklch(0.56 0.21 293);
+  --ck-success: oklch(0.56 0.15 150);
+  --ck-caution: oklch(0.68 0.16 72);
+  --ck-warning: oklch(0.65 0.18 48);
+  --ck-danger: oklch(0.58 0.21 25);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  color: var(--ck-text);
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: left;
+}
+.ck.ck-desk {
+  --ck-text: var(--foreground);
+  --ck-text-2: color-mix(in srgb, var(--foreground) 78%, transparent);
+  --ck-text-3: var(--muted-foreground);
+  --ck-surface: var(--card);
+  --ck-surface-2: var(--muted);
+  --ck-surface-3: var(--accent);
+  --ck-border: var(--border);
+  --ck-border-soft: var(--border);
+  --ck-accent: var(--primary);
+  --ck-accent-text: var(--primary-foreground);
+}
+.ck .ck-dark {
+  --ck-text: #f5f5f5;
+  --ck-text-2: rgba(255, 255, 255, 0.78);
+  --ck-text-3: rgba(255, 255, 255, 0.55);
+  --ck-surface: #1c1c1c;
+  --ck-surface-2: rgba(255, 255, 255, 0.06);
+  --ck-surface-3: rgba(255, 255, 255, 0.1);
+  --ck-border: rgba(255, 255, 255, 0.14);
+  --ck-border-soft: rgba(255, 255, 255, 0.1);
+  color: var(--ck-text);
+}
+.ck .ck-light {
+  --ck-text: #171717;
+  --ck-text-2: #404040;
+  --ck-text-3: #737373;
+  --ck-surface: #fff;
+  --ck-surface-2: #fafafa;
+  --ck-surface-3: #f5f5f5;
+  --ck-border: #e5e5e5;
+  --ck-border-soft: #ededed;
+  color: var(--ck-text);
+}
+
+/* Containers */
+.ck-card {
+  --ck-pad: 16px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: var(--ck-pad);
+  overflow: hidden;
+  background: var(--ck-surface);
+  border: 1px solid var(--ck-border);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.ck-card .ck-card { box-shadow: none; }
+.ck-card-list { padding: 4px; gap: 0; }
+.ck-box { display: flex; min-width: 0; gap: 8px; }
+.ck-row { flex-direction: row; align-items: center; }
+.ck-col { flex-direction: column; }
+.ck-basic { gap: 8px; }
+.ck-spacer { flex: 1 1 auto; }
+.ck-clickable { cursor: pointer; border-radius: 8px; }
+.ck-clickable:hover { background: var(--ck-surface-3); }
+.ck-flush { margin-inline: calc(-1 * var(--ck-pad, 16px)); width: auto; max-width: none; }
+.ck-card > .ck-flush:first-child { margin-top: calc(-1 * var(--ck-pad, 16px)); }
+.ck-card > .ck-flush:last-child { margin-bottom: calc(-1 * var(--ck-pad, 16px)); }
+.ck-divider { align-self: stretch; margin: 2px 0; border: 0; border-top: 1px solid var(--ck-border-soft); }
+
+/* Text */
+.ck-text, .ck-title, .ck-caption, .ck-label { min-width: 0; margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
+.ck-title { font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; }
+.ck-caption { color: var(--ck-text-2); line-height: 1.4; }
+.ck-label { color: var(--ck-text-2); }
+.ck-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ck-md { min-width: 0; overflow-wrap: anywhere; }
+.ck-md p, .ck-md ul, .ck-md ol { margin: 0 0 6px; }
+.ck-md > :last-child { margin-bottom: 0; }
+.ck-md ul, .ck-md ol { padding-left: 18px; }
+.ck-md code { padding: 1px 4px; border-radius: 4px; background: var(--ck-surface-3); font-size: 0.92em; }
+.ck-md a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Content */
+.ck-icon { flex-shrink: 0; }
+.ck-img { display: block; flex-shrink: 0; object-fit: cover; }
+.ck-img.ck-frame { border: 1px solid var(--ck-border-soft); }
+.ck-img.ck-flush { border-radius: 0 !important; width: calc(100% + 2 * var(--ck-pad, 16px)); max-width: none; }
+.ck-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+  border-radius: 6px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ck-row > .ck-badge { align-self: center; }
+.ck-badge-sm { padding: 1px 6px; font-size: 11px; }
+.ck-badge-md { padding: 2px 8px; font-size: 12px; }
+.ck-badge-lg { padding: 3px 10px; font-size: 13px; }
+.ck-badge-soft { background: color-mix(in srgb, var(--ck-tone) 14%, transparent); color: var(--ck-tone); }
+.ck-badge-solid { background: var(--ck-tone); color: #fff; }
+.ck-badge-outline { border: 1px solid color-mix(in srgb, var(--ck-tone) 45%, transparent); color: var(--ck-tone); }
+.ck-pill { border-radius: 9999px !important; }
+
+/* Buttons */
+.ck-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 14px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ck-tone);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms, border-color 150ms, opacity 150ms;
+}
+.ck-btn > span { overflow: hidden; text-overflow: ellipsis; }
+.ck-btn:disabled { cursor: default; opacity: 0.55; }
+.ck-btn-solid { background: var(--ck-tone); border-color: var(--ck-tone); color: var(--ck-on-tone, #fff); }
+.ck-btn-solid:not(:disabled):hover { background: color-mix(in srgb, var(--ck-tone) 88%, var(--ck-on-tone, #fff)); }
+.ck-btn-soft { background: color-mix(in srgb, var(--ck-tone) 12%, transparent); }
+.ck-btn-soft:not(:disabled):hover { background: color-mix(in srgb, var(--ck-tone) 18%, transparent); }
+.ck-btn-outline { border-color: var(--ck-border); color: var(--ck-text); }
+.ck-btn-outline:not(:disabled):hover, .ck-btn-ghost:not(:disabled):hover { background: var(--ck-surface-3); }
+.ck-btn-icon { padding: 0; width: 34px; }
+.ck-size-3xs, .ck-size-2xs { height: 24px; padding: 0 8px; font-size: 12px; border-radius: 7px; }
+.ck-size-xs { height: 28px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; }
+.ck-size-sm { height: 30px; padding: 0 12px; font-size: 13px; }
+.ck-size-lg { height: 38px; padding: 0 16px; font-size: 14px; }
+.ck-size-xl, .ck-size-2xl, .ck-size-3xl { height: 42px; padding: 0 18px; font-size: 15px; }
+.ck-btn-icon.ck-size-3xs, .ck-btn-icon.ck-size-2xs { width: 24px; padding: 0; }
+.ck-btn-icon.ck-size-xs { width: 28px; padding: 0; }
+.ck-btn-icon.ck-size-sm { width: 30px; padding: 0; }
+.ck-block { width: 100%; align-self: stretch; }
+.ck-card-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 2px; }
+.ck-card-actions .ck-btn { flex: 1 1 auto; }
+
+/* Fields */
+.ck-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--ck-border);
+  border-radius: 10px;
+  background: var(--ck-surface);
+  color: var(--ck-text);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.ck-field-soft { background: var(--ck-surface-2); border-color: transparent; }
+.ck-input:focus-visible { border-color: var(--ck-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ck-accent) 18%, transparent); }
+.ck-input:disabled { opacity: 0.7; }
+.ck-textarea { resize: vertical; line-height: 1.45; }
+.ck-select { appearance: auto; }
+.ck-editable { padding: 4px 8px; margin: -4px -8px; width: calc(100% + 16px); border-color: transparent; background: transparent; }
+.ck-editable:hover:not(:disabled) { border-color: var(--ck-border); }
+.ck-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.ck-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--ck-accent); }
+.ck-radios { display: flex; flex-direction: column; gap: 6px; }
+.ck-radios.ck-row-dir { flex-direction: row; flex-wrap: wrap; gap: 14px; }
+
+/* Lists and tables */
+.ck-list { display: flex; flex-direction: column; }
+.ck-item { display: flex; align-items: center; min-width: 0; padding: 8px 12px; border-radius: 12px; background: transparent; border: 0; color: inherit; font: inherit; text-align: left; }
+.ck-item + .ck-item { border-top: 1px solid var(--ck-border-soft); border-radius: 0; }
+.ck-item-btn { width: 100%; cursor: pointer; }
+.ck-item-btn:not(:disabled):hover { background: var(--ck-surface-3); }
+.ck-item-btn:disabled { cursor: default; }
+.ck-more { margin: 4px 12px 8px; padding: 0; border: 0; background: none; color: var(--ck-text-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.ck-more:hover { color: var(--ck-text); }
+.ck-table-wrap { overflow-x: auto; }
+.ck-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.ck-table td, .ck-table th { padding: 6px 8px; border-bottom: 1px solid var(--ck-border-soft); text-align: left; vertical-align: middle; }
+.ck-table tr:last-child td { border-bottom: 0; }
+.ck-table .ck-th th { color: var(--ck-text-2); font-weight: 500; font-size: 12.5px; }
+
+/* Chart */
+.ck-chart { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.ck-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.ck-grid { stroke: var(--ck-border-soft); stroke-width: 1; }
+.ck-tick { fill: var(--ck-text-3); font-size: 9px; font-family: inherit; }
+.ck-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ck-text-2); font-size: 12px; }
+.ck-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.ck-legend i { width: 8px; height: 8px; border-radius: 2px; }
+
+/* Status line above a card, and the note under a used one */
+.ck-status { display: flex; align-items: center; gap: 6px; padding: 0 2px; color: var(--ck-text-2); font-size: 12.5px; }
+.ck-status img { border-radius: 3px; }
+.ck-used .ck-card { opacity: 0.92; }
+.ck-used-note { display: flex; align-items: center; gap: 5px; padding: 0 2px; color: var(--ck-text-3); font-size: 12px; }
+
+/* The inbox shows what the visitor saw, at chat width. */
+.ai-widget { width: 100%; max-width: 400px; margin: 4px 0; }
+.widget-values { margin-top: 2px; }
+/* A reply with a card takes the chat's full width, also while it streams (rows otherwise fit their content). */
+.msg.ai:has(> .w-answer .ck) { width: 100%; }
+.msg.ai > .w-answer:has(.ck) { justify-self: stretch; width: 100%; }

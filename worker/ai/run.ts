@@ -1,6 +1,7 @@
 import { isStepCount, jsonSchema, streamText, tool, type ToolSet } from "ai";
 import { actionInputSchema, DONE_TOOL, matchesPage, type PageAction } from "../../shared/actions.ts";
 import type { AiStep, Message } from "../../shared/protocol.ts";
+import type { MessageWidget } from "../../shared/widgets.ts";
 import { FLAG_TOOL, HANDOFF_TOOL, INLINE_SKILLS_MAX_CHARS, replyOutcome, searchQuery, systemPrompt, toChatMessages, type ReplyDecisions, type ReplyOutcome } from "./agent.ts";
 import { intentSkill, type AgentConfig, type ToolUser } from "./config.ts";
 import type { AgentModel } from "./providers.ts";
@@ -53,6 +54,8 @@ export interface RunResult {
   actions: ToolAction[];
   /** AI-21: the page action the model chose (the first, if it tried several) with the inputs it gave. */
   pageAction: { action: PageAction; input: Record<string, unknown> } | null;
+  /** W-09: cards the customer saw (tool results with `widget:`), in call order. */
+  widgets: MessageWidget[];
   usage: { inputTokens: number; outputTokens: number };
 }
 
@@ -92,12 +95,15 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
 
   // Tools scoped to pages (AI-21) are offered only on a matching page; without a known page, only unscoped ones.
   const toolSpecs = config.tools.filter((t) => !t.pages || matchesPage(t.pages, input.pagePath));
+  const widgets: MessageWidget[] = [];
   const tools: ToolSet = httpTools(toolSpecs, {
     secrets: secretsFromEnv(input.env),
     mock: Boolean(input.mockTools),
     onAction,
     ...(input.onStep ? { onStep: input.onStep } : {}),
     user: input.user ?? null,
+    widgets: config.widgets,
+    onWidget: (widget) => widgets.push(widget),
   });
   const skillChars = config.skills.reduce((n, s) => n + s.instructions.length + s.description.length, 0);
   const skillCatalog = skillChars > INLINE_SKILLS_MAX_CHARS;
@@ -242,6 +248,8 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   let outcome = replyOutcome(raw, decisions);
   // Ending the chain with nothing to say is fine (the steps show what was done), not a handoff.
   if (done !== null && !raw.trim()) outcome = { kind: "answer", text: "", escalate: null };
+  // W-09: a card with no words is still an answer (the card is what the customer asked for).
+  if (widgets.length && outcome.kind === "handoff" && decisions.handoff === null && decisions.flag === null) outcome = { kind: "answer", text: "", escalate: null };
   if (pageAction) {
     // A reply that only calls the action has no text; that's an answer (the action card), not a handoff.
     if (outcome.kind === "handoff") {
@@ -255,6 +263,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     hits,
     actions,
     pageAction,
+    widgets,
     usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 },
   };
 }

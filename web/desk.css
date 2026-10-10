@@ -906,6 +906,7 @@ form.kb-test-form { display: flex; gap: 8px; margin: 0; }
 .agent-head h2 { margin: 0; }
 .agent-text { flex: 1; min-height: 240px; resize: none; field-sizing: fixed; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; padding: 12px; tab-size: 2; }
 .agent-issues { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
+.agent-widget-preview { display: grid; gap: 8px; max-width: 400px; }
 .agent-save, .agent-conflict { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0; }
 .agent-save input { flex: 1; min-width: 200px; }
 .agent-summary { margin: 0; padding-left: 18px; }

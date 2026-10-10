@@ -1,4 +1,5 @@
 import type { ModelMessage } from "ai";
+import { widgetActionLine } from "../../shared/widgets.ts";
 import { ACTION_ONLY_BODY, actionCallId, actionStatusText, actionToolResult, describePageAction, DONE_TOOL, toolSlug, visibleResult, type PageAction } from "../../shared/actions.ts";
 import type { Message, Source } from "../../shared/protocol.ts";
 import type { Skill, ToolUser } from "./config.ts";
@@ -240,7 +241,9 @@ export function toChatMessages(history: Message[], maxMessages = 16): ModelMessa
     .slice(-maxMessages)) {
     const action = m.authorType === "ai" ? m.meta.action : undefined;
     if (!action) {
-      out.push({ role: m.authorType === "visitor" ? "user" : "assistant", content: m.body });
+      // W-09: a card's button reads as what it was (card, action, payload, what was entered).
+      const content = m.authorType === "visitor" && m.meta.widgetAction ? widgetActionLine(m.body, m.meta.widgetAction) : m.body;
+      out.push({ role: m.authorType === "visitor" ? "user" : "assistant", content });
       continue;
     }
     const toolName = action.tool ?? toolSlug(action.name);

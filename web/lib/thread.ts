@@ -145,6 +145,18 @@ export function useThread(options: {
     [sendEvent],
   );
 
+  /** W-09: a card's button, sent as the visitor's message (its label) with which card and what they entered. */
+  const sendWidgetAction = useCallback(
+    (label: string, widgetAction: { messageId: string; widgetId: string; action: unknown; values: Record<string, string | boolean> }, context?: unknown, actions?: unknown) => {
+      const clientMsgId = crypto.randomUUID();
+      setPending((p) => [...p, { clientMsgId, body: label, attachments: [] }]);
+      const sent = sendEvent({ type: "send", clientMsgId, body: label, attachments: [], widgetAction, ...(context !== undefined ? { context } : {}), ...(actions !== undefined ? { actions } : {}) });
+      if (!sent) setPending((p) => p.map((m) => (m.clientMsgId === clientMsgId ? { ...m, failed: "Not connected. Retry when back online." } : m)));
+      return sent;
+    },
+    [sendEvent],
+  );
+
   return {
     messages,
     pending,
@@ -164,6 +176,7 @@ export function useThread(options: {
       sendEvent({ type: "action_result", runId, status, ...(result ? { result } : {}), ...(canUndo ? { canUndo } : {}) }),
     merge,
     send,
+    sendWidgetAction,
     setTyping: (isTyping: boolean) => sendEvent({ type: "typing", typing: isTyping }),
     markRead: (seq: number) => seq > 0 && sendEvent({ type: "read", seq }),
     dismissPending: (clientMsgId: string) => setPending((p) => p.filter((m) => m.clientMsgId !== clientMsgId)),

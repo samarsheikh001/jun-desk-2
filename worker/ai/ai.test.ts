@@ -267,3 +267,11 @@ test("replyOrder: a reply sits after the message it answers, even when another a
   const plain = [msg("visitor", "a", { seq: 1 }), msg("ai", "b", { seq: 2, clientMsgId: "ai:1" }), msg("agent", "c", { seq: 3 })];
   assert.deepEqual(replyOrder(plain).map((m) => m.body), ["a", "b", "c"]);
 });
+
+test("W-09: a card's button reaches the model as what it was, with the card's payload and what was entered", () => {
+  const press = msg("visitor", "Cancel renewal", { meta: { widgetAction: { widgetId: "w1", widget: "subscription", type: "renewal.cancel", payload: { plan: "Pro" }, values: { reason: "Too pricey" } } } });
+  assert.deepEqual(toChatMessages([msg("visitor", "my plan?"), msg("ai", "Here's what I found:"), press]).at(-1), {
+    role: "user",
+    content: '[On the subscription card the customer pressed "Cancel renewal": action renewal.cancel, payload {"plan":"Pro"}, entered {"reason":"Too pricey"}]',
+  });
+});

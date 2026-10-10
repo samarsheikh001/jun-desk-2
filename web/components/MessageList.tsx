@@ -2,6 +2,8 @@ import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { AiStep, Attachment, Message, Source } from "../../shared/protocol.ts";
 import { actionStatusText, actionSummary, visibleResult, type MessageAction } from "../../shared/actions.ts";
 import { mentionParts } from "../../shared/inbox.ts";
+import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
+import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
 import { formatSize, formatTime, isImage, type PendingMessage } from "../lib/thread.ts";
 
 function Attachments({ attachments }: { attachments: Attachment[] }) {
@@ -75,6 +77,10 @@ export interface AiAnswerView {
   action?: MessageAction;
   /** When the message was written (the card runs an `auto` action by itself only for a fresh reply). */
   createdAt?: number;
+  /** W-09: the saved answer's cards (while it streams, they come on its steps). */
+  widgets?: MessageWidget[];
+  /** The saved message's id (card actions name it); none while streaming. */
+  messageId?: string;
 }
 
 /**
@@ -184,7 +190,7 @@ export function MessageList({
     if (m.authorType === "ai" && renderAi) {
       return (
         <div key={m.clientMsgId} className={`msg ${own ? "own" : "other"} ai`}>
-          {renderAi({ body: m.body, sources: m.meta.sources ?? [], followUps: m.meta.followUps ?? [], streaming: false, latest: m === last && pending.length === 0 && !aiStream?.text, steps: aiSteps?.[m.clientMsgId] ?? [], ...(m.meta.action ? { action: m.meta.action } : {}), createdAt: m.createdAt })}
+          {renderAi({ body: m.body, sources: m.meta.sources ?? [], followUps: m.meta.followUps ?? [], streaming: false, latest: m === last && pending.length === 0 && !aiStream?.text, steps: aiSteps?.[m.clientMsgId] ?? [], ...(m.meta.action ? { action: m.meta.action } : {}), ...(m.meta.widgets ? { widgets: m.meta.widgets } : {}), messageId: m.id, createdAt: m.createdAt })}
           <Attachments attachments={m.attachments} />
         </div>
       );
@@ -193,7 +199,17 @@ export function MessageList({
       <div key={m.clientMsgId} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""} ${m.internal ? "note" : ""}`}>
         {showAuthor && <div className="author muted small">{m.internal && <span className="tag note-tag">Note</span>}{authorLabel(m)} · {formatTime(m.createdAt)}</div>}
         {m.authorType === "ai" && actionsFor(m.clientMsgId)}
-        {m.body && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : m.body}</div>}
+        {m.authorType === "ai" && m.meta.widgets?.map((w) => (
+          <div key={w.id} className="ai-widget" title={`Card: widgets/${w.name}.widget`}>
+            <WidgetCard widget={w} interactive={false} desk />
+          </div>
+        ))}
+        {m.body && !(m.meta.widgets?.length && m.body === WIDGET_ONLY_BODY) && <div className="bubble">{m.authorType === "ai" ? withCitations(m.body, m.meta.sources) : m.internal ? withMentions(m.body, mentionNames) : m.body}</div>}
+        {m.meta.widgetAction && m.meta.widgetAction.values && Object.keys(m.meta.widgetAction.values).length > 0 && (
+          <div className="widget-values small muted" title={`Card ${m.meta.widgetAction.widget} · action ${m.meta.widgetAction.type}`}>
+            {Object.entries(m.meta.widgetAction.values).map(([k, v]) => `${k}: ${typeof v === "boolean" ? (v ? "yes" : "no") : v}`).join(" · ")}
+          </div>
+        )}
         <Attachments attachments={m.attachments} />
         {m.authorType === "ai" && <Sources sources={m.meta.sources} />}
         {m.authorType === "ai" && m.meta.action && (

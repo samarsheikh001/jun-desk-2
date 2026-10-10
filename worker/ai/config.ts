@@ -1,6 +1,7 @@
 import { parse as parseYaml } from "yaml";
 import { INTENT_NAME, MAX_INTENT_EXIT, MAX_INTENT_OPENING, MAX_INTENT_REPLIES, MAX_INTENT_REPLY, type IntentSpec } from "../../shared/intents.ts";
 import { DONE_TOOL } from "../../shared/actions.ts";
+import { parseWidgetFile, renderWidget, type WidgetSpec } from "../../shared/widgets.ts";
 import { FLAG_TOOL, HANDOFF_TOOL } from "./agent.ts";
 
 /** The agent's own tools: a tools/<name>.yaml can't take their names. */
@@ -12,6 +13,7 @@ const BUILT_IN_TOOLS = new Set([HANDOFF_TOOL, FLAG_TOOL, DONE_TOOL, "activate_sk
 //                             optional intent/opening/replies/exit for AI-20 intent-launched chats)
 //   tools/<name>.yaml         HTTP lookups the AI may call (AI-05)
 //   evals/<name>.yaml         test cases for `jun eval` (AI-19)
+//   widgets/<name>.widget     cards a tool's result is shown as (W-09: ChatKit Studio's export)
 // Parsing is pure so the Worker, tests and the eval runner share it.
 
 export const MAX_CONFIG_FILES = 200;
@@ -50,6 +52,8 @@ export interface ToolSpec {
   status?: string;
   /** AI-21: offer this tool only on these page paths ("/orders/*"); none means everywhere. */
   pages?: string[];
+  /** W-09: show a successful result to the customer as this widget (`widgets/<name>.widget`). */
+  widget?: string;
 }
 
 /** `action`: AI-21, the reply proposed a page action (the card), with or without text. */
@@ -77,7 +81,8 @@ export interface EvalCase {
   actions?: EvalAction[];
   /** AI-21: the page path the customer is on, for tools and actions with `pages`. */
   page?: string;
-  expect: { outcome?: EvalOutcome; tools?: string[]; criteria?: string; action?: { name: string; input?: Record<string, unknown> } };
+  /** `widget`: W-09, the reply shows this card. */
+  expect: { outcome?: EvalOutcome; tools?: string[]; criteria?: string; action?: { name: string; input?: Record<string, unknown> }; widget?: string };
 }
 
 export interface AgentConfig {
@@ -91,6 +96,8 @@ export interface AgentConfig {
   skills: Skill[];
   tools: ToolSpec[];
   evals: EvalCase[];
+  /** W-09: cards tools can show their results as. */
+  widgets: WidgetSpec[];
 }
 
 export interface ConfigIssue {
@@ -122,10 +129,12 @@ export function defaultFiles(instructions = ""): ConfigFiles {
 const SKILL_PATH = /^skills\/([a-z0-9]+(?:-[a-z0-9]+)*)\/SKILL\.md$/;
 const TOOL_PATH = /^tools\/([a-z][a-z0-9_]*)\.ya?ml$/;
 const EVAL_PATH = /^evals\/([a-zA-Z0-9_-]+)\.ya?ml$/;
+const WIDGET_PATH = /^widgets\/([a-z][a-z0-9_-]*)\.widget$/;
+export const MAX_WIDGETS = 20;
 const PLACEHOLDER = /\{([a-zA-Z_][a-zA-Z0-9_.]*)\}/g;
 
 export function isConfigPath(path: string): boolean {
-  return path === "AGENTS.md" || path === "README.md" || SKILL_PATH.test(path) || TOOL_PATH.test(path) || EVAL_PATH.test(path);
+  return path === "AGENTS.md" || path === "README.md" || SKILL_PATH.test(path) || TOOL_PATH.test(path) || EVAL_PATH.test(path) || WIDGET_PATH.test(path);
 }
 
 /** Splits `---\nyaml\n---\nbody`. Returns null frontmatter when there is none. */
@@ -272,9 +281,11 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     return null;
   }
   const before = issues.length;
-  unknownKeys(path, data, ["description", "method", "url", "headers", "query", "body", "input", "pick", "mock", "status", "pages"], issues);
+  unknownKeys(path, data, ["description", "method", "url", "headers", "query", "body", "input", "pick", "mock", "status", "pages", "widget"], issues);
   const pages = Array.isArray(data.pages) && data.pages.length > 0 && data.pages.every((p) => typeof p === "string" && p.startsWith("/")) ? (data.pages as string[]) : undefined;
   if (data.pages !== undefined && !pages) issues.push({ path, message: 'pages must be a list of paths like "/pricing" or "/plans/*".' });
+  const widget = typeof data.widget === "string" ? data.widget.trim() : undefined;
+  if (data.widget !== undefined && !(widget && /^[a-z][a-z0-9_-]*$/.test(widget))) issues.push({ path, message: "widget must be the name of a file in widgets/ (widget: order_status for widgets/order_status.widget)." });
 
   const description = typeof data.description === "string" ? data.description.trim() : "";
   if (!description) issues.push({ path, message: "description is required: tell the AI what this returns and when to use it." });
@@ -358,11 +369,24 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     query,
     ...(data.body !== undefined ? { body: data.body } : {}),
     ...(pages ? { pages } : {}),
+    ...(widget ? { widget } : {}),
     input,
     ...(pick ? { pick } : {}),
     ...(data.mock !== undefined ? { mock: data.mock } : {}),
     ...(status ? { status } : {}),
   };
+}
+
+/** W-09: a `.widget` file. When it carries the data it was designed with (ChatKit Studio does), it must render with it. */
+function parseWidget(path: string, name: string, text: string, issues: ConfigIssue[]): WidgetSpec | null {
+  try {
+    const spec = parseWidgetFile(name, text);
+    if (spec.sample) renderWidget(spec, spec.sample);
+    return spec;
+  } catch (error) {
+    issues.push({ path, message: (error as Error).message });
+    return null;
+  }
 }
 
 const OUTCOMES: EvalOutcome[] = ["answer", "handoff", "escalate", "action"];
@@ -428,7 +452,11 @@ function parseEvals(path: string, text: string, issues: ConfigIssue[]): EvalCase
         issues.push({ path, message: `${name}: expect must be a map.` });
         return;
       }
-      unknownKeys(path, raw.expect, ["outcome", "tools", "criteria", "action"], issues, `${name}: expect.`);
+      unknownKeys(path, raw.expect, ["outcome", "tools", "criteria", "action", "widget"], issues, `${name}: expect.`);
+      if (raw.expect.widget !== undefined) {
+        if (typeof raw.expect.widget === "string" && raw.expect.widget.trim()) expect.widget = raw.expect.widget.trim();
+        else issues.push({ path, message: `${name}: expect.widget must be a widget name (widgets/<name>.widget).` });
+      }
       if (raw.expect.outcome !== undefined) {
         if (OUTCOMES.includes(raw.expect.outcome as EvalOutcome)) expect.outcome = raw.expect.outcome as EvalOutcome;
         else issues.push({ path, message: `${name}: expect.outcome must be one of ${OUTCOMES.join(", ")}.` });
@@ -475,6 +503,7 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
     skills: [],
     tools: [],
     evals: [],
+    widgets: [],
   };
   for (const path of paths) {
     const text = files[path]!;
@@ -501,14 +530,25 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
       if (tool) config.tools.push(tool);
     } else if (EVAL_PATH.test(path)) {
       config.evals.push(...parseEvals(path, text, issues));
+    } else if ((m = WIDGET_PATH.exec(path))) {
+      const widget = parseWidget(path, m[1]!, text, issues);
+      if (widget) config.widgets.push(widget);
     } else {
       issues.push({
         path,
-        message: "Unknown file. Allowed: AGENTS.md, README.md, skills/<name>/SKILL.md, tools/<name>.yaml, evals/<name>.yaml (lowercase names).",
+        message: "Unknown file. Allowed: AGENTS.md, README.md, skills/<name>/SKILL.md, tools/<name>.yaml, evals/<name>.yaml, widgets/<name>.widget (lowercase names).",
       });
     }
   }
   if (config.tools.length > 20) issues.push({ path: "tools/", message: "At most 20 tools." });
+  if (config.widgets.length > MAX_WIDGETS) issues.push({ path: "widgets/", message: `At most ${MAX_WIDGETS} widgets.` });
+  for (const tool of config.tools) {
+    if (tool.widget && !config.widgets.some((w) => w.name === tool.widget)) {
+      const file = paths.find((p) => TOOL_PATH.exec(p)?.[1] === tool.name) ?? `tools/${tool.name}.yaml`;
+      issues.push({ path: file, message: `widget: there's no widgets/${tool.widget}.widget.` });
+      delete tool.widget;
+    }
+  }
   return { config, issues };
 }
 

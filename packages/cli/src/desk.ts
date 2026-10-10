@@ -81,7 +81,7 @@ export async function login(url: string, token: string): Promise<DeskLogin> {
   return result;
 }
 
-const CONFIG_PATH = /^(AGENTS\.md|README\.md|skills\/[^/]+\/SKILL\.md|tools\/[^/]+\.ya?ml|evals\/[^/]+\.ya?ml)$/;
+const CONFIG_PATH = /^(AGENTS\.md|README\.md|skills\/[^/]+\/SKILL\.md|tools\/[^/]+\.ya?ml|evals\/[^/]+\.ya?ml|widgets\/[^/]+\.widget)$/;
 
 /** Reads the config files under `dir` (paths with forward slashes). Other files are skipped. */
 export async function readFolder(dir: string): Promise<{ files: Record<string, string>; skipped: string[] }> {

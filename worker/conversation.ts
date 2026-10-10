@@ -27,6 +27,7 @@ import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } f
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { findMentions } from "../shared/inbox.ts";
+import { matchWidgetAction, WIDGET_ONLY_BODY, type WidgetActionMeta } from "../shared/widgets.ts";
 import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
 import { newId } from "./lib/crypto.ts";
 import { notifyTeam } from "./lib/notify.ts";
@@ -52,6 +53,8 @@ export interface SendInput {
   actions?: unknown;
   /** An agent's internal note (I-05). Ignored for visitors. */
   internal?: boolean | undefined;
+  /** W-09: the visitor pressed a card's button; checked against the card, then the body is its label. */
+  widgetAction?: { messageId: string; widgetId: string; action: unknown; values?: unknown } | undefined;
 }
 
 export type SendResult = { ok: true; message: Message } | { ok: false; code: string; message: string };
@@ -244,7 +247,10 @@ export class Conversation extends DurableObject<Env> {
   /** A message from a participant. Idempotent per clientMsgId. */
   async #addMessage(refIn: ConversationRef, participant: Participant, input: SendInput): Promise<Message> {
     const ref = this.#bind(refIn);
-    const body = typeof input.body === "string" ? input.body.trim() : "";
+    // W-09: a card's button. The card must offer that action and not have been used; the message
+    // reads as the button's label (from the card, not the client) and carries what was entered.
+    const used = participant.role === "visitor" && input.widgetAction ? await this.#useWidget(ref, input.clientMsgId, input.widgetAction) : null;
+    const body = used ? used.label : typeof input.body === "string" ? input.body.trim() : "";
     const attachments = await this.#checkAttachments(ref, participant, input.attachments ?? []);
     if (!body && attachments.length === 0) throw new SendError("empty", "Message is empty.");
     if (body.length > MAX_MESSAGE_LENGTH) throw new SendError("too_long", `Messages are limited to ${MAX_MESSAGE_LENGTH} characters.`);
@@ -279,6 +285,7 @@ export class Conversation extends DurableObject<Env> {
       attachments,
       clientMsgId: input.clientMsgId,
       ...(note ? { internal: true, meta: mentions.length ? { mentions } : {} } : {}),
+      ...(used?.meta ? { meta: { widgetAction: used.meta } } : {}),
     });
     if (participant.role === "agent" && mentions.length) await this.#notifyMentions(ref, participant, message);
 
@@ -292,6 +299,40 @@ export class Conversation extends DurableObject<Env> {
     // sender isn't kept waiting (and so it's retried if the object restarts).
     if (participant.role === "visitor") await this.ctx.storage.setAlarm(Date.now());
     return message;
+  }
+
+  /**
+   * W-09: checks a card action against the AI message that showed the card and marks the card used
+   * (everyone's copy updates in place). A retry of a message already stored passes (no meta: the
+   * stored message is returned as is). Throws SendError for a card that's gone, used or forged.
+   */
+  async #useWidget(ref: ConversationRef, clientMsgId: string, sent: NonNullable<SendInput["widgetAction"]>): Promise<{ label: string; meta: WidgetActionMeta | null }> {
+    const retry = await this.env.DB.prepare(`${MESSAGE_SELECT} WHERE m.conversation_id = ? AND m.client_msg_id = ?`).bind(ref.conversationId, String(clientMsgId)).first<MessageRow>();
+    if (retry) return { label: toMessage(retry).body, meta: null };
+    const messageId = typeof sent.messageId === "string" ? sent.messageId : "";
+    const row = messageId
+      ? await this.env.DB.prepare(`${MESSAGE_SELECT} WHERE m.conversation_id = ? AND m.id = ? AND m.author_type = 'ai'`).bind(ref.conversationId, messageId).first<MessageRow>()
+      : null;
+    const message = row ? toMessage(row) : null;
+    const widget = message?.meta.widgets?.find((w) => w.id === sent.widgetId);
+    if (!message || !widget) throw new SendError("widget_gone", "That card is no longer available.");
+    if (widget.used) throw new SendError("widget_used", "That card was already used.");
+    const match = matchWidgetAction(widget.root, sent.action, sent.values);
+    if (!match) throw new SendError("bad_widget_action", "That card doesn't offer this action.");
+    const at = Date.now();
+    const meta = { ...message.meta, widgets: message.meta.widgets!.map((w) => (w.id === widget.id ? { ...w, used: { label: match.label, at } } : w)) };
+    await this.env.DB.prepare("UPDATE messages SET meta = ? WHERE id = ?").bind(JSON.stringify(meta), message.id).run();
+    this.#broadcast({ type: "message", message: { ...message, meta } });
+    return {
+      label: match.label,
+      meta: {
+        widgetId: widget.id,
+        widget: widget.name,
+        type: match.action.type,
+        ...(match.action.payload !== undefined ? { payload: match.action.payload } : {}),
+        ...(Object.keys(match.values).length ? { values: match.values } : {}),
+      },
+    };
   }
 
   /** I-14: "Ana replied" to the assignee of a chat the team is handling. */
@@ -633,16 +674,20 @@ export class Conversation extends DurableObject<Env> {
       if ((await this.#handling(ref)) !== "ai") return false;
 
       if (outcome.kind === "handoff") {
-        // What it said before handing off (it already streamed) stays as its message, then the notice.
+        // What it said (and showed) before handing off stays as its message, then the notice.
         const said = outcome.text ? resolveCitations(outcome.text, hits) : null;
-        const before = said?.text
+        const before = said?.text || result.widgets.length
           ? await this.#insert(ref, {
               authorType: "ai",
               authorId: null,
               authorName: null,
-              body: said.text,
+              body: said?.text || WIDGET_ONLY_BODY,
               clientMsgId: turnId,
-              meta: { ...(said.sources.length ? { sources: said.sources } : {}), ...(config.version !== null ? { configVersion: config.version } : {}) },
+              meta: {
+                ...(said?.sources.length ? { sources: said.sources } : {}),
+                ...(config.version !== null ? { configVersion: config.version } : {}),
+                ...(result.widgets.length ? { widgets: result.widgets } : {}),
+              },
             })
           : null;
         await this.#handoff(ref, outcome.reason, HANDOFF_MESSAGES.default, settings, before ? [...history, before] : history, technical.lines);
@@ -658,13 +703,14 @@ export class Conversation extends DurableObject<Env> {
       if (repeat) return false; // its text would say "I'll do X now" about something already done; the card shows Done
       const action = result.pageAction ? this.#proposeAction(result.pageAction.action, result.pageAction.input) : null;
       const { text, sources } = resolveCitations(outcome.text, hits);
-      if (!text && !action) {
+      const widgets = result.widgets;
+      if (!text && !action && !widgets.length) {
         // Nothing to say: fine after an action (the card shows what happened); otherwise the team takes it.
         if (followUp) return false;
         await this.#handoff(ref, "The AI gave an empty reply.", HANDOFF_MESSAGES.error, settings, history, technical.lines);
         return false;
       }
-      const body = text || (action ? ACTION_ONLY_BODY : text);
+      const body = text || (action ? ACTION_ONLY_BODY : widgets.length ? WIDGET_ONLY_BODY : text);
       const answer = await this.#insert(ref, {
         authorType: "ai",
         authorId: null,
@@ -675,6 +721,7 @@ export class Conversation extends DurableObject<Env> {
           ...(sources.length ? { sources } : {}),
           ...(config.version !== null ? { configVersion: config.version } : {}),
           ...(action ? { action } : {}),
+          ...(widgets.length ? { widgets } : {}),
         },
       });
       this.#streaming = undefined;

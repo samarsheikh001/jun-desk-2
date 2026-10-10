@@ -1,8 +1,10 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ACTION_ONLY_BODY, actionChip, actionStatusText, actionSummary, actionTitle, visibleResult, type MessageAction } from "../../shared/actions.ts";
 import type { AiStep, Source } from "../../shared/protocol.ts";
+import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
 import type { AiAnswerView } from "../components/MessageList.tsx";
 import { ActionCard } from "./action.tsx";
+import { WidgetCard, type WidgetActionEvent } from "./chatkit/WidgetCard.tsx";
 
 // An AI answer in the widget: words resolve out of a blur as they stream, citations become
 // inline source chips, then copy, the cited sources and follow-up questions appear.
@@ -213,11 +215,24 @@ export interface ActionControls {
   undoError?: string;
 }
 
-export function AiAnswer({ answer, onFollowUp, controls }: { answer: AiAnswerView; onFollowUp?: (question: string) => void; controls?: ActionControls }) {
+export function AiAnswer({
+  answer,
+  onFollowUp,
+  controls,
+  onWidgetAction,
+}: {
+  answer: AiAnswerView;
+  onFollowUp?: (question: string) => void;
+  controls?: ActionControls;
+  /** W-09: the visitor pressed one of a card's actions (saved answers only). */
+  onWidgetAction?: (messageId: string, widget: MessageWidget, event: WidgetActionEvent) => void;
+}) {
   const { sources, followUps, streaming, latest, steps: toolSteps } = answer;
   const action = answer.action;
-  // An action-only reply has a placeholder body for the inbox; here the step line or the card says it.
-  const body = action && answer.body === ACTION_ONLY_BODY ? "" : answer.body;
+  // W-09: cards come on the tool steps while the reply streams, then with the saved message.
+  const widgets = answer.widgets ?? toolSteps.flatMap((s) => (s.widget ? [s.widget] : []));
+  // An action-only (or card-only) reply has a placeholder body for the inbox; here the step line or the card says it.
+  const body = (action && answer.body === ACTION_ONLY_BODY) || (widgets.length && answer.body === WIDGET_ONLY_BODY) ? "" : answer.body;
   // AI-21: a page action is a step line like a YAML tool once it runs; the card only while it waits on the visitor.
   const [undoing, setUndoing] = useState(false);
   useEffect(() => {
@@ -246,7 +261,15 @@ export function AiAnswer({ answer, onFollowUp, controls }: { answer: AiAnswerVie
   return (
     <div className="w-answer">
       {after ? toolSteps.length > 0 && <Steps steps={toolSteps} working={working && !actionRunning} /> : steps.length > 0 && <Steps steps={steps} working={working} />}
-      {(body || (!steps.length && !action)) && <div className="bubble">
+      {widgets.map((w) => (
+        <WidgetCard
+          key={w.id}
+          widget={w}
+          interactive={!streaming && Boolean(answer.messageId && onWidgetAction)}
+          {...(answer.messageId && onWidgetAction ? { onAction: (event: WidgetActionEvent) => onWidgetAction(answer.messageId!, w, event) } : {})}
+        />
+      ))}
+      {(body || (!steps.length && !action && !widgets.length)) && <div className="bubble">
         {tokens.slice(0, shown).map((t, i) => {
           const anim = live ? " w-anim" : "";
           if (t.kind === "word") return <span key={i} className={`w-word${anim}`}>{t.text}</span>;

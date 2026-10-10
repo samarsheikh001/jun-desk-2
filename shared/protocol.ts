@@ -4,6 +4,7 @@
 import type { ActionStatus, MessageAction } from "./actions.ts";
 import type { ConversationIntent } from "./intents.ts";
 import type { NotificationPayload } from "./notifications.ts";
+import type { MessageWidget, WidgetActionMeta } from "./widgets.ts";
 
 export type ConversationStatus = "open" | "pending" | "snoozed" | "resolved";
 export type AuthorType = "visitor" | "agent" | "ai" | "system";
@@ -34,6 +35,10 @@ export interface MessageMeta {
   issue?: ConversationIssue;
   /** AI-21: the page action this AI message proposed; its status changes as the widget runs it. */
   action?: MessageAction;
+  /** W-09: cards the AI showed with this answer (tool results), in call order. */
+  widgets?: MessageWidget[];
+  /** W-09: on a visitor message sent by pressing a card's button (or submitting its form). */
+  widgetAction?: WidgetActionMeta;
 }
 
 export type IssueProvider = "github" | "linear";
@@ -111,7 +116,8 @@ export type ClientEvent =
   /** `context`: the visitor's debug snapshot from the loader (visitors only; see shared/debug.ts). */
   /** `internal`: an agent's note (I-05), never shown to the visitor or the AI. */
   /** `actions`: AI-21, the page actions on the visitor's page right now (visitors only; see shared/actions.ts). */
-  | { type: "send"; clientMsgId: string; body: string; attachments?: Attachment[]; context?: unknown; internal?: boolean; actions?: unknown }
+  /** `widgetAction`: W-09, the visitor pressed a card's button: which card, which action, what they entered (visitors only). */
+  | { type: "send"; clientMsgId: string; body: string; attachments?: Attachment[]; context?: unknown; internal?: boolean; actions?: unknown; widgetAction?: { messageId: string; widgetId: string; action: unknown; values?: unknown } }
   | { type: "typing"; typing: boolean }
   | { type: "read"; seq: number }
   /** Visitor asks for a person (W-07). */
@@ -126,6 +132,8 @@ export interface AiStep {
   id: string;
   label: string;
   state: "running" | "done";
+  /** W-09: on a finished step, the card its result is shown as (saved later in the answer's `meta.widgets`). */
+  widget?: MessageWidget;
 }
 
 /** Messages the conversation socket sends. */
@@ -150,7 +158,9 @@ export type ConversationEvent =
    * Visitors and agents: the AI is using a tool for the reply with clientMsgId `turn` (`ai:<seq>`).
    * Visitor-safe by construction: `label` is the tool's admin-written `status:` (or a generic one) and
    * `id` is an opaque per-turn counter, never the tool's name, inputs, output, URL or errors. A failed
-   * call still ends `done`. Ephemeral: not stored, so history shows no steps.
+   * call still ends `done`. Ephemeral: not stored, so history shows no steps. The one exception is
+   * W-09's `widget`: the card an admin chose to show a successful result as (`widget:` on the tool),
+   * built from that result by the widget's template; it's saved with the answer as `meta.widgets`.
    */
   | { type: "ai_step"; turn: string; step: AiStep }
   /** Agents only: the AI called a tool (AI-11). Details via GET /api/conversations/:id/actions. */

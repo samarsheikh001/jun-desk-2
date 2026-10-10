@@ -1,5 +1,6 @@
 import { checkInput, rankActions, sanitizeActions, type MessageAction, type PageAction } from "../../shared/actions.ts";
 import type { Message } from "../../shared/protocol.ts";
+import { nodeText } from "../../shared/widgets.ts";
 import { describeEvents, type DebugContext } from "../../shared/debug.ts";
 import { loadMessages } from "../lib/conversations.ts";
 import { asksForHuman, resolveCitations } from "./agent.ts";
@@ -23,6 +24,8 @@ export interface ReplyView {
   tools: string[];
   /** AI-21: the page action the reply proposed, with the inputs the model filled. */
   action?: { name: string; input: Record<string, unknown> };
+  /** W-09: the cards the reply showed (widget names). */
+  widgets?: string[];
 }
 
 export type EvalEvent =
@@ -53,13 +56,14 @@ function view(result: RunResult): ReplyView {
     result.outcome.kind === "handoff"
       ? `(hands off: ${result.outcome.reason})`
       : [
+          ...result.widgets.map((w) => `(shows the ${w.name} card: ${nodeText(w.root)})`),
           resolveCitations(result.outcome.text, result.hits).text,
           action && `(proposes ${action.name}${Object.keys(action.input).length ? ` with ${JSON.stringify(action.input)}` : ""})`,
           result.outcome.escalate && `(escalates: ${result.outcome.escalate})`,
         ]
           .filter(Boolean)
           .join("\n");
-  return { outcome, reply, tools: result.actions.map((a) => a.tool), ...(action ? { action } : {}) };
+  return { outcome, reply, tools: result.actions.map((a) => a.tool), ...(action ? { action } : {}), ...(result.widgets.length ? { widgets: result.widgets.map((w) => w.name) } : {}) };
 }
 
 function message(seq: number, body: string, authorType: Message["authorType"] = "visitor"): Message {
@@ -75,6 +79,7 @@ function answer(ctx: EvalContext, config: AgentConfig, history: Message[], techn
       hits: [],
       actions: [],
       pageAction: null,
+      widgets: [],
       usage: { inputTokens: 0, outputTokens: 0 },
     });
   }
@@ -136,6 +141,9 @@ async function checkCase(ctx: EvalContext, c: EvalCase): Promise<EvalEvent> {
   const failures: string[] = [];
   if (c.expect.outcome && result.outcome !== c.expect.outcome) failures.push(`expected outcome ${c.expect.outcome}, got ${result.outcome}`);
   for (const t of c.expect.tools ?? []) if (!result.tools.includes(t)) failures.push(`expected a call to ${t}${result.tools.length ? ` (called: ${result.tools.join(", ")})` : " (no tools called)"}`);
+  if (c.expect.widget && !result.widgets?.includes(c.expect.widget)) {
+    failures.push(`expected the ${c.expect.widget} card${result.widgets?.length ? ` (shown: ${result.widgets.join(", ")})` : " (no card shown)"}`);
+  }
   if (c.expect.action) {
     const want = c.expect.action;
     if (!result.action) failures.push(`expected the page action ${want.name} to be proposed (none was)`);

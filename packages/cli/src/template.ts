@@ -11,6 +11,7 @@ This folder is your Jun Desk AI agent, as code. Edit it like any other code: in 
 | \`skills/<name>/SKILL.md\` | Procedures in plain language ("refund requests: first…"). \`description\` says when one applies. With \`intent:\`, your app can open a chat straight into it (see below). |
 | \`tools/<name>.yaml\` | HTTP lookups the AI may call (order status, plan, usage…). |
 | \`evals/<name>.yaml\` | Test cases: a customer message and what a good reply does. |
+| \`widgets/<name>.widget\` | Cards a tool's result is shown as (OpenAI's ChatKit widget format). Design one in ChatKit Studio (widgets.chatkit.studio) and download it, then add \`widget: <name>\` to the tool. |
 
 \`\`\`sh
 jun eval .        # run the test cases and replay recent real conversations against these files
@@ -20,6 +21,8 @@ jun pull .        # bring dashboard edits back here
 
 To add a tool, copy \`tools/lookup_order.yaml.example\` to \`tools/lookup_order.yaml\`, point it at your API,
 and set its secret on the Worker: \`npx wrangler secret put JUN_SECRET_ACME_API_KEY\`.
+To show its result as a card, also copy \`widgets/order.widget.example\` to \`widgets/order.widget\` and
+uncomment \`widget: order\` in the tool. A card's buttons send the customer's choice back to the AI.
 
 ## Intents: open a chat for a purpose
 
@@ -111,6 +114,19 @@ input:
 pick: [status, orderedOn, total]                 # only these fields reach the AI
 mock: { status: delivered, orderedOn: "2026-09-02", total: "$49.00" }   # used by jun eval --mock-tools
 # pages: ["/orders/*", "/account"]               # optional: offer it only on these pages (AI-21)
+# widget: order                                  # optional: show the result as widgets/order.widget (W-09)
+`,
+  "widgets/order.widget.example": `{
+  "version": "1.0",
+  "name": "Order",
+  "template": "{\\"type\\":\\"Card\\",\\"size\\":\\"sm\\",\\"children\\":[{\\"type\\":\\"Row\\",\\"children\\":[{\\"type\\":\\"Title\\",\\"value\\":{{ (\\"Order \\" ~ number) | tojson }},\\"size\\":\\"sm\\"},{\\"type\\":\\"Spacer\\"},{\\"type\\":\\"Badge\\",\\"label\\":{{ (status) | tojson }},\\"color\\":{% if status == \\"delivered\\" %}\\"success\\"{% else %}\\"info\\"{% endif %}}]},{\\"type\\":\\"Divider\\",\\"flush\\":true},{\\"type\\":\\"Row\\",\\"children\\":[{\\"type\\":\\"Caption\\",\\"value\\":\\"Ordered\\"},{\\"type\\":\\"Spacer\\"},{\\"type\\":\\"Text\\",\\"value\\":{{ (orderedOn) | tojson }},\\"size\\":\\"sm\\"}]},{\\"type\\":\\"Row\\",\\"children\\":[{\\"type\\":\\"Caption\\",\\"value\\":\\"Total\\"},{\\"type\\":\\"Spacer\\"},{\\"type\\":\\"Text\\",\\"value\\":{{ (total) | tojson }},\\"size\\":\\"sm\\",\\"weight\\":\\"semibold\\"}]}]}",
+  "sample": {
+    "number": "A-1042",
+    "status": "delivered",
+    "orderedOn": "2026-09-02",
+    "total": "$49.00"
+  }
+}
 `,
   "evals/basics.yaml": `- name: greeting
   message: hi there
