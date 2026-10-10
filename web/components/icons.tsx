@@ -5,6 +5,7 @@ import {
   Analytics01Icon,
   ArrowDown01Icon,
   ArrowDown02Icon,
+  ArrowExpandDiagonal01Icon,
   ArrowLeft01Icon,
   ArrowLeftDoubleIcon,
   ArrowRight01Icon,
@@ -76,6 +77,7 @@ export const ChevronUpIcon = make(ArrowUp01Icon);
 export const ColumnsIcon = make(LayoutThreeColumnIcon);
 export const DownloadIcon = make(Download04Icon);
 export const EditIcon = make(Edit02Icon);
+export const ExpandIcon = make(ArrowExpandDiagonal01Icon);
 export const ExternalLinkIcon = make(LinkSquare02Icon);
 export const FileIcon = make(File01Icon);
 export const FlashIcon = make(HugeFlashIcon);

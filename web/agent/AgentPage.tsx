@@ -99,7 +99,7 @@ export function AgentPage({ workspaceId, canEdit, path }: { workspaceId: string;
           </>
         }
         tabs={[
-          { value: "instructions", label: "Instructions", path: "/agent", content: view(<InstructionsView cfg={cfg} canEdit={canEdit} />) },
+          { value: "instructions", label: "Instructions", path: "/agent", content: view(<InstructionsView cfg={cfg} canEdit={canEdit} workspaceId={workspaceId} />) },
           { value: "procedures", label: "Procedures", path: "/agent/procedures", content: view(<ProceduresView cfg={cfg} canEdit={canEdit} selected={tab === "procedures" ? item : null} />) },
           { value: "actions", label: "Actions", path: "/agent/actions", content: view(<ActionsView cfg={cfg} canEdit={canEdit} selected={tab === "actions" ? item : null} />) },
           { value: "widgets", label: "Widgets", path: "/agent/widgets", content: view(<WidgetsView cfg={cfg} canEdit={canEdit} selected={tab === "widgets" ? item : null} />) },

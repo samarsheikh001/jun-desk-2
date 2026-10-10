@@ -921,7 +921,6 @@ form.kb-test-form { display: flex; gap: 8px; margin: 0; }
 .agent-text { min-height: max(320px, calc(100dvh - 300px)); resize: vertical; field-sizing: fixed; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; padding: 12px; tab-size: 2; }
 .agent-code { gap: 12px; max-width: 980px; }
 /* A widget's file sits over its live preview: room for both. */
-.agent-code:has(.agent-widget-preview) .agent-text { min-height: 240px; height: 38dvh; }
 .agent-code-path { margin: 0; }
 .agent-file-picker { display: flex; flex-wrap: wrap; gap: 4px; }
 .agent-view-switch [data-slot="tabs-trigger"] { padding-inline: 12px; }
@@ -964,8 +963,66 @@ textarea.agent-prose { font-family: var(--font-sans); font-size: 14px; line-heig
 .agent-advanced-chevron { transition: transform 150ms ease; }
 .agent-advanced-trigger[data-panel-open] .agent-advanced-chevron { transform: rotate(90deg); }
 .agent-advanced-body > p { margin: 0; }
-.agent-widget-preview { max-width: 400px; }
-.agent-widget-actions { flex-wrap: wrap; gap: 8px; }
+/* Widgets (/agent/widgets): a gallery of live previews, and a widget's page as details beside a
+   preview canvas (after Chatbase's Widgets page). The stage is a dotted surface the card sits on. */
+.agent-stage { --stage-dot: rgba(15, 15, 20, 0.07); position: relative; background-color: color-mix(in oklab, var(--muted) 55%, var(--background)); background-image: radial-gradient(var(--stage-dot) 1px, transparent 1px); background-size: 22px 22px; }
+[data-theme="dark"] .agent-stage { --stage-dot: rgba(255, 255, 255, 0.06); }
+.agent-stage[data-preview="light"] { --stage-dot: rgba(15, 15, 20, 0.07); background-color: hsl(60 10% 96%); }
+.agent-stage[data-preview="dark"] { --stage-dot: rgba(255, 255, 255, 0.07); background-color: hsl(70 6% 7%); }
+.agent-stage-card { position: relative; z-index: 1; width: 100%; max-width: 380px; }
+/* A light preview outside the widget frame: the frame's light palette (the frame's tokens aren't here). */
+.agent-stage .ck:not(.ck-dark) { --ck-text: #171717; --ck-text-2: #404040; --ck-text-3: #737373; --ck-surface: #fff; --ck-surface-2: #fafafa; --ck-surface-3: #f5f5f5; --ck-border: #e5e5e5; --ck-border-soft: #ededed; --ck-accent: #171717; --ck-accent-text: #fff; color-scheme: light; }
+/* Previews are read-only, but drawn as the customer sees them, not dimmed. */
+.agent-stage .ck-btn:disabled, .agent-stage .ck-input:disabled { opacity: 1; }
+.agent-gallery { display: grid; gap: 20px; align-content: start; padding: 20px 24px 40px; min-width: 0; }
+.agent-gallery-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.agent-gallery-bar .spacer { flex: 1; }
+.agent-gallery-search { position: relative; flex: 1 1 160px; max-width: 340px; min-width: 0; }
+.agent-gallery-search svg { position: absolute; left: 10px; top: 50%; translate: 0 -50%; width: 16px; height: 16px; color: var(--muted-foreground); pointer-events: none; }
+.agent-gallery-search input { padding-left: 32px; }
+.agent-gallery-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 24px 16px; }
+.agent-gallery-empty { display: grid; justify-items: center; gap: 8px; padding: 72px 16px; text-align: center; }
+.agent-gallery-empty h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.agent-gallery-empty p { margin: 0 0 8px; max-width: 46ch; font-size: 14px; line-height: 21px; color: var(--muted-foreground); }
+.agent-gallery-none { margin: 0; }
+.agent-tile { position: relative; display: grid; gap: 12px; min-width: 0; }
+.agent-tile-stage { height: 300px; display: flex; align-items: safe center; justify-content: center; padding: 16px; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; mask-image: linear-gradient(black 90%, transparent); transition: border-color 150ms ease; }
+.agent-tile-stage .agent-stage-card { transition: transform 200ms ease-out; }
+.agent-tile:hover .agent-tile-stage, .agent-tile:has(:focus-visible) .agent-tile-stage { border-color: color-mix(in oklab, var(--foreground) 22%, transparent); }
+.agent-tile:hover .agent-stage-card { transform: scale(1.01); }
+.agent-tile-text { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+.agent-tile-link { font-size: 14px; line-height: 20px; font-weight: 600; color: var(--foreground); text-decoration: none; outline: none; }
+.agent-tile-link::after { content: ""; position: absolute; inset: 0; border-radius: 14px; }
+.agent-tile-link:focus-visible::after { box-shadow: 0 0 0 2px var(--ring); }
+.agent-tile-sub { flex-basis: 100%; font-size: 13px; line-height: 19px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-wed { flex: 1; display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); min-height: 0; }
+.agent-wed-code { grid-template-columns: minmax(380px, 1fr) minmax(0, 1fr); }
+.agent-wed-side { display: grid; gap: 24px; align-content: start; padding: 16px 24px 32px; border-right: 1px solid var(--border); min-width: 0; }
+.agent-wed-code .agent-wed-side { gap: 12px; }
+.agent-wed-code .agent-text { min-height: max(320px, calc(100dvh - 260px)); }
+.agent-wed-head { display: flex; align-items: center; gap: 6px; margin-left: -8px; min-width: 0; }
+.agent-wed-head h2 { margin: 0; min-width: 0; font-size: 18px; line-height: 28px; font-weight: 600; letter-spacing: -0.3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-wed-head .spacer { flex: 1; }
+.agent-wed-group { display: grid; gap: 6px; }
+.agent-wed-group h3 { margin: 0; font-size: 13px; line-height: 20px; font-weight: 600; }
+.agent-wed-group p { margin: 0; font-size: 13px; line-height: 20px; color: var(--muted-foreground); }
+.agent-wed-links { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 14px; }
+.agent-wed-links a { color: var(--foreground); }
+.agent-wed-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.agent-wed-canvas { position: sticky; top: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center; gap: 16px; min-height: calc(100dvh - 120px); padding: 64px 24px 40px; }
+.agent-canvas-tools { position: absolute; top: 14px; right: 14px; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--card); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--border); z-index: 2; }
+.agent-canvas-tools [aria-pressed="true"] { background: var(--accent); color: var(--accent-foreground); }
+.agent-canvas-tools [aria-pressed="false"] { color: var(--muted-foreground); }
+.agent-canvas-caption { margin: 0; font-size: 12px; color: var(--muted-foreground); }
+.agent-stage[data-preview="dark"] .agent-canvas-caption { color: rgba(255, 255, 255, 0.5); }
+.agent-stage[data-preview="light"] .agent-canvas-caption { color: #737373; }
+@media (max-width: 900px) {
+  .agent-wed, .agent-wed-code { grid-template-columns: minmax(0, 1fr); }
+  .agent-wed-side { border-right: 0; border-bottom: 1px solid var(--border); padding: 16px; }
+  .agent-wed-canvas { position: relative; min-height: 420px; }
+  .agent-gallery { padding: 16px; }
+  .agent-tile-stage { height: 240px; }
+}
 .agent-savebar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; padding: 10px 24px; border-top: 1px solid var(--border); background: var(--background); }
 .agent-savebar-text { flex: 1 1 260px; min-width: 0; }
 .agent-savebar-text .link-button { margin-left: 6px; }
@@ -986,6 +1043,31 @@ textarea.agent-prose { font-family: var(--font-sans); font-size: 14px; line-heig
 .agent-test-result p { margin: 0; white-space: pre-wrap; }
 .agent-history-sheet { width: 100%; max-width: 420px; gap: 0; background: var(--background); }
 .agent-history-list { flex: 1; min-height: 0; padding: 0 16px 16px; }
+/* Instructions (/agent): a page to write on, with the settings in a soft panel beside it (after Chatbase). */
+.agent-doc { display: flex; align-items: flex-start; gap: 48px; padding: 32px 24px 48px; max-width: 1240px; min-width: 0; }
+.agent-doc-main { flex: 1; min-width: 0; display: grid; gap: 14px; align-content: start; }
+.agent-doc-head h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; letter-spacing: -0.2px; }
+.agent-doc-head p { margin: 4px 0 0; font-size: 13px; line-height: 20px; color: var(--muted-foreground); max-width: 62ch; }
+.agent-doc-editor { position: relative; padding-top: 4px; border-top: 1px solid var(--border); }
+.agent-doc-text { display: block; width: 100%; min-height: 320px; padding: 14px 40px 14px 0; border: 0; outline: none; resize: none; background: transparent; color: var(--foreground); font: inherit; font-size: 14px; line-height: 1.7; field-sizing: content; }
+.agent-doc-text:focus, .agent-doc-text:focus-visible { outline: none; box-shadow: none; }
+.agent-doc-text::placeholder { color: var(--muted-foreground); opacity: 0.7; }
+.agent-doc-expand { position: absolute; top: 12px; right: 0; color: var(--muted-foreground); }
+.agent-doc-dialog { width: min(880px, calc(100vw - 32px)); max-width: none !important; max-height: calc(100dvh - 48px); grid-template-rows: auto minmax(0, 1fr); padding: 20px 24px 16px; }
+.agent-doc-text-large { min-height: 0; height: min(70dvh, 760px); field-sizing: fixed; overflow-y: auto; padding-right: 8px; font-size: 15px; }
+.agent-panel { position: sticky; top: 24px; flex: none; width: 380px; display: grid; gap: 4px; padding: 4px; border-radius: 14px; background: color-mix(in oklab, var(--muted) 70%, var(--background)); }
+.agent-panel-title { margin: 0; padding: 10px 14px 6px; font-size: 14px; line-height: 20px; font-weight: 600; }
+.agent-panel-card { display: grid; gap: 20px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+.agent-panel-card [data-slot="field-description"] { font-size: 13px; }
+.agent-panel-note { margin: 0; padding: 6px 14px 10px; font-size: 13px; line-height: 19px; color: var(--muted-foreground); }
+.agent-panel-note a { color: var(--foreground); }
+.agent-panel-model { display: grid; margin-top: 8px; padding-top: 4px; border-top: 1px dashed var(--border); }
+.agent-panel-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 16px; margin: 0; padding: 2px 14px 4px; font-size: 13px; line-height: 20px; }
+.agent-panel-facts dt { color: var(--muted-foreground); }
+.agent-panel-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.agent-panel-facts .mono { font-family: var(--font-mono); font-size: 12px; }
+.agent-panel-off { margin-left: 6px; }
+@media (max-width: 1180px) { .agent-doc { flex-direction: column; align-items: stretch; gap: 32px; padding: 24px; } .agent-doc-text { min-height: 200px; } .agent-panel { position: static; width: auto; max-width: 640px; } }
 .agent-pass { background: color-mix(in oklab, var(--success) 18%, transparent); color: var(--success); }
 .agent-tally { gap: 6px; margin: 0; }
 
@@ -1583,6 +1665,7 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
   .agent-param > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
   .agent-request { grid-template-columns: minmax(0, 1fr); }
   .agent-savebar { padding: 10px 16px; }
+  .agent-doc { padding: 16px; }
 }
 @media (max-width: 900px) {
   /* One column: the page grows and the main scroller scrolls it. */
