@@ -231,6 +231,13 @@
 .ck-input:disabled { opacity: 0.7; }
 .ck-textarea { resize: vertical; line-height: 1.45; }
 .ck-select { appearance: auto; }
+/* W-18: a long Select as a type-to-filter combobox; its list opens inline, under the field. */
+.ck-combo { display: flex; flex-direction: column; gap: 4px; min-width: 0; width: 100%; }
+.ck-combo-list { max-height: 200px; margin: 0; padding: 4px; overflow-y: auto; overscroll-behavior: contain; list-style: none; border: 1px solid var(--ck-border); border-radius: 10px; background: var(--ck-surface); }
+.ck-combo-opt { padding: 6px 8px; border-radius: 6px; color: var(--ck-text); font-size: 14px; cursor: pointer; }
+.ck-combo-opt.ck-active { background: var(--ck-surface-2); }
+.ck-combo-opt[aria-selected="true"] { font-weight: 600; }
+.ck-combo-empty { padding: 6px 8px; color: var(--ck-text-3); font-size: 13px; }
 .ck-editable { padding: 4px 8px; margin: -4px -8px; width: calc(100% + 16px); border-color: transparent; background: transparent; }
 .ck-editable:hover:not(:disabled) { border-color: var(--ck-border); }
 .ck-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }

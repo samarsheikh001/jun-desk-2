@@ -207,14 +207,112 @@ function Textarea({ node }: { node: WidgetNode }) {
   );
 }
 
+/** W-18: a Select with more options than this is drawn as a field you type into to filter them. */
+const SEARCHABLE_AT = 9;
+
 function Select({ node }: { node: WidgetNode }) {
   const { disabled } = useContext(WidgetCtx);
   const options = (Array.isArray(node.options) ? node.options : []) as { value?: unknown; label?: unknown }[];
+  if (options.length >= SEARCHABLE_AT) return <SearchableSelect node={node} options={options.map((o) => ({ value: str(o.value), label: str(o.label ?? o.value) }))} />;
   return (
     <select className={fieldClass(node, "ck-input ck-select")} name={str(node.name)} defaultValue={str(node.defaultValue)} required={node.required === true} disabled={disabled || node.disabled === true}>
       {(node.placeholder || !node.defaultValue) && <option value="" disabled={node.required === true}>{str(node.placeholder) || "Choose…"}</option>}
       {options.map((o, i) => <option key={i} value={str(o.value)}>{str(o.label ?? o.value)}</option>)}
     </select>
+  );
+}
+
+/**
+ * W-18: a long Select as a combobox (ARIA 1.2 pattern): type to filter, arrows and Enter to pick,
+ * Escape to close. The list opens inline under the field (it pushes the card down rather than
+ * floating, so a scrolling chat never clips it). The chosen value goes in a hidden input under the
+ * Select's name, so the card's fields are collected as with the native one; typed text that isn't
+ * an option doesn't count, and `required` is checked on the visible field.
+ */
+function SearchableSelect({ node, options }: { node: WidgetNode; options: { value: string; label: string }[] }) {
+  const { disabled: cardOff } = useContext(WidgetCtx);
+  const disabled = cardOff || node.disabled === true;
+  const initial = options.find((o) => o.value === str(node.defaultValue)) ?? null;
+  const [chosen, setChosen] = useState(initial);
+  const [query, setQuery] = useState(initial?.label ?? "");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const field = useRef<HTMLInputElement>(null);
+  const id = useMemo(() => `ck-cb-${Math.random().toString(36).slice(2, 8)}`, []);
+  const typed = query.trim().toLowerCase();
+  // While the field shows the chosen label, every option is on offer; typing narrows it.
+  const matches = (chosen && query === chosen.label) || !typed ? options : options.filter((o) => o.label.toLowerCase().includes(typed));
+  const shown = matches.slice(0, 50);
+  useEffect(() => {
+    field.current?.setCustomValidity(node.required === true && !chosen ? "Choose one of the options." : "");
+  }, [chosen, node.required]);
+  const pick = (o: { value: string; label: string }) => {
+    setChosen(o);
+    setQuery(o.label);
+    setOpen(false);
+  };
+  return (
+    <div className={`ck-combo${node.block === true ? " ck-block" : ""}`}>
+      <input
+        ref={field}
+        className={fieldClass(node, "ck-input ck-combo-field")}
+        type="text"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={`${id}-list`}
+        aria-autocomplete="list"
+        {...(open && shown[active] ? { "aria-activedescendant": `${id}-${active}` } : {})}
+        placeholder={str(node.placeholder) || "Search…"}
+        value={query}
+        disabled={disabled}
+        autoComplete="off"
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setChosen(null);
+          setActive(0);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            setOpen(true);
+            setActive((a) => (shown.length ? (a + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length : 0));
+          } else if (e.key === "Enter" && open && shown[active]) {
+            e.preventDefault();
+            pick(shown[active]);
+          } else if (e.key === "Escape" && open) {
+            e.stopPropagation();
+            setOpen(false);
+          }
+        }}
+      />
+      <input type="hidden" name={str(node.name)} value={chosen?.value ?? ""} />
+      {open && !disabled && (
+        <ul className="ck-combo-list" id={`${id}-list`} role="listbox">
+          {shown.length === 0 && <li className="ck-combo-empty">No match</li>}
+          {shown.map((o, i) => (
+            <li
+              key={o.value}
+              id={`${id}-${i}`}
+              role="option"
+              aria-selected={chosen?.value === o.value}
+              className={`ck-combo-opt${i === active ? " ck-active" : ""}`}
+              // Before the field's blur closes the list.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(o);
+              }}
+              onMouseEnter={() => setActive(i)}
+            >
+              {o.label}
+            </li>
+          ))}
+          {matches.length > shown.length && <li className="ck-combo-empty">Type to narrow {matches.length - shown.length} more</li>}
+        </ul>
+      )}
+    </div>
   );
 }
 

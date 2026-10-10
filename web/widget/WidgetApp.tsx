@@ -1328,14 +1328,15 @@ function restSummary(messages: Message[], max = 60): string | null {
 
 /**
  * The island's title for a card's button press: the stored body is only the button's label
- * ("Email"), so add the first short string or number of its payload ("Email · INV-1043"). Null
+ * ("Email"), so add the first short string or number of its payload ("Email · INV-1043"), else of
+ * the card's fields the visitor filled in ("Save · Asia/Kolkata"). Null
  * (the body as stored) for anything else. Display only: the message itself is unchanged.
  */
 function pressTitle(m: Message): string | null {
   const meta = m.meta.widgetAction;
-  if (!meta || meta.payload === undefined || meta.payload === null) return null;
-  const values = typeof meta.payload === "object" ? Object.values(meta.payload) : [meta.payload];
-  for (const v of values) {
+  if (!meta) return null;
+  const payload = meta.payload === undefined || meta.payload === null ? [] : typeof meta.payload === "object" ? Object.values(meta.payload) : [meta.payload];
+  for (const v of [...payload, ...Object.values(meta.values ?? {})]) {
     if (typeof v !== "string" && !(typeof v === "number" && Number.isFinite(v))) continue;
     const s = String(v).replace(/\s+/g, " ").trim();
     if (s && s.length <= 40 && s !== m.body.trim()) return `${m.body.trim()} · ${s}`;
