@@ -108,6 +108,8 @@ function Button({ node }: { node: WidgetNode }) {
   return (
     <button
       type={submit ? "submit" : "button"}
+      // An icon-only button still needs a name for screen readers.
+      {...(!label ? { "aria-label": link ? "Open link" : String(node.iconStart ?? node.iconEnd ?? action?.type ?? "Button").replace(/[-_]/g, " ") } : {})}
       className={`ck-btn ck-btn-${variant} ck-size-${size}${node.pill === true ? " ck-pill" : ""}${node.block === true ? " ck-block" : ""}${!label ? " ck-btn-icon" : ""}`}
       style={{ "--ck-tone": c, "--ck-on-tone": tone === "primary" ? "var(--ck-accent-text)" : "#fff" } as CSSProperties}
       disabled={disabled || node.disabled === true || (!action && !submit)}
