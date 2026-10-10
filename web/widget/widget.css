@@ -464,10 +464,15 @@ html.island.island-dark {
 .i-pill-chip:hover { background: var(--hover); color: var(--text); }
 .i-foot { display: flex; flex: none; padding: 2px 16px 0; }
 /* Minimize and End: small, over the top-right corner, on hover or when tabbed to; quiet but always there on touch screens. */
-.i-ctl { position: absolute; top: 8px; right: 8px; z-index: 3; display: flex; gap: 2px; opacity: 0; transition: opacity 0.18s; }
+/* Inset from the rounded corner, centred on the first line (the title or the top row's chips). */
+.i-ctl { position: absolute; top: 12px; right: 14px; z-index: 3; display: flex; gap: 4px; opacity: 0; transition: opacity 0.18s; }
 .i-box:hover .i-ctl, .i-ctl:focus-within { opacity: 1; }
 @media (hover: none) { .i-ctl { opacity: 0.6; } }
-.i-ctl .i-ghost { width: 26px; height: 26px; border-radius: 13px; }
+/* An opaque backing, so content scrolling under the corner never shows through the buttons. */
+.i-ctl { padding: 2px; border-radius: 16px; background: var(--surface); }
+.i-ctl .i-ghost { width: 28px; height: 28px; border-radius: 14px; background: var(--hover); }
+.i-ctl .i-ghost:hover { background: var(--border); }
+.i-ctl svg { width: 14px; height: 14px; }
 
 /* The pill's row: the mark and the question box, 54px like the resting pill. "+" and Send stay out
    of the way until the visitor types (or points at the row, or tabs to "+"). */
@@ -485,7 +490,7 @@ html.island.island-dark {
 .i-answer > :not(.i-body) { flex: none; }
 .i-answer .i-body { flex: 0 1 auto; min-height: 0; }
 .i-answer .i-body.i-more { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); }
-.i-panel .i-body { flex: 1; min-height: 0; }
+.i-panel .i-body { flex: 1; min-height: 0; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 20px); mask-image: linear-gradient(to bottom, transparent, #000 20px); }
 .i-body::-webkit-scrollbar { width: 10px; }
 .i-body::-webkit-scrollbar-track { background: transparent; }
 .i-body::-webkit-scrollbar-button { display: none; width: 0; height: 0; }

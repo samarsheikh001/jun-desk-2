@@ -36,7 +36,14 @@ interface Ctx {
 
 const WidgetCtx = createContext<Ctx>({ theme: "light", disabled: true, readOnly: true, fire: () => {}, items: new Map(), itemState: () => ({ used: null, busy: false }) });
 /** W-17: the list item a control sits in (its own used state). */
-const ItemCtx = createContext<{ id?: string; disabled: boolean }>({ disabled: false });
+/** A list row: its id, whether it's off, and (once used) the label of the button that used it. */
+const ItemCtx = createContext<{ id?: string; disabled: boolean; used?: string }>({ disabled: false });
+
+/** The row has a (non-link) button with this label: the press shows in its place. */
+function hasButton(node: WidgetNode, label: string): boolean {
+  if (node.type === "Button" && asAction(node.onClickAction)?.type !== OPEN_URL && (str(node.label) || asAction(node.onClickAction)?.type) === label) return true;
+  return (node.children ?? []).some((c) => hasButton(c, label));
+}
 
 function asAction(value: unknown): WidgetActionConfig | null {
   return value && typeof value === "object" && typeof (value as { type?: unknown }).type === "string" ? (value as WidgetActionConfig) : null;
@@ -105,6 +112,15 @@ function Button({ node }: { node: WidgetNode }) {
   const c = SEMANTIC[tone] ?? color(tone, theme) ?? "var(--ck-text)";
   const submit = node.submit === true;
   const icons = iconSize(node.iconSize, 16);
+  // W-17: in a used row, the button that was pressed becomes its check ("✓ Email"), not a dimmed copy beside one.
+  if (item.used && !link && (label || action?.type) === item.used) {
+    return (
+      <span className="ck-item-done">
+        <WidgetIcon name="check" size={13} />
+        <span>{item.used}</span>
+      </span>
+    );
+  }
   return (
     <button
       type={submit ? "submit" : "button"}
@@ -271,14 +287,14 @@ function ListViewItem({ node }: { node: WidgetNode }) {
   const style: CSSProperties = { gap: space(node.gap) ?? "12px" };
   if (typeof node.align === "string") style.alignItems = { start: "flex-start", end: "flex-end", center: "center", baseline: "baseline", stretch: "stretch" }[node.align] ?? "center";
   const children = (node.children ?? []).map((c, i) => <Node key={str(c.key) || i} node={c} />);
-  const done = state.used ? (
+  const done = state.used && !hasButton(node, state.used.label) ? (
     <span className="ck-item-done">
       <WidgetIcon name="check" size={13} />
       <span>{state.used.label}</span>
     </span>
   ) : null;
   const body = (
-    <ItemCtx.Provider value={{ ...(id ? { id } : {}), disabled }}>
+    <ItemCtx.Provider value={{ ...(id ? { id } : {}), disabled, ...(state.used ? { used: state.used.label } : {}) }}>
       {children}
       {done}
     </ItemCtx.Provider>

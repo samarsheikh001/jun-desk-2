@@ -48,14 +48,48 @@ function writeToken(key: string, token: string | null): void {
 function setPersist(key: string, next: boolean): void {
   if (next === persist) return;
   persist = next;
-  if (next) writeToken(key, memoryToken);
-  else {
+  if (next) {
+    writeToken(key, memoryToken);
+    writeEnded(key, memoryEnded);
+  } else {
     try {
       localStorage.removeItem(storageKey(key));
+      localStorage.removeItem(endedKey(key));
     } catch {
       // nothing stored
     }
   }
+}
+
+// D-46: conversations the visitor ended with the island's ×. They stay open for the team, so after a
+// reload the widget would go straight back into the latest one; it skips these instead. A per-browser
+// convenience (same consent rules as the token), at most the last 20.
+const endedKey = (key: string) => `jun:ended:${key}`;
+let memoryEnded: string[] = [];
+
+function readEnded(key: string): string[] {
+  if (!persist) return memoryEnded;
+  try {
+    const list: unknown = JSON.parse(localStorage.getItem(endedKey(key)) ?? "[]");
+    return Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : memoryEnded;
+  } catch {
+    return memoryEnded;
+  }
+}
+
+function writeEnded(key: string, ids: string[]): void {
+  memoryEnded = ids.slice(-20);
+  if (!persist) return;
+  try {
+    localStorage.setItem(endedKey(key), JSON.stringify(memoryEnded));
+  } catch {
+    // storage blocked: remembered until the page reloads
+  }
+}
+
+function markEnded(key: string, id: string): void {
+  const ids = readEnded(key);
+  if (!ids.includes(id)) writeEnded(key, [...ids, id]);
 }
 
 /** An opening message shown before the conversation exists: a proactive nudge or an agent's invite (V-07). */
@@ -248,7 +282,9 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       (r) => {
         setConversations(r.conversations);
         // Go straight back into an ongoing conversation.
-        const active = r.conversations.find((c) => c.status !== "resolved");
+        // (Not one the visitor ended with the island's ×, D-46.)
+        const ended = readEnded(api.key);
+        const active = r.conversations.find((c) => c.status !== "resolved" && !ended.includes(c.id));
         setView((v) => (active && !(v.kind === "thread" && (v.id || v.opener || v.intent || v.first || v.human)) ? { kind: "thread", id: active.id } : v));
         // AI-20 hard rule (D-37): an intent's exit button stays for the whole conversation, so after a
         // reload the chat gets its intent back (the host's onExit can't come back: the button then
@@ -446,7 +482,12 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
             cardTheme: islandDark(config) ? "dark" : effectiveTheme(config),
             unread: Boolean(summary && unread(summary)),
             setOpen: setBarOpen,
-            newChat: () => setView({ kind: "thread", id: null }),
+            newChat: () => {
+              // Older open chats too: after a reload the island starts fresh, not in one of those.
+              for (const c of conversations) if (c.status !== "resolved") markEnded(api.key, c.id);
+              if (id) markEnded(api.key, id);
+              setView({ kind: "thread", id: null });
+            },
           }}
         />
       );

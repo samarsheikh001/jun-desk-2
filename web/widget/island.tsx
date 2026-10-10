@@ -262,7 +262,9 @@ export function IslandControls({ onEnd, onMinimize }: {
       <button type="button" className="i-ghost i-icon" aria-label="Minimize" title="Minimize" onClick={onMinimize}>
         {chevron(CHEVRON_DOWN)}
       </button>
-      <button type="button" className="i-ghost i-x" aria-label={onEnd ? "End chat" : "Close"} title={onEnd ? "End chat (start a new one next time)" : "Close"} onClick={onEnd ?? onMinimize}>×</button>
+      <button type="button" className="i-ghost i-icon" aria-label={onEnd ? "End chat" : "Close"} title={onEnd ? "End chat (start a new one next time)" : "Close"} onClick={onEnd ?? onMinimize}>
+        {chevron("M7 7l10 10M17 7L7 17")}
+      </button>
     </div>
   );
 }
