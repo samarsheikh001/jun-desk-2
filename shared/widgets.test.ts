@@ -188,3 +188,18 @@ test("D-51: client actions never reach the server; field changes match only thei
   assert.equal(matchWidgetChange(card, "annual", { type: "recalc" }, {}), null, "only tool: actions run on a change");
   assert.equal(matchWidgetChange(card, "size", { type: "tool:pick_size" }, {})?.item, "i0");
 });
+
+test("widgets: Studio's example images (\"/kpop.png\") point at ChatKit Studio; other data is left as is", () => {
+  const studio = { defaultState: { banner: "/kpop.png", tracks: [{ cover: "/album01.png", link: "/playlists/kpop" }], other: "//cdn.test/x.png", full: "https://cdn.test/y.png" } };
+  const encodedWidget = Buffer.from(JSON.stringify(studio)).toString("base64url");
+  const spec = parseWidgetFile("playlist", JSON.stringify({ version: "1.0", template: '{"type":"Card","children":[]}', encodedWidget }));
+  assert.deepEqual(spec.sample, {
+    banner: "https://widgets.chatkit.studio/kpop.png",
+    tracks: [{ cover: "https://widgets.chatkit.studio/album01.png", link: "/playlists/kpop" }],
+    other: "//cdn.test/x.png",
+    full: "https://cdn.test/y.png",
+  });
+  // An admin's own sample is used as written.
+  const own = parseWidgetFile("playlist", JSON.stringify({ version: "1.0", template: '{"type":"Card","children":[]}', sample: { banner: "/kpop.png" }, encodedWidget }));
+  assert.deepEqual(own.sample, { banner: "/kpop.png" });
+});

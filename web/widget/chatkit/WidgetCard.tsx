@@ -165,7 +165,7 @@ function Button({ node }: { node: WidgetNode }) {
   const size = CONTROL_SIZES.has(str(node.size)) ? str(node.size) : "md";
   const c = SEMANTIC[tone] ?? color(tone, theme) ?? "var(--ck-text)";
   const submit = node.submit === true;
-  const icons = iconSize(node.iconSize, 16);
+  const icons = buttonIconSize(node);
   // W-17: in a used row, the button that was pressed becomes its check ("✓ Email"), not a dimmed copy beside one.
   if (item.used && !link && (label || action?.type) === item.used) {
     return (
@@ -213,6 +213,14 @@ function Badge({ node }: { node: WidgetNode }) {
   return <span className={`ck-badge ck-badge-${variant} ck-badge-${size}${node.pill === true ? " ck-pill" : ""}`} style={{ "--ck-tone": tone, "--ck-on-tone": onTone(SEMANTIC[name] ? name : "") } as CSSProperties}>{str(node.label)}</span>;
 }
 
+// ChatKit's button icons: `iconSize` if given, else from the button's size (its stylesheet:
+// --control-icon-size xs 14, sm 16, md 18, lg 20, xl 22, 2xl 24; sizes 3xs → xs, 2xs/xs → sm, sm–xl → md, 2xl/3xl → lg).
+const CONTROL_ICON: Record<string, number> = { xs: 14, sm: 16, md: 18, lg: 20, xl: 22, "2xl": 24 };
+const BUTTON_ICON: Record<string, string> = { "3xs": "xs", "2xs": "sm", xs: "sm", sm: "md", md: "md", lg: "md", xl: "md", "2xl": "lg", "3xl": "lg" };
+function buttonIconSize(node: WidgetNode): number {
+  return CONTROL_ICON[str(node.iconSize)] ?? CONTROL_ICON[BUTTON_ICON[str(node.size)] ?? "md"]!;
+}
+
 function Image({ node }: { node: WidgetNode }) {
   const { theme, disabled: cardOff, fire, busy } = useContext(WidgetCtx);
   const item = useContext(ItemCtx);
@@ -227,7 +235,14 @@ function Image({ node }: { node: WidgetNode }) {
   const fit = str(node.fit);
   if (["cover", "contain", "fill", "scale-down", "none"].includes(fit)) style.objectFit = fit as CSSProperties["objectFit"];
   if (typeof node.position === "string" && /^(top|bottom|left|right|center)( (left|right))?$/.test(node.position)) style.objectPosition = node.position;
-  if (!style.width && !style.height && !node.flush) style.maxWidth = "100%";
+  // No size given: ChatKit draws a 40×40 square (an avatar or cover in a row), not the picture's own size.
+  if (!style.width && !style.height && !node.flush) {
+    if (style.aspectRatio) style.maxWidth = "100%";
+    else {
+      style.width = "40px";
+      style.height = "40px";
+    }
+  }
   const link = action?.type === OPEN_URL;
   const off = link ? false : item.id ? item.disabled : cardOff;
   const clickable = action

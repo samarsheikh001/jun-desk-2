@@ -120,6 +120,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Where ChatKit Studio serves the images its own examples use ("/kpop.png"). */
+export const STUDIO_ORIGIN = "https://widgets.chatkit.studio";
+const STUDIO_IMAGE = /^\/(?!\/)[^\s?#]+\.(?:png|jpe?g|gif|webp|avif|svg)$/i;
+
+/**
+ * Studio's example data names its demo images by path ("/album01.png"), which Studio resolves
+ * against its own site. Taken as our preview data, those paths would point at the desk: point them
+ * at Studio instead. Only Studio's example data; an action's data and an admin's `sample` are as given.
+ */
+function studioImages(value: unknown, depth = 0): unknown {
+  if (depth > 20) return value;
+  if (typeof value === "string") return STUDIO_IMAGE.test(value) ? `${STUDIO_ORIGIN}${value}` : value;
+  if (Array.isArray(value)) return value.map((v) => studioImages(v, depth + 1));
+  if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, studioImages(v, depth + 1)]));
+  return value;
+}
+
 /** Base64url (ChatKit Studio's `encodedWidget`) to text, in any runtime. */
 function decodeBase64Url(text: string): string {
   const b64 = text.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(text.length / 4) * 4, "=");
@@ -165,7 +182,7 @@ export function parseWidgetFile(name: string, text: string): WidgetSpec {
   if (!sample && typeof file.encodedWidget === "string") {
     try {
       const studio = JSON.parse(decodeBase64Url(file.encodedWidget)) as unknown;
-      if (isRecord(studio) && isRecord(studio.defaultState)) sample = studio.defaultState;
+      if (isRecord(studio) && isRecord(studio.defaultState)) sample = studioImages(studio.defaultState) as Record<string, unknown>;
     } catch {
       // not ours to judge: the sample is only for checking
     }

@@ -51,7 +51,8 @@ const P: Record<string, string> = {
   "notebook-pencil": "M5 3h12a2 2 0 0 1 2 2v5M5 3v18h6M9 3v18M20.5 13.5l-6 6-3 1 1-3 6-6a1.4 1.4 0 0 1 2 2Z",
   "page-blank": "M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2ZM14 2v5h5",
   phone: "M5 3h3l2 5-2.5 1.5a11 11 0 0 0 7 7L16 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2Z",
-  play: "M7 4v16l13-8L7 4Z",
+  // ChatKit draws "play" as a circle with the triangle inside (as in ChatKit Studio).
+  play: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM10 9.3v5.4a.7.7 0 0 0 1.1.6l4.2-2.7a.7.7 0 0 0 0-1.2l-4.2-2.7a.7.7 0 0 0-1.1.6Z",
   plus: "M12 5v14M5 12h14",
   profile: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM15 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM6.5 18.5c1.5-2 3.3-3 5.5-3s4 1 5.5 3",
   "profile-card": "M3 5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5ZM15 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM7 17c1-1.5 2.8-2.3 5-2.3s4 .8 5 2.3",
@@ -72,7 +73,7 @@ const P: Record<string, string> = {
   "write-alt": "M12 20h8M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z",
   "write-alt2": "M11 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-6M17.5 3.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 8.5-8.5Z",
 };
-const FILLED = new Set(["check-circle-filled", "star-filled", "play"]);
+const FILLED = new Set(["check-circle-filled", "star-filled"]);
 
 /** Whether a name draws an icon (unknown names draw nothing). */
 export function hasIcon(name: unknown): boolean {
