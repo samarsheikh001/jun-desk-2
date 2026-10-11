@@ -6,7 +6,10 @@ import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
-import { ChevronLeftIcon, ExternalLinkIcon, MoonIcon, PlusIcon, SearchIcon, SunIcon, TrashIcon, UploadIcon } from "../components/icons.tsx";
+import { ChevronLeftIcon, CodeIcon, ExternalLinkIcon, InfoIcon, MoonIcon, PlusIcon, SearchIcon, SparkleIcon, SunIcon, TrashIcon, UploadIcon } from "../components/icons.tsx";
+import { formatTemplate } from "../../shared/widget-ai.ts";
+import { CodeArea } from "./CodeArea.tsx";
+import { WidgetChat } from "./WidgetChat.tsx";
 import { AddDialog, CodeEditor, Problems, TOOL, WIDGET, changeOf, go, humanize, slug, useCodeView } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 
@@ -177,18 +180,48 @@ function WidgetTile({ cfg, item }: { cfg: AgentConfig; item: WidgetItem }) {
 
 const pageTheme = (): Theme => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
+type Pane = "ai" | "code" | "details";
+// The left column's tab, for this visit (the same tab as you move between widgets).
+let lastPane: Pane | null = null;
+
+/** The .widget file as an object, or null when it isn't a JSON object. */
+function readFile(text: string): Record<string, unknown> | null {
+  try {
+    const file = JSON.parse(text) as unknown;
+    return typeof file === "object" && file !== null && !Array.isArray(file) ? (file as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The file with one key set (or removed with undefined); other keys keep their order. */
+function withKey(text: string, key: string, value: unknown): string {
+  const file = readFile(text) ?? {};
+  if (value === undefined) delete file[key];
+  else file[key] = value;
+  return `${JSON.stringify(file, null, 2)}\n`;
+}
+
 function WidgetEditor({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit: boolean; path: string; name: string }) {
   const text = cfg.draft[path] ?? "";
-  const upload = useRef<HTMLInputElement>(null);
   const code = useCodeView();
+  const [pane, setPaneState] = useState<Pane>(() => lastPane ?? (code ? "code" : canEdit ? "ai" : "details"));
+  const setPane = (next: Pane) => {
+    lastPane = next;
+    setPaneState(next);
+  };
   const [theme, setTheme] = useState<Theme>(pageTheme);
   const { root, problem } = render(name, text);
-  const summary = root ? previewSummary(name, text) : "";
-  const tools = usedBy(cfg, name);
   const change = changeOf(cfg, path);
+  const panes: { id: Pane; label: string }[] = [
+    ...(canEdit ? [{ id: "ai" as const, label: "AI" }] : []),
+    { id: "code", label: "Code" },
+    { id: "details", label: "Details" },
+  ];
+  const shown = panes.some((p) => p.id === pane) ? pane : "details";
 
   return (
-    <div className={`agent-wed${code ? " agent-wed-code" : ""}`}>
+    <div className="agent-wed agent-wed-studio">
       <section className="agent-wed-side">
         <div className="agent-wed-head">
           <Button variant="ghost" size="icon-sm" aria-label="All widgets" title="All widgets" onClick={() => go("/agent/widgets")}>
@@ -203,59 +236,23 @@ function WidgetEditor({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit:
             </Button>
           )}
         </div>
-
-        {code ? (
-          <CodeEditor cfg={cfg} path={path} canEdit={canEdit} />
-        ) : (
-          <>
-            <div className="agent-wed-group">
-              <h3>Shown by</h3>
-              {tools.length ? (
-                <ul className="agent-wed-links">
-                  {tools.map((tool) => (
-                    <li key={tool}>
-                      <a href={`/agent/actions/${tool}`} onClick={(e) => { e.preventDefault(); go(`/agent/actions/${tool}`); }}>{humanize(tool)}</a>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>Not used yet. Pick it under "Show the result as a widget" on an action.</p>
-              )}
-            </div>
-            {summary && (
-              <div className="agent-wed-group">
-                <h3>Folded</h3>
-                <p>When the chat folds the card away, it reads "{summary}".</p>
-              </div>
-            )}
-            <div className="agent-wed-group">
-              <h3>Design</h3>
-              <p>Widgets are designed in ChatKit Studio. Download the file there and upload it here; the preview shows it with example data.</p>
-              <div className="agent-wed-actions">
-                <Button variant="outline" size="sm" nativeButton={false} render={<a href="https://widgets.chatkit.studio" target="_blank" rel="noopener noreferrer" />}>
-                  <ExternalLinkIcon /> Open ChatKit Studio
-                </Button>
-                {canEdit && (
-                  <Button variant="outline" size="sm" onClick={() => upload.current?.click()}>
-                    <UploadIcon /> Replace with a file
-                  </Button>
-                )}
-              </div>
-              <input
-                ref={upload}
-                type="file"
-                accept=".widget,application/json"
-                hidden
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = "";
-                  if (file) cfg.setFile(path, await file.text());
-                }}
-              />
-            </div>
-            <Problems issues={cfg.issuesFor(path)} />
-          </>
-        )}
+        <div className="agent-wed-tabs" role="tablist" aria-label="Edit with">
+          {panes.map((p) => (
+            <button key={p.id} type="button" role="tab" aria-selected={shown === p.id} className="agent-wed-tab" onClick={() => setPane(p.id)}>
+              {p.id === "ai" ? <SparkleIcon /> : p.id === "code" ? <CodeIcon /> : <InfoIcon />}
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="agent-wed-pane" role="tabpanel">
+          {shown === "ai" ? (
+            <WidgetChat cfg={cfg} path={path} name={name} />
+          ) : shown === "code" ? (
+            <WidgetCode cfg={cfg} path={path} canEdit={canEdit} />
+          ) : (
+            <WidgetDetails cfg={cfg} path={path} name={name} canEdit={canEdit} />
+          )}
+        </div>
       </section>
 
       <section className="agent-stage agent-wed-canvas" data-preview={theme} aria-label="Preview">
@@ -268,10 +265,169 @@ function WidgetEditor({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit:
           </Button>
         </div>
         <div className="agent-stage-card">
-          {root ? <WidgetCard widget={{ id: "preview", name, root }} interactive={false} theme={theme} /> : <p className="error small">{problem}</p>}
+          {root ? <WidgetCard widget={{ id: "preview", name, root }} interactive={false} theme={theme} /> : <p className="agent-canvas-error">{problem}</p>}
         </div>
         <p className="agent-canvas-caption">With example data, as a customer sees it</p>
       </section>
+    </div>
+  );
+}
+
+/** Code: the template (indented) over the example data and the summary line, like ChatKit Studio. */
+function WidgetCode({ cfg, path, canEdit }: { cfg: AgentConfig; path: string; canEdit: boolean }) {
+  const text = cfg.draft[path] ?? "";
+  const file = readFile(text);
+  const template = typeof file?.template === "string" ? file.template : "";
+  const sampleJson = file?.sample === undefined ? "{\n}" : JSON.stringify(file.sample, null, 2);
+  const summary = typeof file?.summary === "string" ? file.summary : "";
+  const [bottom, setBottom] = useState<"sample" | "summary" | "file">("sample");
+
+  // What the fields show: kept while you type, replaced when the file changes elsewhere (the AI, Undo, Discard).
+  const [tpl, setTpl] = useState(() => formatTemplate(template));
+  const wroteTpl = useRef(template);
+  const [sample, setSample] = useState(sampleJson);
+  const wroteSample = useRef(sampleJson);
+  const [sampleError, setSampleError] = useState<string | null>(null);
+  useEffect(() => {
+    if (template !== wroteTpl.current) {
+      wroteTpl.current = template;
+      setTpl(formatTemplate(template));
+    }
+  }, [template]);
+  useEffect(() => {
+    if (sampleJson !== wroteSample.current) {
+      wroteSample.current = sampleJson;
+      setSample(sampleJson);
+      setSampleError(null);
+    }
+  }, [sampleJson]);
+
+  if (!file) {
+    return (
+      <div className="agent-wed-raw">
+        <p className="agent-notice small">This file isn't valid JSON, so it's shown whole. Fix it here and the editor comes back.</p>
+        <CodeEditor cfg={cfg} path={path} canEdit={canEdit} />
+      </div>
+    );
+  }
+  return (
+    <div className="wcode">
+      <div className="wcode-top">
+        <div className="wcode-label">Template</div>
+        <CodeArea
+          label="Template"
+          value={tpl}
+          readOnly={!canEdit}
+          onChange={(next) => {
+            setTpl(next);
+            wroteTpl.current = next;
+            cfg.setFile(path, withKey(text, "template", next));
+          }}
+        />
+      </div>
+      <div className="wcode-bottom">
+        <div className="wcode-tabs" role="tablist" aria-label="Data">
+          <button type="button" role="tab" aria-selected={bottom === "sample"} onClick={() => setBottom("sample")}>Example data</button>
+          <button type="button" role="tab" aria-selected={bottom === "summary"} onClick={() => setBottom("summary")}>Summary</button>
+          <button type="button" role="tab" aria-selected={bottom === "file"} onClick={() => setBottom("file")}>Whole file</button>
+        </div>
+        {bottom === "sample" ? (
+          <>
+            <CodeArea
+              label="Example data"
+              value={sample}
+              readOnly={!canEdit}
+              onChange={(next) => {
+                setSample(next);
+                try {
+                  const value = JSON.parse(next) as unknown;
+                  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Example data is a JSON object: { … }.");
+                  setSampleError(null);
+                  wroteSample.current = JSON.stringify(value, null, 2);
+                  cfg.setFile(path, withKey(text, "sample", value));
+                } catch (error) {
+                  setSampleError(error instanceof SyntaxError ? "Not valid JSON yet." : (error as Error).message);
+                }
+              }}
+            />
+            <p className={sampleError ? "wcode-hint error" : "wcode-hint"}>{sampleError ?? "Data shaped like your action's response; the preview uses it."}</p>
+          </>
+        ) : bottom === "summary" ? (
+          <div className="wcode-summary">
+            <Input
+              aria-label="Summary line"
+              className="mono"
+              value={summary}
+              readOnly={!canEdit}
+              maxLength={200}
+              placeholder="e.g. {{ plan }} plan · {{ status }}"
+              onChange={(e) => cfg.setFile(path, withKey(text, "summary", e.target.value || undefined))}
+            />
+            <p className="wcode-hint">One plain-text line from the same data. The chat shows it when it folds the card away.</p>
+          </div>
+        ) : (
+          <CodeEditor cfg={cfg} path={path} canEdit={canEdit} />
+        )}
+      </div>
+      <Problems issues={cfg.issuesFor(path)} raw />
+    </div>
+  );
+}
+
+/** Details: which actions show it, its folded line, ChatKit Studio and uploading a file. */
+function WidgetDetails({ cfg, path, name, canEdit }: { cfg: AgentConfig; path: string; name: string; canEdit: boolean }) {
+  const text = cfg.draft[path] ?? "";
+  const upload = useRef<HTMLInputElement>(null);
+  const summary = previewSummary(name, text);
+  const tools = usedBy(cfg, name);
+  return (
+    <div className="agent-wed-details">
+      <div className="agent-wed-group">
+        <h3>Shown by</h3>
+        {tools.length ? (
+          <ul className="agent-wed-links">
+            {tools.map((tool) => (
+              <li key={tool}>
+                <a href={`/agent/actions/${tool}`} onClick={(e) => { e.preventDefault(); go(`/agent/actions/${tool}`); }}>{humanize(tool)}</a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>Not used yet. Pick it under "Show the result as a widget" on an action.</p>
+        )}
+      </div>
+      {summary && (
+        <div className="agent-wed-group">
+          <h3>Folded</h3>
+          <p>When the chat folds the card away, it reads "{summary}".</p>
+        </div>
+      )}
+      <div className="agent-wed-group">
+        <h3>ChatKit Studio</h3>
+        <p>You can also design a widget in ChatKit Studio, download the file and upload it here.</p>
+        <div className="agent-wed-actions">
+          <Button variant="outline" size="sm" nativeButton={false} render={<a href="https://widgets.chatkit.studio" target="_blank" rel="noopener noreferrer" />}>
+            <ExternalLinkIcon /> Open ChatKit Studio
+          </Button>
+          {canEdit && (
+            <Button variant="outline" size="sm" onClick={() => upload.current?.click()}>
+              <UploadIcon /> Replace with a file
+            </Button>
+          )}
+        </div>
+        <input
+          ref={upload}
+          type="file"
+          accept=".widget,application/json"
+          hidden
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) cfg.setFile(path, await file.text());
+          }}
+        />
+      </div>
+      <Problems issues={cfg.issuesFor(path)} />
     </div>
   );
 }

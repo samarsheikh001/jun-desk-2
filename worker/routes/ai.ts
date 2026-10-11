@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { MAX_KB_FILE_BYTES, MAX_KB_FILES } from "../../shared/protocol.ts";
 import { sniffFormat, titleFromName, UnsupportedFile, type FileFormat } from "../ai/file-extract.ts";
 import { deleteSource, DEFAULT_MAX_PAGES, fileKey, indexSnippet, removeDocument, startFileIndex, startSync, type SourceSettings } from "../ai/knowledge.ts";
-import { effectiveModels, InvalidModelsError, parseJobModels, type JobModels } from "../ai/models.ts";
+import { effectiveModels, InvalidModelsError, JOB_DEFAULTS, parseJobModels, type JobModels } from "../ai/models.ts";
 import { DEFAULT_MODELS, isLoopback, loadAiSettings, type ProviderId } from "../ai/providers.ts";
 import { searchKnowledge } from "../ai/search.ts";
 import { requireUser } from "../auth/session.ts";
@@ -44,6 +44,8 @@ ai.get("/workspaces/:id/ai", async (c) => {
   return c.json({
     settings,
     defaults: DEFAULT_MODELS,
+    // W-22: jobs with their own default per provider (widget editing on the large model).
+    jobDefaults: JOB_DEFAULTS,
     // AI-16: the model each job runs on now (its override, else the workspace model).
     effectiveModels: effectiveModels(settings),
     openaiKeyConfigured: Boolean((c.env as unknown as { OPENAI_API_KEY?: string }).OPENAI_API_KEY),

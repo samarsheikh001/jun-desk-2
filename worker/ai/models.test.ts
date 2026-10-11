@@ -126,3 +126,12 @@ test("a working override is used as is", async () => {
   assert.equal(await complete(model), "from the override");
   assert.equal(fallback.doStreamCalls.length, 0);
 });
+
+test("widget editing defaults to the large model on ChatGPT and OpenAI, unless the admin picks one", () => {
+  assert.deepEqual(modelFor(settings(), "widgets"), { modelId: "gpt-6-astra", fallback: "gpt-6-luna" });
+  assert.deepEqual(modelFor(settings({ provider: "openai" }), "widgets"), { modelId: "gpt-6-astra", fallback: "gpt-6.1-sol" });
+  assert.deepEqual(modelFor(settings({ models: { widgets: "gpt-6-sol" } }), "widgets"), { modelId: "gpt-6-sol", fallback: "gpt-6-luna" });
+  assert.equal(modelFor(settings({ provider: "workers-ai" }), "widgets").fallback, null);
+  assert.equal(effectiveModels(settings()).answer, "gpt-6-luna");
+  assert.equal(effectiveModels(settings()).widgets, "gpt-6-astra");
+});

@@ -13,6 +13,9 @@
 
 export class TemplateError extends Error {}
 
+/** The filters and tests templates may use (the widget editor's prompt lists them). */
+export const jinjaNames = () => ({ filters: [...FILTERS].sort(), tests: [...TESTS].sort() });
+
 /** Loop iterations, nodes visited and characters written per render, at most. */
 export const MAX_TEMPLATE_STEPS = 50_000;
 export const MAX_TEMPLATE_OUTPUT = 256 * 1024;
@@ -135,7 +138,9 @@ function tokenize(src: string): Tok[] {
 
 // ---------- expression parser (Jinja precedence) ----------
 
-const FILTERS = new Set(["tojson", "length", "count", "default", "d", "upper", "lower", "capitalize", "title", "trim", "string", "int", "float", "round", "abs", "join", "first", "last", "list", "reverse", "replace", "truncate", "safe", "e", "escape", "min", "max", "sum", "unique", "sort", "map", "select", "reject", "attr", "items", "dictsort", "batch", "wordcount", "center", "indent"]);
+const FILTERS = new Set(["selectattr", "rejectattr", "tojson", "length", "count", "default", "d", "upper", "lower", "capitalize", "title", "trim", "string", "int", "float", "round", "abs", "join", "first", "last", "list", "reverse", "replace", "truncate", "safe", "e", "escape", "min", "max", "sum", "unique", "sort", "map", "select", "reject", "attr", "items", "dictsort", "batch", "wordcount", "center", "indent"]);
+/** Jinja's operator spellings of tests, as `selectattr` takes them. */
+const TEST_ALIASES: Record<string, string> = { "==": "eq", "!=": "ne", "<": "lt", ">": "gt", "<=": "le", ">=": "ge" };
 const TESTS = new Set(["defined", "undefined", "none", "number", "string", "mapping", "iterable", "sequence", "boolean", "true", "false", "even", "odd", "divisibleby", "eq", "equalto", "ne", "lt", "gt", "le", "ge", "in", "sameas", "integer", "float", "lower", "upper"]);
 
 class Parser {
@@ -746,6 +751,18 @@ function runFilter(e: Extract<Expr, { k: "filter" }>, ctx: Ctx): unknown {
     case "select":
     case "reject":
       return iterable(v).filter((x) => truthy(args[0] !== undefined ? getField(x, args[0]) : x) === (e.name === "select"));
+    case "selectattr":
+    case "rejectattr": {
+      // selectattr("status"), selectattr("status", "equalto", "open"), selectattr("n", ">", 2)
+      const keep = e.name === "selectattr";
+      const name = args[1] === undefined ? null : (TEST_ALIASES[str(args[1])] ?? str(args[1]));
+      if (name !== null && !TESTS.has(name)) throw new TemplateError(`Unknown test "${name}".`);
+      return iterable(v).filter((x) => {
+        const field = getField(x, args[0]);
+        const hit = name === null ? truthy(field) : runTest({ k: "test", arg: { k: "lit", v: field }, name, args: args.length > 2 ? [{ k: "lit", v: args[2] }] : [], negate: false }, ctx);
+        return hit === keep;
+      });
+    }
     case "items":
       return v && typeof v === "object" && !Array.isArray(v) ? Object.entries(v) : [];
     case "dictsort":

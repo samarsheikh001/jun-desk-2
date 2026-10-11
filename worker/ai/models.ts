@@ -17,11 +17,24 @@ export const DEFAULT_MODELS: Record<ProviderId, string> = {
  * Every AI call names its job. `answer`: visitor replies (runAgent, live and in evals);
  * `brief`: handoff brief; `nudge`: nudges and AI openers; `draft`: issue drafts;
  * `topics`: topic labels; `judge`: eval grading; `suggestions`: the widget's suggested
- * questions drafted from the knowledge base (W-15).
+ * questions drafted from the knowledge base (W-15); `widgets`: a widget edited by chat on the
+ * Agent page (W-22).
  */
-export const AI_JOBS = ["answer", "brief", "nudge", "draft", "topics", "judge", "suggestions", "followups"] as const;
+export const AI_JOBS = ["answer", "brief", "nudge", "draft", "topics", "judge", "suggestions", "followups", "widgets"] as const;
 export type AiJob = (typeof AI_JOBS)[number];
 export type JobModels = Partial<Record<AiJob, string>>;
+
+/**
+ * A job's own default per provider, used unless an admin set a model for that job. Widget editing
+ * writes whole templates against ChatKit's long guide (W-22), so it gets the large model where the
+ * provider has one (user's pick, 2026-10-11). An id the provider rejects falls back to the
+ * workspace model, like an override.
+ */
+export const JOB_DEFAULTS: Record<ProviderId, JobModels> = {
+  chatgpt: { widgets: "gpt-6-astra" },
+  openai: { widgets: "gpt-6-astra" },
+  "workers-ai": {},
+};
 
 const MODEL_ID = /^[\w.:/@-]{1,100}$/;
 
@@ -63,10 +76,13 @@ export function workspaceModel(settings: ModelSettings): string {
   return settings.model || DEFAULT_MODELS[settings.provider];
 }
 
-/** The one place that decides a job's model. `fallback` is set when an override differs from the workspace model. */
+/**
+ * The one place that decides a job's model: the admin's override, else the job's default for the
+ * provider (JOB_DEFAULTS), else the workspace model. `fallback` is set when that differs from the workspace model.
+ */
 export function modelFor(settings: ModelSettings, job: AiJob): { modelId: string; fallback: string | null } {
   const base = workspaceModel(settings);
-  const override = settings.models[job];
+  const override = settings.models[job] ?? JOB_DEFAULTS[settings.provider]?.[job];
   return override && override !== base ? { modelId: override, fallback: base } : { modelId: base, fallback: null };
 }
 

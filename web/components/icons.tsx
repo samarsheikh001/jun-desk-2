@@ -41,6 +41,7 @@ import {
   Settings02Icon,
   SidebarLeft01Icon,
   SourceCodeIcon,
+  SparklesIcon,
   Sun03Icon,
   TextIcon as HugeTextIcon,
   Tick02Icon,
@@ -96,6 +97,7 @@ export const SearchIcon = make(Search01Icon);
 export const SettingsIcon = make(Settings02Icon);
 export const SidebarIcon = make(SidebarLeft01Icon);
 export const SignOutIcon = make(Logout01Icon);
+export const SparkleIcon = make(SparklesIcon);
 export const SunIcon = make(Sun03Icon);
 export const TextIcon = make(HugeTextIcon);
 export const ToolIcon = make(Wrench01Icon);

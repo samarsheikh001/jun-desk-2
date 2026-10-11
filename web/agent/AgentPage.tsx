@@ -89,12 +89,15 @@ export function AgentPage({ workspaceId, canEdit, path }: { workspaceId: string;
         className="agent-tabs"
         actions={
           tab !== "settings" && <>
-            <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCodeView(v === "code")}>
-              <TabsList className="kb-tabs agent-view-switch" aria-label="View">
-                <TabsTrigger value="form">Form</TabsTrigger>
-                <TabsTrigger value="code" title="The same settings as files, as in git">Code</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            {/* A widget's page has its own AI / Code / Details tabs. */}
+            {!(tab === "widgets" && item) && (
+              <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCodeView(v === "code")}>
+                <TabsList className="kb-tabs agent-view-switch" aria-label="View">
+                  <TabsTrigger value="form">Form</TabsTrigger>
+                  <TabsTrigger value="code" title="The same settings as files, as in git">Code</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
             <Button variant="ghost" size="sm" onClick={() => setHistory(true)}>History</Button>
           </>
         }

@@ -1023,6 +1023,93 @@ textarea.agent-prose { font-family: var(--font-sans); font-size: 14px; line-heig
   .agent-gallery { padding: 16px; }
   .agent-tile-stage { height: 240px; }
 }
+/* W-22: a widget's page as an editor (after ChatKit Studio): AI / Code / Details on the left, the
+   preview on the right, both the height of the window so the chat's box and the code fields stay put. */
+/* flex: none, or the page's column flex grows it past the window and nothing inside scrolls. */
+.agent-view:has(> .agent-wed-studio) { flex: none; height: calc(100dvh - 61px); min-height: 560px; }
+.agent-wed-studio { flex: 1; min-height: 0; grid-template-columns: minmax(400px, 5fr) minmax(0, 6fr); grid-template-rows: minmax(0, 1fr); }
+.agent-wed-studio .agent-wed-side { display: flex; flex-direction: column; gap: 0; padding: 0; min-height: 0; overflow: hidden; }
+.agent-wed-studio .agent-wed-head { margin: 0; padding: 12px 16px 4px 16px; }
+.agent-wed-studio .agent-wed-canvas { position: relative; min-height: 0; height: 100%; overflow: auto; }
+.agent-wed-tabs { display: flex; gap: 18px; padding: 0 20px; border-bottom: 1px solid var(--border); }
+.agent-wed-tab { display: inline-flex; align-items: center; gap: 6px; margin-bottom: -1px; padding: 10px 0 9px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted-foreground); font: inherit; font-size: 13px; font-weight: 525; cursor: pointer; }
+.agent-wed-tab svg { width: 15px; height: 15px; }
+.agent-wed-tab:hover { color: var(--foreground); }
+.agent-wed-tab[aria-selected="true"] { color: var(--foreground); border-bottom-color: var(--foreground); }
+.agent-wed-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.agent-wed-details { display: grid; gap: 24px; align-content: start; padding: 20px; overflow: auto; }
+.agent-wed-raw { display: grid; gap: 10px; align-content: start; padding: 16px; overflow: auto; }
+.agent-canvas-error { margin: 0; max-width: 420px; padding: 10px 12px; border-radius: 10px; background: color-mix(in oklab, var(--destructive) 12%, var(--card)); color: var(--destructive); font-size: 13px; line-height: 19px; }
+
+/* Code: the template over the example data, each a code field filling its part. */
+.wcode { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; }
+.wcode-top { flex: 3 1 0; min-height: 140px; display: flex; flex-direction: column; gap: 6px; }
+.wcode-bottom { flex: 2 1 0; min-height: 140px; display: flex; flex-direction: column; gap: 6px; }
+.wcode-label { font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
+.wcode-tabs { display: flex; gap: 14px; }
+.wcode-tabs button { padding: 0 0 4px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted-foreground); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.wcode-tabs button[aria-selected="true"] { color: var(--foreground); border-bottom-color: var(--foreground); }
+.wcode-bottom > .agent-text { flex: 1; min-height: 0; height: auto; }
+.wcode-hint { margin: 0; font-size: 12px; color: var(--muted-foreground); }
+.wcode-summary { display: grid; gap: 6px; }
+.wcode [data-slot="field-error"] { flex: none; }
+
+.code-area { flex: 1; min-height: 0; display: flex; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--card); font-family: var(--font-mono); font-size: 12.5px; line-height: 20px; }
+.code-area:focus-within { border-color: color-mix(in oklab, var(--foreground) 30%, transparent); }
+.code-area-gutter { flex: none; min-width: 2.6em; padding: 10px 8px 10px 10px; overflow: hidden; text-align: right; color: var(--muted-foreground); opacity: 0.55; user-select: none; }
+.code-area-body { position: relative; flex: 1; min-width: 0; }
+.code-area-body pre, .code-area-body textarea { position: absolute; inset: 0; box-sizing: border-box; margin: 0; padding: 10px 14px 10px 4px; border: 0; font: inherit; line-height: inherit; letter-spacing: 0; white-space: pre; tab-size: 2; overflow: auto; }
+.code-area-body pre { pointer-events: none; overflow: hidden; color: var(--foreground); }
+.code-area-body textarea { resize: none; outline: none; background: transparent; color: transparent; caret-color: var(--foreground); }
+.code-area-body textarea::selection { background: color-mix(in oklab, #3b82f6 35%, transparent); color: transparent; }
+.tok-key { color: #b4237a; }
+.tok-str { color: #16794a; }
+.tok-num { color: #1d5fc4; }
+.tok-lit { color: #b45309; }
+.tok-punct { color: var(--muted-foreground); }
+.tok-jinja { color: #7c3aed; background: color-mix(in oklab, #7c3aed 9%, transparent); border-radius: 3px; }
+[data-theme="dark"] .tok-key { color: #f472b6; }
+[data-theme="dark"] .tok-str { color: #86efac; }
+[data-theme="dark"] .tok-num { color: #93c5fd; }
+[data-theme="dark"] .tok-lit { color: #fdba74; }
+[data-theme="dark"] .tok-jinja { color: #c4b5fd; background: color-mix(in oklab, #a78bfa 14%, transparent); }
+
+/* AI: the chat, its box at the bottom. */
+.wchat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* The transcript is shadcn's Message Scroller (web/components/ui/message-scroller.tsx); these set its spacing. */
+.wchat-scroller { flex: 1; min-height: 0; }
+.wchat-rows { gap: 12px; padding: 20px 20px 12px; }
+.wchat-row-user { display: flex; justify-content: flex-end; }
+/* Rows are measured as they are added: shadcn's content-visibility estimate (10rem until painted) made a
+   new turn look taller, so the room it made under the turn vanished a frame later and the view jumped. */
+.wchat-rows > [data-slot="message-scroller-item"] { content-visibility: visible; contain-intrinsic-size: none; }
+.wchat-empty { margin: auto 0; display: grid; gap: 8px; justify-items: start; padding: 8px 0 24px; }
+.wchat-empty-title { margin: 0; font-size: 15px; font-weight: 600; }
+.wchat-empty-text { margin: 0 0 6px; max-width: 46ch; font-size: 13px; line-height: 20px; color: var(--muted-foreground); }
+.wchat-ideas { display: flex; flex-wrap: wrap; gap: 6px; }
+.wchat-idea { padding: 6px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); color: var(--foreground); font: inherit; font-size: 12.5px; cursor: pointer; }
+.wchat-idea:hover { background: var(--muted); }
+.wchat-user { align-self: flex-end; max-width: 85%; padding: 8px 12px; border-radius: 14px 14px 4px 14px; background: var(--muted); font-size: 13.5px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.wchat-ai { align-self: flex-start; max-width: 92%; display: grid; gap: 4px; font-size: 13.5px; line-height: 20px; }
+.wchat-ai p { margin: 0; }
+.wchat-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground); }
+.wchat-meta .link-button { font-size: 12px; }
+.wchat-error p { color: var(--destructive); }
+.wchat-error [data-slot="button"] { justify-self: start; margin-left: -8px; }
+.wchat-pending { color: var(--foreground); }
+form.wchat-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 16px 16px; padding: 8px 8px 8px 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); }
+.wchat-composer:focus-within { border-color: color-mix(in oklab, var(--foreground) 30%, transparent); }
+.wchat-composer textarea { flex: 1; min-height: 24px; max-height: 160px; padding: 4px 0; border: 0; outline: none; resize: none; background: transparent; color: var(--foreground); font: inherit; font-size: 14px; line-height: 20px; field-sizing: content; }
+.wchat-composer textarea:focus, .wchat-composer textarea:focus-visible, .code-area-body textarea:focus-visible { outline: none; box-shadow: none; }
+.wchat-composer textarea::placeholder { color: var(--muted-foreground); }
+.wchat-composer [data-slot="button"] { flex: none; border-radius: 999px; }
+
+@media (max-width: 900px) {
+  .agent-view:has(> .agent-wed-studio) { flex: 1; height: auto; min-height: 0; }
+  .agent-wed-studio { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
+  .agent-wed-studio .agent-wed-side { height: min(72dvh, 640px); padding: 0; }
+  .agent-wed-studio .agent-wed-canvas { height: auto; min-height: 420px; }
+}
 .agent-savebar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; padding: 10px 24px; border-top: 1px solid var(--border); background: var(--background); }
 .agent-savebar-text { flex: 1 1 260px; min-width: 0; }
 .agent-savebar-text .link-button { margin-left: 6px; }

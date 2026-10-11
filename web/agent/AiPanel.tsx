@@ -9,11 +9,13 @@ import { Switch } from "@/components/ui/switch.tsx";
 import { SettingRow, SettingsCard } from "../settings/layout.tsx";
 
 type ProviderId = "openai" | "workers-ai" | "chatgpt";
-type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge" | "suggestions" | "followups";
+type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge" | "suggestions" | "followups" | "widgets";
 
 interface AiState {
   settings: { enabled: boolean; provider: ProviderId; model: string | null; models: Partial<Record<AiJob, string>>; instructions: string; monthlyReplyCap: number };
   defaults: Record<ProviderId, string>;
+  /** Jobs with their own default model per provider, used while their field is empty. */
+  jobDefaults: Record<ProviderId, Partial<Record<AiJob, string>>>;
   effectiveModels: Record<AiJob, string>;
   openaiKeyConfigured: boolean;
   devChatgpt: { available: boolean; connected: boolean; email: string | null };
@@ -36,6 +38,7 @@ const JOBS: { job: AiJob; label: string; hint: string }[] = [
   { job: "topics", label: "Topic labels", hint: "Fast job: labels for the Dashboard." },
   { job: "judge", label: "Eval grading", hint: "Checks eval replies against your criteria." },
   { job: "suggestions", label: "Suggested questions", hint: "Drafts the widget's questions from your knowledge (Widget page)." },
+  { job: "widgets", label: "Widget editing", hint: "Changes a widget when you ask in its chat (Agent → Widgets)." },
 ];
 // "Suggested for ChatGPT": the small model for fast jobs, the workspace model for the rest.
 const CHATGPT_FAST_MODEL = "gpt-6-luna";
@@ -154,7 +157,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
           <summary className="small">Advanced: model per task{overrides > 0 ? ` (${overrides} set)` : ""}</summary>
           <div className="job-models-body">
             <p className="small muted">
-              Each task uses the model above unless you name another model from the same provider. Fast jobs (nudge, topics, brief) do well on a small model. If the provider
+              Each task uses the model above unless you name another model from the same provider (widget editing uses the large model by default, shown in its field). Fast jobs (nudge, topics, brief) do well on a small model. If the provider
               doesn't recognise a model here, that task falls back to the model above.
             </p>
             {canEdit && provider === "chatgpt" && (
@@ -162,7 +165,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
                 <Button variant="outline" size="sm" type="button" onClick={() => setModels(Object.fromEntries(FAST_JOBS.map((job) => [job, CHATGPT_FAST_MODEL])))}>
                   Suggested for ChatGPT
                 </Button>
-                <span className="muted small">{CHATGPT_FAST_MODEL} for the fast jobs; the rest stay on the model above.</span>
+                <span className="muted small">{CHATGPT_FAST_MODEL} for the fast jobs; the rest stay on their defaults.</span>
               </div>
             )}
             <div className="job-model-grid">
@@ -173,7 +176,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
                     name={`model-${job}`}
                     value={models[job] ?? ""}
                     onChange={(e) => setModels((m) => ({ ...m, [job]: e.target.value }))}
-                    placeholder={workspaceModel}
+                    placeholder={state.jobDefaults?.[provider]?.[job] ?? workspaceModel}
                     disabled={!canEdit}
                     autoComplete="off"
                     spellCheck={false}

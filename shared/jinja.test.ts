@@ -66,3 +66,17 @@ test("runaway templates stop", () => {
   const xs = Array.from({ length: Math.ceil(Math.cbrt(MAX_TEMPLATE_STEPS)) + 5 }, (_, i) => i);
   assert.throws(() => tpl.render({ xs }), /too many steps|too large/);
 });
+
+test("jinja: selectattr / rejectattr, with a test, an operator or just truthiness", () => {
+  const invoices = [
+    { id: "a", status: "open", total: 240, paid: false },
+    { id: "b", status: "paid", total: 240, paid: true },
+    { id: "c", status: "open", total: 192.5, paid: false },
+  ];
+  assert.equal(render('{{ invoices | selectattr("status", "equalto", "open") | sum(attribute="total") }}', { invoices }), "432.5");
+  assert.equal(render('{{ invoices | selectattr("status", "==", "open") | map(attribute="id") | join(",") }}', { invoices }), "a,c");
+  assert.equal(render('{{ invoices | rejectattr("paid") | length }}', { invoices }), "2");
+  assert.equal(render('{{ invoices | selectattr("total", ">", 200) | length }}', { invoices }), "2");
+  assert.equal(render('{{ missing | selectattr("x") | length }}', {}), "0");
+  assert.throws(() => render('{{ invoices | selectattr("status", "nope", 1) }}', { invoices }), TemplateError);
+});
